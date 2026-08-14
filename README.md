@@ -1,24 +1,51 @@
-# Shaft Machining Planner
+<p align="center">
+  <img src=".github/assets/readme-hero.svg" width="100%" alt="Shaft Machining Planner — geometry in, verified process route out" />
+</p>
 
-[![CI](https://github.com/Taxueovo/Shaft-Machining-Planner/actions/workflows/ci.yml/badge.svg)](https://github.com/Taxueovo/Shaft-Machining-Planner/actions/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.10-blue)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Maintainer](https://img.shields.io/badge/maintainer-Taxueovo-blue)](https://github.com/Taxueovo)
+<h1 align="center">Shaft Machining Planner</h1>
 
-Machining process planning for motor shafts.
+<p align="center">
+  <strong>Turn motor-shaft geometry into a resource-checked machining route and an exportable process card.</strong>
+</p>
 
-Input the shaft geometry — stepped segments, keyways, splines, gears, bores, tapers —
-and it generates the complete machining plan: operations, machine tools, cutting
-tools, heat treatment and finishing. The plan is grounded in RAG handbooks and a case
-base, verified against the local machine tool and cutting tool capability libraries,
-and exported as a process-card Excel.
+<p align="center">
+  <a href="https://github.com/Taxueovo/Shaft-Machining-Planner/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Taxueovo/Shaft-Machining-Planner/ci.yml?branch=main&amp;style=flat-square&amp;label=tests" alt="Test status" /></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python_3.10-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10" /></a>
+  <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&amp;logo=fastapi&amp;logoColor=white" alt="FastAPI" /></a>
+  <img src="https://img.shields.io/badge/planning-RAG_grounded-2456D1?style=flat-square" alt="RAG grounded planning" />
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2F855A?style=flat-square" alt="MIT License" /></a>
+</p>
 
-Two components:
+<p align="center">
+  <a href="#3-installation">Install</a>
+  · <a href="#4-running">Run</a>
+  · <a href="#1-architecture">Architecture</a>
+  · <a href="#7-data-interpretation">Public data</a>
+  · <a href=".github/SECURITY.md">Security</a>
+  · <a href="CONTRIBUTING.md">Contributing</a>
+</p>
 
-- **backend** (`backend/`): process planning workflow (input validation, LangGraph,
-  capability libraries, process rules, verification, RAG).
-- **frontend** (`frontend/`): Jinja2 web UI with dynamic form, status polling, and
-  RAG management pages.
+---
+
+Describe the shaft — stepped segments, keyways, splines, gears, bores, tapers and
+more — and generate a complete process route covering operations, machine tools,
+cutting tools, heat treatment and finishing. Planning is grounded in RAG handbooks
+and a case base, then checked against local capability libraries before Excel export.
+
+| Model the part | Plan the route | Verify the resources | Export the result |
+| :--- | :--- | :--- | :--- |
+| Structured geometry with an interactive 3D preview. | Rules + LangGraph with optional human-in-the-loop decisions. | Machine and cutting-tool coverage stays explicit instead of being guessed. | Produce a practical process-card workbook for engineering review. |
+
+> **Engineering boundary:** this is a planning and screening tool. Final cutting
+> parameters, fixtures, tolerances, stock and shop availability still require a
+> qualified manufacturing engineer.
+
+The project has two deliberately separated services:
+
+- **Backend** (`backend/`) — validation, LangGraph workflow, capability libraries,
+  process rules, verification and RAG.
+- **Frontend** (`frontend/`) — Jinja2 web UI, dynamic form, status polling and RAG
+  management pages. It communicates with the backend only over HTTP/JSON.
 
 ## Table of Contents
 
