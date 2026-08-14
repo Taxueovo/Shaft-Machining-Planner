@@ -18,6 +18,18 @@ Two components:
 - **frontend** (`frontend/`): Jinja2 web UI with dynamic form, status polling, and
   RAG management pages.
 
+## Table of Contents
+
+- [Authors & Maintainers](#authors--maintainers)
+- [1. Architecture](#1-architecture)
+- [2. Features](#2-features)
+- [3. Installation](#3-installation)
+- [4. Running](#4-running)
+- [5. Environment variables](#5-environment-variables)
+- [6. Directory structure](#6-directory-structure)
+- [7. Data interpretation](#7-data-interpretation)
+- [8. Tests](#8-tests)
+
 ## Authors & Maintainers
 
 - **Taxueovo** — core maintainer and primary developer.
