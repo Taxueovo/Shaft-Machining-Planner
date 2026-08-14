@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">Shaft Machining Planner</title>
+  <desc id="desc">An industrial engineering banner showing a stepped motor shaft and a verified machining process route.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#111a28"/>
+      <stop offset="0.6" stop-color="#1c2b42"/>
+      <stop offset="1" stop-color="#223b62"/>
+    </linearGradient>
+    <linearGradient id="steel" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#f8fbff"/>
+      <stop offset="0.22" stop-color="#aebed1"/>
+      <stop offset="0.52" stop-color="#61738a"/>
+      <stop offset="0.78" stop-color="#d6e0ec"/>
+      <stop offset="1" stop-color="#64768c"/>
+    </linearGradient>
+    <linearGradient id="blue" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#6f9cff"/>
+      <stop offset="1" stop-color="#2d64db"/>
+    </linearGradient>
+    <pattern id="grid" width="24" height="24" patternUnits="userSpaceOnUse">
+      <path d="M24 0H0V24" fill="none" stroke="#8ca1bc" stroke-width="0.7" opacity="0.16"/>
+    </pattern>
+    <filter id="shadow" x="-30%" y="-50%" width="160%" height="200%">
+      <feDropShadow dx="0" dy="14" stdDeviation="12" flood-color="#000" flood-opacity="0.35"/>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="360" rx="28" fill="url(#background)"/>
+  <rect width="1200" height="360" rx="28" fill="url(#grid)"/>
+  <path d="M0 290C180 250 330 335 510 296C700 255 842 323 1200 252V360H0Z" fill="#0c1420" opacity="0.35"/>
+  <circle cx="1060" cy="35" r="210" fill="#2f64bd" opacity="0.16"/>
+
+  <g transform="translate(68 62)">
+    <g>
+      <rect width="54" height="54" rx="14" fill="url(#blue)"/>
+      <path d="M11 22h8v-6h16v6h8v10h-8v6H19v-6h-8z" fill="none" stroke="#fff" stroke-width="2.4" stroke-linejoin="round"/>
+      <path d="M15 27h24" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/>
+    </g>
+    <text x="0" y="105" fill="#f5f8fc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="45" font-weight="750" letter-spacing="-1.5">Shaft Machining Planner</text>
+    <text x="0" y="145" fill="#b7c5d8" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="19">Geometry in. Verified process route out.</text>
+    <g transform="translate(0 180)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+      <rect width="137" height="39" rx="8" fill="#2456d1"/>
+      <text x="68.5" y="25" text-anchor="middle" fill="#fff" font-size="13" font-weight="700">RAG grounded</text>
+      <rect x="149" width="150" height="39" rx="8" fill="#fff" fill-opacity="0.08" stroke="#8ca5c9" stroke-opacity="0.45"/>
+      <text x="224" y="25" text-anchor="middle" fill="#d5deeb" font-size="13" font-weight="650">Resource verified</text>
+      <rect x="311" width="150" height="39" rx="8" fill="#fff" fill-opacity="0.08" stroke="#8ca5c9" stroke-opacity="0.45"/>
+      <text x="386" y="25" text-anchor="middle" fill="#d5deeb" font-size="13" font-weight="650">Excel export</text>
+    </g>
+  </g>
+
+  <g transform="translate(704 56)">
+    <g filter="url(#shadow)">
+      <rect width="430" height="248" rx="18" fill="#152235" stroke="#516783"/>
+      <rect x="16" y="16" width="398" height="216" rx="12" fill="#101b2a" stroke="#354b66"/>
+    </g>
+    <text x="34" y="47" fill="#8ea2bc" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" font-size="10" font-weight="700" letter-spacing="1.6">PROCESS ROUTE · VERIFIED</text>
+    <circle cx="392" cy="42" r="5" fill="#32d583"/>
+
+    <g transform="translate(42 67)">
+      <path d="M0 62H29V45H76V28H125V40H172V18H233V34H281V50H330V62H360V94H330V106H281V122H233V138H172V116H125V128H76V111H29V94H0Z" fill="url(#steel)" stroke="#d9e4f0" stroke-width="1.3"/>
+      <path d="M29 78H330" stroke="#1d2e44" stroke-width="1.2" stroke-dasharray="7 5" opacity="0.85"/>
+      <path d="M190 18v16h27V18" fill="#101b2a" stroke="#d9e4f0" stroke-width="1.2"/>
+      <path d="M87 28v16h26V28" fill="#101b2a" stroke="#d9e4f0" stroke-width="1.2"/>
+      <g stroke="#6f9cff" stroke-width="1" opacity="0.75">
+        <path d="M29 11v29M76 11v13M125 11v13M172 11v3M233 11v3M281 11v35M330 11v35"/>
+        <path d="M29 11h301"/>
+      </g>
+    </g>
+
+    <g transform="translate(35 207)" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+      <g>
+        <circle cx="8" cy="8" r="8" fill="#2456d1"/>
+        <text x="8" y="12" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">1</text>
+        <text x="22" y="12" fill="#c5d1df" font-size="10" font-weight="650">TURN</text>
+      </g>
+      <path d="M78 8h26" stroke="#617994" stroke-width="1.5"/>
+      <g transform="translate(110)">
+        <circle cx="8" cy="8" r="8" fill="#2456d1"/>
+        <text x="8" y="12" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">2</text>
+        <text x="22" y="12" fill="#c5d1df" font-size="10" font-weight="650">HEAT</text>
+      </g>
+      <path d="M188 8h26" stroke="#617994" stroke-width="1.5"/>
+      <g transform="translate(220)">
+        <circle cx="8" cy="8" r="8" fill="#2456d1"/>
+        <text x="8" y="12" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">3</text>
+        <text x="22" y="12" fill="#c5d1df" font-size="10" font-weight="650">GRIND</text>
+      </g>
+      <path d="M304 8h24" stroke="#617994" stroke-width="1.5"/>
+      <circle cx="348" cy="8" r="8" fill="#2f855a"/>
+      <path d="M344 8l3 3 5-6" fill="none" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>
