@@ -35,7 +35,7 @@ def reranker_available() -> bool:
         return False
 
     try:
-        from sentence_transformers import CrossEncoder
+        from sentence_transformers import CrossEncoder  # noqa: F401  # availability probe
         _reranker_available = True
     except ImportError:
         logger.warning("sentence-transformers not installed, reranker unavailable")

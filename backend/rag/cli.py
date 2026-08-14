@@ -23,7 +23,6 @@ import os
 import sys
 import time
 from pathlib import Path
-from typing import Optional
 
 # Silence verbose logging from chromadb and its dependencies
 for _lib in ("chromadb", "chromadb.telemetry", "opentelemetry",
@@ -33,11 +32,11 @@ for _lib in ("chromadb", "chromadb.telemetry", "opentelemetry",
 from .config import (
     SPECS_DIR, CASES_DIR, CHROMA_DIR,
     COLLECTION_SPECS, COLLECTION_CASES,
-    EMBEDDING_MODEL, embedding_available,
+    EMBEDDING_MODEL,
 )
 from .indexer import IndexBuilder
 from .retriever import HybridRetriever
-from .schemas import IndexStatus, Channel
+from .schemas import Channel
 
 # ── Optional Rich imports ──
 try:
@@ -45,8 +44,8 @@ try:
     from rich.table import Table
     from rich.panel import Panel
     from rich.text import Text
-    from rich.live import Live
-    from rich.spinner import Spinner
+    from rich.live import Live  # noqa: F401  # availability probe
+    from rich.spinner import Spinner  # noqa: F401  # availability probe
     from rich import box
     HAS_RICH = True
 except ImportError:
@@ -371,7 +370,7 @@ class RAGCli:
             return
 
         print()
-        self._warn(f"⚠️  This will delete all index data:")
+        self._warn("⚠️  This will delete all index data:")
         self._info(f"  Specs: {status.specs.document_count} chunks")
         self._info(f"  Cases: {status.cases.document_count} chunks")
         print()

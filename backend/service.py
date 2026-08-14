@@ -13,6 +13,7 @@ import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
+from pathlib import Path
 from typing import Any
 
 from langgraph.types import Command
@@ -225,7 +226,6 @@ class PlanningService:
 
     def export_process_card_excel(self, job_id: str) -> Path:
         """Generate the process card Excel file, save it to the project output/ directory, and return the file path."""
-        from pathlib import Path as _Path
         from openpyxl import Workbook
         from rules import HEAT_NAME, SURFACE_NAME, FEATURE_NAME
         from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
@@ -274,7 +274,10 @@ class PlanningService:
         def hdr_row(row, ncol):
             for c in range(1, ncol + 1):
                 cell = ws.cell(row=row, column=c)
-                cell.font = hdr_font; cell.fill = hdr_fill; cell.alignment = ctr; cell.border = bdr
+                cell.font = hdr_font
+                cell.fill = hdr_fill
+                cell.alignment = ctr
+                cell.border = bdr
 
         def body_rng(r1, r2, ncol, left_col=0):
             for rr in range(r1, r2 + 1):
@@ -445,7 +448,7 @@ class PlanningService:
             ws.column_dimensions[get_column_letter(c)].width = w
 
         # ── Save ──
-        project_root = _Path(__file__).resolve().parent.parent
+        project_root = Path(__file__).resolve().parent.parent
         output_dir = project_root / "output"
         output_dir.mkdir(exist_ok=True)
         file_path = output_dir / f"process_card_{job_id}.xlsx"

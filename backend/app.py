@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
+import signal
 import uuid
 from typing import Any, Optional
 
@@ -21,6 +22,8 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )
+
+logger = logging.getLogger(__name__)
 
 from models.workflow import PlanningRequest
 from models.input import ChoicesRequest
@@ -70,7 +73,6 @@ async def heartbeat() -> dict[str, str]:
 @app.post("/api/v1/shutdown")
 async def shutdown() -> dict[str, str]:
     """Graceful shutdown signal from frontend."""
-    import os, signal
     logger.info("Shutdown signal received from frontend.")
     os.kill(os.getpid(), signal.SIGTERM)
     return {"status": "shutting_down"}

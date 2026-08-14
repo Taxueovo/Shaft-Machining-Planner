@@ -125,7 +125,7 @@ class TaxonomyDB:
         # Check if node has children
         children = tree.get_children(node_id)
         if children and not recursive:
-            raise ValueError(f"Node has children, use recursive=True to delete")
+            raise ValueError("Node has children, use recursive=True to delete")
 
         # Remove node and all descendants
         to_remove = {node_id}

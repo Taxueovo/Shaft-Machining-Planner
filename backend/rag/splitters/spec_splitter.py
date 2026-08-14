@@ -164,7 +164,6 @@ def _fallback_chunk_by_size(
     paragraphs = text.split("\n\n")
     chunks: list[SpecChunk] = []
     buffer = ""
-    overlap_buffer = ""
 
     for para in paragraphs:
         para = para.strip()

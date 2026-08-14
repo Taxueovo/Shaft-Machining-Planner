@@ -12,16 +12,14 @@ Standalone usage:
 
 from __future__ import annotations
 
-import json
 import logging
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from .config import SPECS_DIR, CASES_DIR, SPEC_EXTENSIONS, CASE_EXTENSIONS, embedding_available
 from .schemas import IndexStatus, CollectionStatus
 from .splitters import split_spec, split_case
-from .embedding import embed_query
 
 logger = logging.getLogger(__name__)
 

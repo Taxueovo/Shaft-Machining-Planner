@@ -7,7 +7,6 @@ Designed as a standalone Router; failures to load do not affect the main app.
 from __future__ import annotations
 
 import logging
-from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import APIRouter, HTTPException, Query
@@ -36,7 +35,6 @@ def _init() -> bool:
         from .vector_store import VectorStoreManager
         from .indexer import IndexBuilder
         from .retriever import HybridRetriever
-        from .config import embedding_available, SPECS_DIR, CASES_DIR, SPEC_EXTENSIONS, CASE_EXTENSIONS
 
         _store = VectorStoreManager()
         _builder = IndexBuilder()
