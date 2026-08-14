@@ -14,7 +14,7 @@
 
 ## Subsystem
 
-<!-- peagent backend / peagent frontend / cadagent / RAG / other -->
+<!-- peagent backend / peagent frontend / RAG / other -->
 
 ## Testing
 

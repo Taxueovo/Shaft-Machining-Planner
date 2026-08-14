@@ -5,19 +5,18 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Maintainer](https://img.shields.io/badge/maintainer-Taxueovo-blue)](https://github.com/Taxueovo)
 
-Structured process planning for motor shafts, with one-click CAD import.
+Structured process planning for motor shafts, with one-click launch.
 
 ShaftPlanner plans the machining process route (process planning) of stepped shafts —
 turning, keyways, splines, gears, bores, heat treatment and finishing — and verifies
 the plan against the local machine tool and cutting tool capability libraries.
 
-One project, two subsystems:
+Two components:
 
-- **peagent** (`backend/` + `frontend/`): structured shaft process planning with
-  local resource selection (machine tools / cutting tools) and verification.
-- **cadagent** (`cadagent/`): multi-modal 3D CAD model analysis that acts as a
-  second input path for peagent (upload a STEP/BREP file instead of typing the
-  form by hand).
+- **backend** (`backend/`): process planning workflow (input validation, LangGraph,
+  capability libraries, process rules, verification, RAG).
+- **frontend** (`frontend/`): Jinja2 web UI with dynamic form, status polling, and
+  RAG management pages.
 
 ## Authors & Maintainers
 
@@ -27,18 +26,13 @@ One project, two subsystems:
 
 ```
 User
- ├─[manual form]──▶ frontend(8000) ──▶ backend(8001) ──▶ process route + resource verification
- └─[upload STEP]▶ cadagent(8100) ── feature extraction + LLM completion ──▶ prefilled form → submit job
+ └─[manual form]──▶ frontend(8000) ──▶ backend(8001) ──▶ process route + resource verification
 ```
 
 - `backend/`: input validation, LangGraph workflow, machine tool / cutting tool
   Excel libraries, process rules, verification, RAG.
-- `frontend/`: Jinja2 pages, dynamic form, status polling, HTTP proxy,
-  "Import from CAD".
-- `cadagent/`: STEP/BREP → B-Rep feature extraction + multi-view rendering + CAE
-  chat; `/api/v1/planning-input` generates a peagent-compatible `PlanningRequest`
-  draft in one step (geometric rule mapping + LLM completion of engineering intent).
-- The frontend never imports backend business functions; the processes
+- `frontend/`: Jinja2 pages, dynamic form, status polling, HTTP proxy.
+- The frontend never imports backend business functions; the two processes
   communicate only over HTTP/JSON.
 
 ## 2. Features
@@ -55,12 +49,6 @@ Implemented:
   conditional operation insertion, per-operation resource display,
   rule-based Verification
 - RAG (process handbook + case base) injected into the planning workflow
-- **CAD import**: upload STEP/BREP → auto-detect shaft segments / keyways / radial
-  holes / splines / gears / bores → backfill the form (LLM-suggested fields are
-  highlighted for confirmation) → the result page shows the cadagent 3D renders
-- **Full field coverage**: the peagent data model carries every field extracted by
-  cadagent (keyway type, hole count, spline major/minor diameter, helical gear
-  helix angle, stepped bore, etc.)
 
 Not implemented: cost calculation, Word/PDF export, ERP/MES integration,
 multi-user support and database persistence.
@@ -82,14 +70,12 @@ conda activate shaftplanner
 pip install -r requirements.txt
 ```
 
-cadagent feature extraction depends on `pythonocc-core` (install separately).
-
 ## 4. Running
 
 ### One-click start (recommended)
 
 ```bash
-python start_shaftplanner.py              # starts cadagent(8100) + peagent frontend/backend, opens the browser
+python start_shaftplanner.py              # starts the backend + frontend, opens the browser
 python start_shaftplanner.py --no-browser # do not open the browser
 ```
 
@@ -99,17 +85,15 @@ and idempotent skipping of ports already running.
 
 ### Running subsystems individually (debugging)
 
-- `python run_cadagent.py` — cadagent only
-- `python frontend/run_frontend.py` — peagent only (auto-starts the backend)
-- `cd backend && python run_backend.py` — peagent backend only
+- `python frontend/run_frontend.py` — frontend only (auto-starts the backend)
+- `cd backend && python run_backend.py` — backend only
 
 ### Default addresses
 
-| Service          | URL                          |
-|------------------|------------------------------|
-| peagent frontend | http://127.0.0.1:8000        |
-| peagent backend  | http://127.0.0.1:8001        |
-| cadagent         | http://127.0.0.1:8100 (Swagger: `/docs`) |
+| Service          | URL                   |
+|------------------|-----------------------|
+| peagent frontend | http://127.0.0.1:8000 |
+| peagent backend  | http://127.0.0.1:8001 |
 
 ## 5. Environment variables
 
@@ -122,7 +106,6 @@ Configuration is read from the project-root `.env` file (see `frontend/main.py`,
 | `FRONTEND_URL`        | `http://127.0.0.1:8000`   | peagent frontend URL (launcher / health checks)    |
 | `FRONTEND_HOST`       | `127.0.0.1`               | Frontend listen host                               |
 | `FRONTEND_PORT`       | `8000`                    | Frontend listen port                               |
-| `CAD_AGENT_URL`       | `http://127.0.0.1:8100`   | cadagent service URL (CAD import HTTP target)      |
 | `LOG_LEVEL`           | `info`                    | Uvicorn log level                                  |
 | `EMBEDDING_API_KEY`   | —                         | Embedding provider API key (required for RAG)      |
 | `EMBEDDING_MODEL`     | —                         | Embedding model name (required for RAG)            |
@@ -142,14 +125,12 @@ ShaftPlanner/
 ├── frontend/         # peagent frontend (Web UI)
 │   ├── main.py / run_frontend.py
 │   ├── templates/ static/
-├── cadagent/         # 3D CAD analysis (internal package name: cadagent)
-│   ├── ui/ services/ config/ core/ agents/ skills/ Scripts/ tests/
 ├── data/             # capability libraries (machines.xlsx / tools.xlsx) + case base
 ├── output/           # process card Excel exports
 ├── scripts/          # tooling scripts (e.g. documentation generation)
-├── docs/             # design documents (including the CAD integration design)
+├── docs/             # design documents
 ├── .env              # unified environment configuration
-├── start_shaftplanner.py / run_cadagent.py
+├── start_shaftplanner.py
 └── requirements.txt / environment.yml
 ```
 
@@ -170,6 +151,5 @@ result is usually `conditional_pass`, requiring engineer confirmation.
 ## 8. Tests
 
 ```bash
-cd cadagent && python -m pytest tests/ -q     # cadagent mapping / validation tests
 cd backend && python -m pytest tests/ -q      # peagent backend tests
 ```

@@ -2,11 +2,10 @@
 ShaftPlanner one-click launcher
 ============================
 
-Starts three services at the same time:
+Starts two services at the same time:
 
-    1. cadagent         :8100  (3D CAD feature extraction + multi-view rendering)
-    2. peagent backend  :8001  (motor shaft process planning LangGraph workflow)
-    3. peagent frontend :8000  (Web UI, including "Import from CAD")
+    1. peagent backend  :8001  (motor shaft process planning LangGraph workflow)
+    2. peagent frontend :8000  (Web UI)
 
 Usage:
     python start_shaftplanner.py                # Start everything and open the browser
@@ -32,11 +31,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
-CAD_RUNNER = ROOT / "run_cadagent.py"
 PE_BACKEND_RUNNER = ROOT / "backend" / "run_backend.py"
 PE_FRONTEND_RUNNER = ROOT / "frontend" / "run_frontend.py"
 
-CAD_HEALTH = "http://127.0.0.1:8100/health"
 PE_BACKEND_HEALTH = "http://127.0.0.1:8001/health"
 PE_FRONTEND_URL = "http://127.0.0.1:8000"
 
@@ -107,26 +104,12 @@ def main() -> None:
 
     processes: list[tuple[str, subprocess.Popen]] = []
     try:
-        # ── Two batches started in parallel (already-running ports are skipped) ──
-        # The old implementation did "start → wait ready → start the next" one by one,
-        # so a cold start took the sum of all service startup times.
-        # Now:
-        #   Batch 1: cadagent + backend start at the same time (overlaps the startup of the two slow services);
-        #   Batch 2: the frontend is started only after the backend is ready (frontend run_frontend.py
-        #            --frontend-only hard-checks backend liveness, so it must wait for the backend).
-        # Total readiness time drops from "sum" to "slowest service + frontend".
+        # ── Backend first, then the frontend ──
+        # The frontend runner (run_frontend.py --frontend-only) hard-checks backend
+        # liveness, so it must wait for the backend to be ready.
         targets: list[tuple[str, str]] = []  # (display name, health check URL)
 
-        # ── Batch 1: cadagent and backend start in parallel ──
-        # 1. cadagent :8100
-        if _ready(CAD_HEALTH, 2):
-            print(f"[ShaftPlanner] cadagent already running ({CAD_HEALTH})")
-        else:
-            _start(processes, "cadagent (8100)",
-                   [python, str(CAD_RUNNER), "--port", "8100"], ROOT, env)
-            targets.append(("cadagent (8100)", CAD_HEALTH))
-
-        # 2. peagent backend :8001
+        # 1. peagent backend :8001
         if _ready(PE_BACKEND_HEALTH, 2):
             print(f"[ShaftPlanner] peagent backend already running ({PE_BACKEND_HEALTH})")
         else:
@@ -134,12 +117,12 @@ def main() -> None:
                    [python, str(PE_BACKEND_RUNNER)], ROOT / "backend", env)
             targets.append(("peagent backend (8001)", PE_BACKEND_HEALTH))
 
-        # Wait for the backend to be ready (cadagent is starting in the background meanwhile)
+        # Wait for the backend to be ready
         backend_ready_now = _ready(PE_BACKEND_HEALTH, 60)
         if not backend_ready_now:
             print("[ShaftPlanner] Warning: peagent backend startup timed out, check the console error output.")
 
-        # ── Batch 2: frontend (only started if already running or the backend is ready) ──
+        # 2. peagent frontend :8000 (only started if already running or the backend is ready)
         if _ready(PE_FRONTEND_URL, 2):
             print(f"[ShaftPlanner] peagent frontend already running ({PE_FRONTEND_URL})")
         elif backend_ready_now or _ready(PE_BACKEND_HEALTH, 1):
@@ -150,7 +133,7 @@ def main() -> None:
         else:
             print("[ShaftPlanner] Warning: peagent backend not ready, frontend not started.")
 
-        # ── Wait for the remaining services to be ready (cadagent + frontend, polled in parallel) ──
+        # ── Wait for the remaining services to be ready ──
         _wait_all(targets, timeout=60)
 
         print()
@@ -158,8 +141,6 @@ def main() -> None:
         print("ShaftPlanner ready")
         print(f"  peagent frontend : {PE_FRONTEND_URL}")
         print(f"  peagent backend  : {PE_BACKEND_HEALTH}")
-        print(f"  cadagent         : {CAD_HEALTH}")
-        print("  Upload a STEP/BREP file at the top of the Custom Process Planning page for one-click import")
         print("  Press Ctrl+C or close this window to stop all services")
         print("=" * 60)
 

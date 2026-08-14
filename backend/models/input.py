@@ -14,7 +14,7 @@ class ShaftSegment(BaseModel):
     diameter_upper_deviation_mm: Optional[float] = None
     diameter_lower_deviation_mm: Optional[float] = None
     roughness_ra: Optional[float] = Field(default=None, gt=0)
-    # Additional CAD-extracted information (input-provided, preserved when the segment round-trips)
+    # Additional geometry information (input-provided, preserved when the segment round-trips)
     surface_area_mm2: Optional[float] = Field(default=None, gt=0)
     segment_type: Optional[str] = None
 
@@ -43,7 +43,7 @@ class FeatureInput(BaseModel):
 
     keyway_width_mm: Optional[float] = Field(default=None, gt=0)
     keyway_depth_mm: Optional[float] = Field(default=None, gt=0)
-    # Additional CAD feature classification (cad_agent: profile_key / wedge_key / flat_key)
+    # Keyway cross-section classification: profile_key / wedge_key / flat_key
     keyway_type: Optional[str] = None
     hole_diameter_mm: Optional[float] = Field(default=None, gt=0)
     hole_type: Optional[Literal["through", "blind"]] = None
@@ -51,7 +51,7 @@ class FeatureInput(BaseModel):
     hole_direction: Optional[Literal["radial", "axial"]] = None
     # Number of holes at the same axial position (e.g. 2/4 radial oil holes)
     hole_count: Optional[int] = Field(default=None, ge=1)
-    # Angular start angle of the hole (deg): angle of the first hole when multiple holes share a position (extracted by cad_agent)
+    # Angular start angle of the hole (deg): angle of the first hole when multiple holes share a position
     hole_angle_deg: Optional[float] = Field(default=None, ge=0, lt=360)
     flat_width_mm: Optional[float] = Field(default=None, gt=0)
     thread_specification: Optional[str] = None
@@ -65,7 +65,7 @@ class FeatureInput(BaseModel):
     spline_type: Optional[Literal["involute", "straight"]] = None
     spline_teeth: Optional[int] = Field(default=None, gt=0)
     spline_module: Optional[float] = Field(default=None, gt=0)
-    # Spline centering and gear-hobbing parameters (extracted by cad_agent)
+    # Spline centering and gear-hobbing parameters
     spline_major_diameter_mm: Optional[float] = Field(default=None, gt=0)
     spline_minor_diameter_mm: Optional[float] = Field(default=None, gt=0)
     spline_pressure_angle_deg: Optional[float] = Field(default=None, gt=0)
@@ -82,7 +82,7 @@ class FeatureInput(BaseModel):
     gear_teeth: Optional[int] = Field(default=None, gt=0)
     gear_pressure_angle: Optional[float] = Field(default=None, gt=0)
     gear_face_width_mm: Optional[float] = Field(default=None, gt=0)
-    # Gear details (extracted by cad_agent: spur/helical + helix angle + full tooth height + tip/root circle diameters)
+    # Gear details: spur/helical + helix angle + full tooth height + tip/root circle diameters
     gear_type: Optional[Literal["spur", "helical"]] = None
     helix_angle_deg: Optional[float] = Field(default=None, ge=0, lt=90)
     gear_tooth_height_mm: Optional[float] = Field(default=None, gt=0)
@@ -91,14 +91,13 @@ class FeatureInput(BaseModel):
     gear_outer_diameter_mm: Optional[float] = Field(default=None, gt=0)
     gear_root_diameter_mm: Optional[float] = Field(default=None, gt=0)
     # Whether the gear needs post-heat-treatment finishing (gear grinding / hard hobbing):
-    # CAD import sets a default by spur/helical type, editable in the form.
     # True -> schedule gear finishing after hardening; None/False -> keep the existing
     # logic of splitting finishing only for high-precision gears.
     gear_finish_required: Optional[bool] = None
     flange_diameter_mm: Optional[float] = Field(default=None, gt=0)
     flange_thickness_mm: Optional[float] = Field(default=None, gt=0)
     flange_holes: Optional[int] = Field(default=None, ge=0)
-    # Bore feature: stepped/multi-segment bore, one feature per segment (cad_agent inner_bore)
+    # Bore feature: stepped/multi-segment bore, one feature per segment
     bore_diameter_mm: Optional[float] = Field(default=None, gt=0)
     bore_length_mm: Optional[float] = Field(default=None, gt=0)
     bore_through: Optional[bool] = None

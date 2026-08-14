@@ -30,9 +30,9 @@ class PlanningRequest(BaseModel):
     segments: list[ShaftSegment] = Field(min_length=1)
     features: list[FeatureInput] = Field(default_factory=list)
     global_requirements: GlobalRequirements = Field(default_factory=GlobalRequirements)
-    # Additional CAD-extracted information (input-provided, preserved when the request round-trips)
+    # Additional geometry information (input-provided, preserved when the request round-trips)
     main_axis: Optional[list[float]] = Field(default=None, max_length=3)
-    cad_statistics: Optional[dict[str, Any]] = None
+    geometry_statistics: Optional[dict[str, Any]] = None
 
     @model_validator(mode="after")
     def validate_request(self) -> "PlanningRequest":

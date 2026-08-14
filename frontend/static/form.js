@@ -84,9 +84,6 @@
   const submit = document.getElementById("submit-button");
   let segmentNo = 0, featureNo = 0;
 
-  // CAD import session data (render images passed to the result page for 3D display)
-  let __cadRenderData = null;
-
   const numOrNull = value => value === "" ? null : Number(value);
   let errorTimer = null;
   const showError = msg => {
@@ -125,8 +122,8 @@
       <td><input class="seg-upper" type="number" step="0.001" value="${v.diameter_upper_deviation_mm ?? ""}"></td>
       <td><input class="seg-lower" type="number" step="0.001" value="${v.diameter_lower_deviation_mm ?? ""}"></td>
       <td><input class="seg-ra" type="number" min="0.001" step="any" value="${v.roughness_ra ?? ""}"></td>
-      <td><input class="seg-area" type="number" min="0.001" step="any" value="${v.surface_area_mm2 ?? ""}" title="CAD-extracted cylindrical surface area"></td>
-      <td><input class="seg-type" value="${v.segment_type ?? ""}" title="CAD classification (e.g. Rotor_Core_Fit)"></td>
+      <td><input class="seg-area" type="number" min="0.001" step="any" value="${v.surface_area_mm2 ?? ""}" title="Cylindrical surface area"></td>
+      <td><input class="seg-type" value="${v.segment_type ?? ""}" title="Segment classification (e.g. Rotor_Core_Fit)"></td>
       <td><button type="button" class="button danger">Delete</button></td>`;
     segmentsBody.appendChild(row);
     row.querySelector(".seg-length").addEventListener("input", updateTotal);
@@ -157,7 +154,7 @@
         <label>Direction<select class="hole-direction"><option value="radial">Radial</option><option value="axial">Axial</option></select></label>
         <label class="hole-depth-wrap hidden">Blind Depth (mm)<input class="hole-depth" type="number" min="0.001" step="0.001"></label>
         <label>Hole Count<input class="hole-count" type="number" min="1" step="1" value="1"></label>
-        <label>Hole Angle (°)<input class="hole-angle" type="number" min="0" max="359.9" step="1" title="First-hole angle for multiple holes at the same position (CAD-extracted)"></label>
+        <label>Hole Angle (°)<input class="hole-angle" type="number" min="0" max="359.9" step="1" title="First-hole angle for multiple holes at the same position"></label>
       </div>`;
     if (type === "bore") return `
       <div class="grid four">
@@ -234,8 +231,8 @@
         <label>Gear Type<select class="gear-type"><option value="spur">Spur</option><option value="helical">Helical</option></select></label>
         <label>Helix Angle (°)<input class="gear-helix" type="number" min="0" step="any" value="0"></label>
         <label>Tooth Height (mm)<input class="gear-tooth-height" type="number" min="0.001" step="0.001"></label>
-        <label>Outer Dia (mm)<input class="gear-outer-dia" type="number" min="0.001" step="0.001" title="Gear tip/outer diameter (CAD-extracted, rough-turning reference)"></label>
-        <label>Root Dia (mm)<input class="gear-root-dia" type="number" min="0.001" step="0.001" title="Gear root diameter (CAD-extracted, hobbing reference)"></label>
+        <label>Outer Dia (mm)<input class="gear-outer-dia" type="number" min="0.001" step="0.001" title="Gear tip/outer diameter (rough-turning reference)"></label>
+        <label>Root Dia (mm)<input class="gear-root-dia" type="number" min="0.001" step="0.001" title="Gear root diameter (hobbing reference)"></label>
         <label>Post-Heat Finish<input class="gear-finish" type="checkbox" title="Whether the gear needs post-heat-treatment finishing (grinding / hard hobbing)"></label>
       </div>`;
     if (type === "flange") return `
@@ -553,230 +550,6 @@
   document.getElementById("add-segment").addEventListener("click", () => addSegment());
   document.getElementById("add-feature").addEventListener("click", () => addFeature());
 
-  // ==========================================================================
-  // CAD import: calls cad_agent /api/v1/planning-input and prefills the form
-  // ==========================================================================
-  const CAD_AGENT_URL = (window.CAD_AGENT_URL || "http://127.0.0.1:8100").replace(/\/+$/, "");
-  const cadFileInput = document.getElementById("cad-file");
-  const cadImportBtn = document.getElementById("cad-import-btn");
-  const cadClearBtn = document.getElementById("cad-clear-btn");
-  const cadStatus = document.getElementById("cad-status");
-  const cadWarnings = document.getElementById("cad-warnings");
-  const cadRender = document.getElementById("cad-render");
-  const cadAgentBadge = document.getElementById("cad-agent-badge");
-
-  const escText = value => String(value ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;");
-  const setCadStatus = (msg, cls = "") => { cadStatus.textContent = msg; cadStatus.className = "cad-status " + cls; };
-
-  async function checkCadAgent() {
-    try {
-      const resp = await fetch("/api/cad-agent-status");
-      const data = await resp.json();
-      if (data.available) {
-        cadImportBtn.disabled = false;
-        cadAgentBadge.textContent = "CAD service ready";
-        cadAgentBadge.className = "badge success";
-        setCadStatus("");
-      } else {
-        cadImportBtn.disabled = true;
-        cadAgentBadge.textContent = "CAD service offline";
-        cadAgentBadge.className = "badge danger";
-        setCadStatus("CAD service unavailable — start it with: python run_cadagent.py", "error");
-      }
-    } catch {
-      cadImportBtn.disabled = true;
-      cadAgentBadge.textContent = "CAD service offline";
-      cadAgentBadge.className = "badge danger";
-    }
-  }
-
-  function renderCadViews(images) {
-    cadRender.innerHTML = "";
-    const views = { front: "Front", top: "Top", right: "Right", isometric: "Isometric" };
-    Object.entries(images || {}).forEach(([key, img]) => {
-      if (!img || !img.success || !img.base64) return;
-      const div = document.createElement("div");
-      div.className = "cad-render-view";
-      const el = document.createElement("img");
-      el.src = img.base64.startsWith("data:") ? img.base64 : "data:image/jpeg;base64," + img.base64;
-      el.alt = key;
-      div.appendChild(el);
-      const label = document.createElement("div");
-      label.className = "view-label";
-      label.textContent = views[key] || key;
-      div.appendChild(label);
-      cadRender.appendChild(div);
-    });
-  }
-
-  function showCadWarnings(warnings) {
-    if (warnings && warnings.length) {
-      cadWarnings.innerHTML = warnings.map(w => `<div style="margin:2px 0">• ${escText(w)}</div>`).join("");
-      cadWarnings.classList.remove("hidden");
-    } else {
-      cadWarnings.classList.add("hidden");
-    }
-  }
-
-  function highlightSuggestedSegments(segments) {
-    [...segmentsBody.querySelectorAll("tr")].forEach((row, i) => {
-      const seg = (segments || [])[i];
-      if (!seg || !seg.llm_suggested) return;
-      [".seg-upper", ".seg-lower", ".seg-ra"].forEach(sel => {
-        const inp = row.querySelector(sel);
-        if (inp && inp.value !== "") inp.classList.add("suggested");
-      });
-      const cell = row.querySelector(".seg-id")?.closest("td");
-      if (cell) {
-        const tag = document.createElement("span");
-        tag.className = "suggested-tag";
-        tag.textContent = "AI";
-        tag.title = "AI-suggested value, confirm against the drawing";
-        cell.appendChild(tag);
-      }
-    });
-  }
-
-  function clearAiHighlight(el) {
-    // Clear any existing AI highlight and tag on the field (prevents stacking / residue on repeated imports)
-    if (!el) return;
-    el.classList.remove("suggested");
-    let sibling = el.nextElementSibling;
-    while (sibling && sibling.classList.contains("suggested-tag")) {
-      const next = sibling.nextElementSibling;
-      sibling.remove();
-      sibling = next;
-    }
-  }
-
-  function highlightAiField(el, text) {
-    if (!el) return;
-    clearAiHighlight(el);               // Idempotent: remove the old tag first, then add the new one
-    el.classList.add("suggested");
-    const tag = document.createElement("span");
-    tag.className = "suggested-tag";
-    tag.textContent = text;
-    tag.title = "AI-suggested value, confirm against the drawing";
-    el.after(tag);
-  }
-
-  async function importFromCAD() {
-    const file = cadFileInput.files[0];
-    if (!file) { setCadStatus("Please choose a STEP/BREP file first.", "error"); return; }
-    const ext = "." + (file.name.split(".").pop() || "").toLowerCase();
-    if (![".stp", ".step", ".brep"].includes(ext)) {
-      setCadStatus("Unsupported format: " + ext + ". Supported: .stp / .step / .brep", "error");
-      return;
-    }
-    cadImportBtn.disabled = true;
-    cadImportBtn.textContent = "Importing...";
-    setCadStatus("Uploading and extracting features from CAD model (may take a while)...");
-    const sessionId = (crypto.randomUUID && crypto.randomUUID()) || ("s-" + Date.now() + "-" + Math.random().toString(36).slice(2));
-    const cadProgress = document.getElementById("cad-progress");
-    const cadProgressBar = document.getElementById("cad-progress-bar");
-    const cadProgressValue = document.getElementById("cad-progress-value");
-    const cadProgressStep = document.getElementById("cad-progress-step");
-    cadProgress.classList.remove("hidden");
-    cadProgressBar.style.width = "0%";
-    cadProgressValue.textContent = "0%";
-    cadProgressStep.textContent = "Preparing";
-    const pollCadProgress = async () => {
-      try {
-        const pr = await fetch(CAD_AGENT_URL + "/api/v1/planning-progress/" + sessionId);
-        if (!pr.ok) return;
-        const p = await pr.json();
-        const pct = Math.max(0, Math.min(100, p.progress || 0));
-        cadProgressBar.style.width = pct + "%";
-        cadProgressValue.textContent = pct + "%";
-        cadProgressStep.textContent = p.message || p.current_step || "Working...";
-      } catch (e) { /* transient poll errors are ignored */ }
-    };
-    const pollTimer = setInterval(pollCadProgress, 700);
-    try {
-      const fd = new FormData();
-      fd.append("file", file);
-      if (materialSelect.value) fd.append("material", materialSelect.value);
-      fd.append("suggest", "true");
-      fd.append("session_id", sessionId);
-      const resp = await fetch(CAD_AGENT_URL + "/api/v1/planning-input", { method: "POST", body: fd });
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(JSON.stringify(data.detail || data));
-      if (!data.success) throw new Error(data.error || "CAD analysis failed.");
-      const pr = data.planning_request || {};
-
-      // Clear existing segments/features and prefill
-      segmentsBody.innerHTML = ""; featuresBox.innerHTML = ""; segmentNo = 0; featureNo = 0;
-      empty.classList.remove("hidden");
-      (pr.segments || []).forEach(s => addSegment(s));
-      highlightSuggestedSegments(pr.segments);
-      (pr.features || []).forEach(f => addFeature(f));
-
-      // Blank diameter / type / inner diameter
-      if (pr.blank_diameter_mm) document.getElementById("blank-diameter").value = pr.blank_diameter_mm;
-      if (pr.blank_type) document.getElementById("blank-type").value = pr.blank_type;
-      if (pr.blank_inner_diameter_mm) document.getElementById("blank-inner-diameter").value = pr.blank_inner_diameter_mm;
-      // Keep CAD metadata (main axis / face statistics) for submission round-trip
-      window.__cadMeta = { main_axis: pr.main_axis, cad_statistics: pr.cad_statistics };
-      const ax = (pr.main_axis || []).map(x => Number(x).toFixed(2)).join(", ");
-      document.getElementById("cad-main-axis").textContent = ax || "-";
-      // Material suggestion
-      if (pr.material && [...materialSelect.options].some(o => o.value === pr.material)) {
-        materialSelect.value = pr.material;
-        updateMaterialDesc();
-      }
-      // Global requirements
-      const gr = pr.global_requirements || {};
-      // Clear AI highlight tags left over from a previous import (even if no suggestion this time, old tags must not remain)
-      clearAiHighlight(document.getElementById("heat-treatment"));
-      if (gr.heat_treatment) {
-        const ht = document.getElementById("heat-treatment");
-        if ([...ht.options].some(o => o.value === gr.heat_treatment)) ht.value = gr.heat_treatment;
-        // AI-suggested heat treatment: pre-select and highlight it for manual confirmation
-        if (data.confidence && data.confidence.heat_treatment === "suggested"
-            && gr.heat_treatment && gr.heat_treatment !== "none") {
-          highlightAiField(ht, "AI");
-        }
-      }
-      if (gr.target_hardness_hrc) document.getElementById("target-hardness").value = gr.target_hardness_hrc;
-
-      // Render images + warnings + session data (for the result page 3D replacement)
-      __cadRenderData = { images: data.render_images || {}, source_file: data.source_file || file.name };
-      renderCadViews(data.render_images);
-      showCadWarnings(data.warnings);
-      setCadStatus("CAD imported: " + (data.source_file || file.name) + " — review AI suggestions and confirm before submitting.", "ok");
-      cadClearBtn.classList.remove("hidden");
-      updateTotal();
-      // Material/blank/heat-treatment are assigned programmatically (no input/change events); refresh the preview once
-      debouncePreview();
-    } catch (err) {
-      setCadStatus("CAD import failed: " + (err.message || err), "error");
-    } finally {
-      clearInterval(pollTimer);
-      cadProgress.classList.add("hidden");
-      cadImportBtn.disabled = false;
-      cadImportBtn.textContent = "Import from CAD";
-    }
-  }
-
-  cadImportBtn.addEventListener("click", importFromCAD);
-  cadFileInput.addEventListener("change", () => {
-    const nameEl = document.getElementById("cad-file-name");
-    if (nameEl) nameEl.textContent = cadFileInput.files[0] ? cadFileInput.files[0].name : "No file chosen";
-    if (cadFileInput.files[0]) setCadStatus("");
-  });
-  cadClearBtn.addEventListener("click", () => {
-    segmentsBody.innerHTML = ""; featuresBox.innerHTML = ""; segmentNo = 0; featureNo = 0;
-    empty.classList.remove("hidden");
-    cadRender.innerHTML = ""; cadWarnings.classList.add("hidden");
-    __cadRenderData = null;
-    cadFileInput.value = "";
-    const nameEl = document.getElementById("cad-file-name");
-    if (nameEl) nameEl.textContent = "No file chosen";
-    cadClearBtn.classList.add("hidden");
-    setCadStatus("CAD import cleared.");
-  });
-  checkCadAgent();
-
   // Process Route Preview: collapsible inline panel (expanded on demand, never blocks the form)
   const previewToggle = document.getElementById("preview-toggle");
   const previewPanel = document.getElementById("preview-panel");
@@ -823,8 +596,6 @@
       segments: segments,
       features: collectFeatures(),
       global_requirements: collectGlobalRequirements(),
-      // CAD-extracted metadata (main axis / statistics) preserved on submit
-      ...(window.__cadMeta || {}),
     };
     submit.disabled = true; submit.textContent = "Submitting...";
     try {
@@ -832,20 +603,7 @@
       const data = await response.json();
       if (!response.ok) throw new Error(JSON.stringify(data.detail || data));
 
-      // If from CAD import, store the render images in the session so the result page shows the CAD 3D render
-      let cadToken = "";
-      if (__cadRenderData) {
-        try {
-          const sr = await fetch("/api/cad-session", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ images: __cadRenderData.images, source_file: __cadRenderData.source_file })
-          });
-          const sd = await sr.json();
-          if (sd.token) cadToken = sd.token;
-        } catch {}
-      }
-      location.href = `/jobs/${data.job_id}` + (cadToken ? `?cad=${cadToken}` : "");
+      location.href = `/jobs/${data.job_id}`;
     } catch (error) {
       let msg = error.message;
       if (error.name === "TypeError") {
@@ -1411,7 +1169,6 @@
       segments: segments,
       features: features,
       global_requirements: collectGlobalRequirements(),
-      ...(window.__cadMeta || {}),
     };
   }
 
@@ -1534,19 +1291,6 @@
   // Attach listeners to all form inputs for real-time preview
   form.addEventListener("input", debouncePreview);
   form.addEventListener("change", debouncePreview);
-
-  // Homepage "Import CAD File" entry: auto-scroll to the CAD import panel and focus it
-  const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get("mode") === "cad") {
-    const cadPanel = document.getElementById("cad-import-panel");
-    if (cadPanel) {
-      setTimeout(() => {
-        cadPanel.scrollIntoView({ behavior: "smooth", block: "start" });
-        const cadInput = document.getElementById("cad-file");
-        if (cadInput) cadInput.focus({ preventScroll: true });
-      }, 400);
-    }
-  }
 
   // Also trigger preview after adding/removing segments or features
   const origAddSegment = addSegment;
