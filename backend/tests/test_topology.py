@@ -1,6 +1,5 @@
 """Topology verification tests (DEF-VAL-01)."""
 
-import pytest
 
 from workflow.graph import Workflow
 

@@ -20,7 +20,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Optional
+from typing import Optional
 
 from dotenv import load_dotenv
 
@@ -123,7 +123,7 @@ def llm_available() -> bool:
 
     try:
 
-        import openai
+        import openai  # noqa: F401  # availability probe
 
         return True
 
@@ -295,7 +295,7 @@ def _extract_json(text:str):
 
         return json.loads(text)
 
-    except:
+    except Exception:
 
         pass
 

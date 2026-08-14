@@ -91,7 +91,7 @@ class ProcessNodesMixin:
                 )
                 if patched:
                     return {"process_route": patched}
-            except Exception as error:
+            except Exception:
                 self.store.update(state["job_id"], message="LLM route correction failed, keeping rule-based route.")
 
         return {"process_route": base_route}

@@ -78,7 +78,7 @@ def _rrf_fusion(
         merged.append(r)
 
     logger.debug("RRF fusion: %d lists → %d unique results",
-                 sum(len(l) for l in result_lists), len(merged))
+                 sum(len(lst) for lst in result_lists), len(merged))
     return merged
 
 
@@ -157,9 +157,6 @@ class HybridRetriever:
         RetrievalResponse
         """
         # ── Phase 1: Recall ──
-        spec_results: list[SearchResult] = []
-        case_results: list[SearchResult] = []
-
         # Vector recall
         vec_specs, vec_cases = self.store.search_all(query, top_k_per_channel)
 

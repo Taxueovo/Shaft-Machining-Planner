@@ -1,6 +1,5 @@
 """Resource status distinction tests (DEF-VAL-05)."""
 
-import pytest
 
 from models.process import ResourceStatus
 
