@@ -3,6 +3,7 @@
 [![CI](https://github.com/Taxueovo/ShaftPlanner/actions/workflows/ci.yml/badge.svg)](https://github.com/Taxueovo/ShaftPlanner/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Maintainer](https://img.shields.io/badge/maintainer-Taxueovo-blue)](https://github.com/Taxueovo)
 
 Structured process planning for motor shafts, with one-click CAD import.
 
@@ -17,6 +18,11 @@ One project, two subsystems:
 - **cadagent** (`cadagent/`): multi-modal 3D CAD model analysis that acts as a
   second input path for peagent (upload a STEP/BREP file instead of typing the
   form by hand).
+
+## Authors & Maintainers
+
+- **Taxueovo** — core maintainer and primary developer.
+- **Melanie-Fan** — documentation and design.
 
 ## 1. Architecture
 
