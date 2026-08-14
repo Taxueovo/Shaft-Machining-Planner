@@ -12,7 +12,7 @@
     .case-banner .info .text h3 { margin: 0; font-size: 16px; }
     .case-banner .info .text p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
     .case-banner .actions { display: flex; gap: 8px; }
-    /* Single-column layout: the route preview sits inline after the CAD import panel and flows with the form */
+    /* Single-column layout: the route preview sits inline and flows with the form */
     .preview-inline { margin-bottom: 20px; }
     .preview-toggle { width: 100%; text-align: left; background: #f2f4f7; border: 1px solid var(--line); border-radius: var(--radius-btn); padding: 12px 16px; color: var(--ink); font-weight: 600; cursor: pointer; }
     .preview-toggle:hover { background: #e8ebf0; }
@@ -47,21 +47,6 @@
     .preview-empty { color: #94a3b8; font-size: 13px; text-align: center; padding: 24px 0; }
     .preview-warnings { margin-top: 10px; }
     .preview-warnings .warn-item { font-size: 12px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-input); padding: 6px 10px; margin-bottom: 4px; }
-    .cad-drop-zone { border: 2px dashed var(--line-strong); border-radius: var(--radius-sm); padding: 16px 18px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: #f8fafc; }
-    /* Custom file button: hides the native input so the browser's localized "Choose File / No file chosen" is not shown */
-    .cad-drop-zone input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
-    .cad-file-label { background: var(--primary-soft); color: var(--primary); border-radius: var(--radius-btn); padding: 10px 16px; font-weight: 600; cursor: pointer; white-space: nowrap; }
-    .cad-file-label:hover { background: #dbe5fa; }
-    .cad-file-name { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
-    .cad-render-grid { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
-    .cad-render-view { flex: 1 1 110px; max-width: 150px; text-align: center; }
-    .cad-render-view img { width: 100%; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #f8fafc; }
-    .cad-render-view .view-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
-    .cad-status { font-size: 12px; color: var(--muted); margin-top: 8px; }
-    .cad-status.error { color: #b42318; }
-    .cad-status.ok { color: #027a48; }
-    input.suggested, select.suggested { border-color: #f59e0b !important; background: #fffbeb !important; box-shadow: 0 0 0 2px rgba(245,158,11,0.18); }
-    .suggested-tag { font-size: 10px; color: #b45309; background: #fef3c7; border-radius: var(--radius-input); padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
   </style>
 </head>
 <body>
@@ -92,25 +77,6 @@
   </div>
 
   <form id="planning-form" class="stack">
-    <section class="panel" id="cad-import-panel">
-      <div class="heading"><div><b>00</b><h2>CAD Model Import</h2></div><span id="cad-agent-badge" class="badge neutral">Checking CAD service...</span></div>
-      <p class="muted">Upload a STEP / BREP model to auto-fill shaft segments and features. Engineering intent (material, tolerances, roughness, heat treatment) is suggested by AI and marked for your confirmation.</p>
-      <div class="cad-drop-zone">
-        <label for="cad-file" class="cad-file-label">Choose File</label>
-        <input type="file" id="cad-file" accept=".stp,.step,.brep" aria-hidden="true" tabindex="-1">
-        <span id="cad-file-name" class="cad-file-name">No file chosen</span>
-        <button type="button" id="cad-import-btn" class="button secondary" disabled>Import from CAD</button>
-        <button type="button" id="cad-clear-btn" class="button ghost hidden">Clear CAD Import</button>
-      </div>
-      <div id="cad-status" class="cad-status"></div>
-      <div id="cad-progress" class="cad-progress hidden">
-        <div class="progress"><div id="cad-progress-bar"></div></div>
-        <div class="progress-meta"><strong id="cad-progress-step">Preparing</strong><span id="cad-progress-value">0%</span></div>
-      </div>
-      <div id="cad-warnings" class="alert warning hidden"></div>
-      <div id="cad-render" class="cad-render-grid"></div>
-    </section>
-
     <div class="preview-inline">
       <button type="button" id="preview-toggle" class="preview-toggle">▸ Process Route Preview</button>
       <div class="preview-panel hidden" id="preview-panel">
@@ -125,16 +91,15 @@
     </div>
 
     <section class="panel">
-      <div class="heading"><div><b>01</b><h2>Shaft Body Definition</h2></div><button type="button" id="load-example" class="button ghost">Load Example</button></div>
+      <div class="heading"><div><b>00</b><h2>Shaft Body Definition</h2></div><button type="button" id="load-example" class="button ghost">Load Example</button></div>
       <div class="grid three">
         <label>Material Grade<select id="material" required><option value="">Loading...</option></select><span id="material-desc" class="muted" style="font-size:12px;margin-top:4px"></span></label>
         <label>Blank Diameter (mm)<input id="blank-diameter" type="number" min="0.001" step="0.001" value="65" required><span class="muted" style="font-size:12px">Must be ≥ max segment diameter (raw blank OD before machining)</span></label>
         <div class="metric"><span>Auto-calculated Total Length</span><strong id="total-length">0 mm</strong></div>
       </div>
-      <div class="grid three">
+      <div class="grid two">
         <label>Blank Type<select id="blank-type"><option value="solid">Solid</option><option value="hollow">Hollow (tube stock)</option></select></label>
-        <label>Blank Inner Diameter (mm)<input id="blank-inner-diameter" type="number" min="0" step="0.001" placeholder="For hollow blanks only"><span class="muted" style="font-size:12px">CAD-extracted main bore diameter (used when blank is hollow)</span></label>
-        <div class="metric"><span>CAD Main Axis</span><strong id="cad-main-axis">-</strong></div>
+        <label>Blank Inner Diameter (mm)<input id="blank-inner-diameter" type="number" min="0" step="0.001" placeholder="For hollow blanks only"><span class="muted" style="font-size:12px">Main bore diameter (used when blank is hollow)</span></label>
       </div>
       <div class="toolbar"><h3>Stepped Segments</h3><button type="button" id="add-segment" class="button secondary">+ Add Segment</button></div>
       <div class="table-wrap"><table>
@@ -144,14 +109,14 @@
     </section>
 
     <section class="panel">
-      <div class="heading"><div><b>02</b><h2>Conditional Features</h2></div><button type="button" id="add-feature" class="button secondary">+ Add Feature</button></div>
+      <div class="heading"><div><b>01</b><h2>Conditional Features</h2></div><button type="button" id="add-feature" class="button secondary">+ Add Feature</button></div>
       <p class="muted">Segment offset is relative to the left end of the segment; global position is relative to the left end of the part. Hole position indicates the hole center.</p>
       <div id="features-container" class="feature-stack"></div>
       <div id="no-features" class="empty">No conditional features currently.</div>
     </section>
 
     <section class="panel">
-      <div class="heading"><div><b>03</b><h2>Heat Treatment Requirements</h2></div></div>
+      <div class="heading"><div><b>02</b><h2>Heat Treatment Requirements</h2></div></div>
       <p class="muted">Use drawing-approved values. The system uses these inputs to arrange pre-treatment, final heat treatment and post-heat finishing constraints.</p>
       <div class="grid three">
         <label>Final Heat Treatment

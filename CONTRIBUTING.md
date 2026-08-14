@@ -1,7 +1,7 @@
 # Contributing to ShaftPlanner
 
-Thank you for contributing! ShaftPlanner is a motor-shaft process planning and CAD import
-system (Python backend + frontend + cadagent).
+Thank you for contributing! ShaftPlanner is a motor-shaft process planning system
+(Python backend + frontend).
 
 ## Getting Started
 

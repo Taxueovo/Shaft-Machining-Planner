@@ -18,9 +18,6 @@ Initial public release.
   - Machine tool / cutting tool capability libraries with resource verification
   - Process rules engine (sequence, dependencies, heat treatment)
   - RAG index over specification and case libraries (ChromaDB)
-- **cadagent** — CAD import path:
-  - STEP/BREP feature extraction (B-Rep) with multi-view rendering
-  - LLM-assisted completion into a peagent-compatible planning request
 - **frontend** — Jinja2 web UI with dynamic forms, status polling, and RAG
   management pages
 - Tests for the backend route engine, models, and resource verification

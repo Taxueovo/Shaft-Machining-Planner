@@ -25,64 +25,6 @@
   let customRoute = null, originalRoute = [], routeResourceMap = {}, routeScopeNote = "";
   let editOps = [], dragIndex = -1;
 
-  // ── CAD session: fetch the cad_agent 3D render images via the URL ?cad=token ──
-  let __cadImages = null;
-  let __cadSourceFile = null;
-  (async () => {
-    const token = new URLSearchParams(window.location.search).get("cad");
-    if (!token) return;
-    try {
-      const resp = await fetch(`/api/cad-session/${token}`);
-      if (!resp.ok) return;
-      const data = await resp.json();
-      __cadImages = data.images || null;
-      __cadSourceFile = data.source_file || null;
-      if (data.source_file) {
-        // Clean up the server-side cache after consumption
-        try { await fetch(`/api/cad-session/${token}`, { method: "DELETE" }); } catch {}
-      }
-      if (rendered && __cadImages) {
-        const container = $("shaft-3d-container");
-        if (container) renderCadImages(container, __cadImages, __cadSourceFile);
-      }
-    } catch {}
-  })();
-
-  // Render the cad_agent multi-view 3D render images (replacing the Three.js procedural model)
-  function renderCadImages(container, images, sourceFile) {
-    if (!container) return;
-    container.innerHTML = "";
-    container.style.height = "auto";
-    const views = { front: "Front", top: "Top", right: "Right", isometric: "Isometric" };
-    const grid = document.createElement("div");
-    grid.style.cssText = "display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px";
-    let any = false;
-    Object.entries(images || {}).forEach(([key, img]) => {
-      if (!img || !img.success || !img.base64) return;
-      any = true;
-      const fig = document.createElement("figure");
-      fig.style.cssText = "margin:0;text-align:center";
-      const el = document.createElement("img");
-      el.src = img.base64.startsWith("data:") ? img.base64 : "data:image/jpeg;base64," + img.base64;
-      el.alt = key;
-      el.style.cssText = "width:100%;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc";
-      const cap = document.createElement("figcaption");
-      cap.textContent = views[key] || key;
-      cap.style.cssText = "font-size:11px;color:#64748b;margin-top:4px";
-      fig.appendChild(el); fig.appendChild(cap);
-      grid.appendChild(fig);
-    });
-    if (any) {
-      container.appendChild(grid);
-      if (sourceFile) {
-        const note = document.createElement("div");
-        note.style.cssText = "font-size:11px;color:#94a3b8;margin-top:6px";
-        note.textContent = "3D render by cad_agent · source: " + sourceFile;
-        container.appendChild(note);
-      }
-    }
-  }
-
   function setBadge(status) {
     const map = {
       queued:["Queued","neutral"], running:["Running","neutral"],
@@ -263,15 +205,10 @@
     $("result-container").innerHTML = html.join("");
     $("result-container").classList.remove("hidden");
 
-    // Render 3D shaft model — with a CAD import, show the cad_agent 3D render (replacing the procedural model)
+    // Render the 3D shaft model from geometry
     function doRender3D() {
       const container = $("shaft-3d-container");
       if (!container) return;
-      const hasCadImages = __cadImages && Object.keys(__cadImages).some(k => __cadImages[k] && __cadImages[k].success);
-      if (hasCadImages) {
-        renderCadImages(container, __cadImages, __cadSourceFile);
-        return;
-      }
       try { renderShaft3D("shaft-3d-container", geo); } catch (e) { console.warn("3D render failed:", e); }
     }
     if (typeof renderShaft3D === "function") {

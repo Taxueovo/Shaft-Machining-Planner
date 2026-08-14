@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import os
-import threading
-import time
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -23,12 +20,6 @@ FRONTEND_DIR = Path(__file__).resolve().parent
 load_dotenv(FRONTEND_DIR.parent / ".env")
 load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8001")
-#: cad_agent service address (HTTP target for the frontend "Import from CAD" feature)
-CAD_AGENT_URL = os.getenv("CAD_AGENT_URL", "http://127.0.0.1:8100")
-
-#: In-memory CAD session store — keeps render images imported from CAD for the result page 3D view
-_cad_sessions: dict[str, dict[str, Any]] = {}
-_cad_session_lock = threading.Lock()
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):
@@ -49,13 +40,8 @@ async def lifespan(app: FastAPI):
         base_url=BACKEND_URL,
         timeout=90.0,
     )
-    app.state.cad_agent = httpx.AsyncClient(
-        base_url=CAD_AGENT_URL,
-        timeout=180.0,
-    )
     yield
     await app.state.backend.aclose()
-    await app.state.cad_agent.aclose()
 
 
 app = FastAPI(title="ShaftPlanner Frontend", version="1.0.0", lifespan=lifespan)
@@ -386,47 +372,3 @@ async def shutdown(request: Request) -> dict[str, str]:
 
     asyncio.create_task(_delayed_shutdown())
     return {"status": "shutting_down", "message": "System is shutting down."}
-
-
-# ============================================================
-# CAD session (stores CAD import render images)
-# After the form page imports CAD, the render images are kept in memory; the result page fetches them by token for 3D display.
-# ============================================================
-
-
-@app.get("/api/cad-agent-status")
-async def cad_agent_status(request: Request) -> dict[str, Any]:
-    """Probe whether the cad_agent service is reachable (so the frontend can show import availability)."""
-    try:
-        response = await request.app.state.cad_agent.get("/health", timeout=5.0)
-        data = response.json()
-        return {"available": response.status_code == 200, "service": data.get("service")}
-    except Exception as error:
-        return {"available": False, "error": str(error)}
-
-
-@app.post("/api/cad-session")
-async def store_cad_session(request: Request) -> dict[str, str]:
-    """Store a CAD import session (render images, etc.) and return a token."""
-    data = await request.json()
-    token = uuid.uuid4().hex
-    with _cad_session_lock:
-        _cad_sessions[token] = data
-    return {"token": token}
-
-
-@app.get("/api/cad-session/{token}")
-async def get_cad_session(token: str) -> dict[str, Any]:
-    """Fetch CAD session data by token."""
-    data = _cad_sessions.get(token)
-    if not data:
-        raise HTTPException(status_code=404, detail="CAD session not found or expired.")
-    return data
-
-
-@app.delete("/api/cad-session/{token}")
-async def delete_cad_session(token: str) -> dict[str, str]:
-    """Delete a CAD session (can be cleaned up after the result page consumes it)."""
-    with _cad_session_lock:
-        _cad_sessions.pop(token, None)
-    return {"status": "ok"}

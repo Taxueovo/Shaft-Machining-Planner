@@ -36,7 +36,6 @@ body:
       options:
         - peagent backend
         - peagent frontend
-        - cadagent
         - RAG
         - Other
     validations:
