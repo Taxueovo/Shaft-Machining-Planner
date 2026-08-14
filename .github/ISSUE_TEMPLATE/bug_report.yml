@@ -1,0 +1,59 @@
+name: Bug report
+description: Report a reproducible problem in ShaftPlanner
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug. Fill in as much detail as you can;
+        issues without reproduction steps are hard to investigate.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: A clear description of the unexpected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Start the backend (`python start_shaftplanner.py --no-browser`)
+        2. Open a form and ...
+        3. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: subsystem
+    attributes:
+      label: Subsystem
+      description: Which part of the project is affected?
+      options:
+        - peagent backend
+        - peagent frontend
+        - cadagent
+        - RAG
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / screenshots
+      description: Paste relevant console output, error traces, or screenshots.
+    validations:
+      required: false
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Commit hash or release tag you are running.
+    validations:
+      required: true
