@@ -1,0 +1,15 @@
+# Normalize line endings to LF in the repository (checked out as-is on Windows)
+* text=auto
+
+# Binary files must not be normalized or diffed as text
+*.xlsx binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+
+# Lockfiles are generated; mark as binary-merge safe
+package-lock.json -merge
+pnpm-lock.yaml -merge
