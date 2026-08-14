@@ -1,5 +1,9 @@
 # ShaftPlanner
 
+[![CI](https://github.com/Taxueovo/ShaftPlanner/actions/workflows/ci.yml/badge.svg)](https://github.com/Taxueovo/ShaftPlanner/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.10-blue)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Structured process planning for motor shafts, with one-click CAD import.
 
 ShaftPlanner plans the machining process route (process planning) of stepped shafts —
