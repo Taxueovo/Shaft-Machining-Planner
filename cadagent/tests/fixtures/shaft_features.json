@@ -1,0 +1,98 @@
+{
+  "part_name": "shaft_1_fromSTEP.brep",
+  "overall_dimensions": {
+    "length": 180.0,
+    "max_diameter": 60.0
+  },
+  "main_axis": [0, 0, 1],
+  "features": {
+    "outer_cylinders": [
+      {
+        "radius": 30.0,
+        "position_x": 40.0,
+        "length": 80.0,
+        "area": 15079.64
+      },
+      {
+        "radius": 25.0,
+        "position_x": 115.0,
+        "length": 70.0,
+        "area": 10995.57
+      },
+      {
+        "radius": 22.5,
+        "position_x": 165.0,
+        "length": 30.0,
+        "area": 4241.15
+      }
+    ],
+    "inner_bore": [
+      {
+        "radius": 10.0,
+        "position_x": 90.0,
+        "length": 180.0
+      }
+    ],
+    "inner_bore_summary": [
+      {
+        "radius": 10.0,
+        "position_x": 90.0,
+        "length": 180.0
+      }
+    ],
+    "radial_oil_holes": {
+      "count": 2,
+      "radius": 3.0,
+      "axial_positions": [45.0],
+      "holes_per_position": {
+        "45.0": 2
+      },
+      "angular_positions": [0.0, 180.0],
+      "holes_per_angle": {
+        "0.0": 1,
+        "180.0": 1
+      },
+      "radial_positions": []
+    },
+    "keyways": {
+      "count": 1,
+      "keyways": [
+        {
+          "type": "rectangular",
+          "position_axial": 130.0,
+          "width": 8.0,
+          "depth": 4.0,
+          "length": 20.0,
+          "area": 160.0,
+          "radial_distance": 26.0
+        }
+      ],
+      "positions_axial": [130.0],
+      "types": ["rectangular"]
+    },
+    "spline_zone": {
+      "detected": false,
+      "z_ranges": [],
+      "approx_outer_radius": 0.0,
+      "outer_cylinder_count": 0,
+      "parameters": null
+    },
+    "gear_features": {
+      "detected": false,
+      "gear_count": 0,
+      "gear_zones": [],
+      "parameters": []
+    }
+  },
+  "statistics": {
+    "total_faces": 12,
+    "cylinder_faces": 8,
+    "plane_faces": 4,
+    "spline_faces": 0,
+    "outer_cylinder_count": 3,
+    "inner_bore_count": 1,
+    "radial_hole_count": 2,
+    "keyway_count": 1,
+    "gear_count": 0
+  }
+}

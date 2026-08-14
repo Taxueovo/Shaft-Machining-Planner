@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Environment
+.env
+*.env
+node_modules/
+
+# Runtime artifacts
+output/
+*.xlsx.inspect.ndjson
+capture-*.jpeg
+*.log
+
+# Testing and caches
+.pytest_cache/
+.coverage
+htmlcov/
+*.pytest_cache
+
+# IDE
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local data (capability/case libraries are controlled data, excluded by default)
+data/cases.json

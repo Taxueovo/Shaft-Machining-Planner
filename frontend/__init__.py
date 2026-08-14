@@ -1,0 +1,1 @@
+"""ShaftPlanner frontend package."""

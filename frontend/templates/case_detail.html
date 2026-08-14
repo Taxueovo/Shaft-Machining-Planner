@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShaftPlanner - PE Agent - Case Detail</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+  <style>
+    .case-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+    .case-header h1 { margin: 0; font-size: 24px; }
+    .meta-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+    .meta-item { background: #f7f9fc; border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 16px; }
+    .meta-item .label { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .meta-item .value { font-size: 16px; font-weight: 600; }
+    .section { margin-bottom: 24px; }
+    .section h2 { margin: 0 0 16px; font-size: 18px; }
+    .process-timeline { position: relative; padding-left: 30px; }
+    .process-step { position: relative; padding: 16px; margin-bottom: 12px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); }
+    .process-step::before { content: ""; position: absolute; left: -22px; top: 24px; width: 12px; height: 12px; background: var(--primary); border-radius: 50%; }
+    .process-step::after { content: ""; position: absolute; left: -17px; top: 36px; bottom: -12px; width: 2px; background: #d7dde7; }
+    .process-step:last-child::after { display: none; }
+    .step-header { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+    .step-no { background: var(--primary); color: #fff; width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+    .step-name { font-weight: 600; }
+    .step-stage { font-size: 12px; color: var(--muted); background: #f0f5ff; padding: 2px 8px; border-radius: var(--radius-input); }
+    .step-desc { font-size: 14px; color: #475467; }
+    .features-list { display: flex; flex-wrap: wrap; gap: 8px; }
+    .feature-tag { background: var(--primary-soft); color: var(--primary); padding: 8px 16px; border-radius: var(--radius-sm); font-size: 14px; }
+    .breadcrumb { display: flex; gap: 8px; align-items: center; margin-bottom: 20px; font-size: 14px; }
+    .breadcrumb a { color: var(--primary); text-decoration: none; }
+    .breadcrumb a:hover { text-decoration: underline; }
+    .actions { display: flex; gap: 12px; }
+    .loading { text-align: center; padding: 40px; color: var(--muted); }
+    .error { text-align: center; padding: 40px; color: var(--danger); }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div><a class="brand link" href="/">ShaftPlanner - PE Agent</a><div class="subtitle">PS/PCB-AP</div></div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <a href="/" class="button ghost light">Home</a>
+    <a href="/taxonomy" class="button ghost light">Shaft Library</a>
+    <a href="/cases" class="button ghost light">All Cases</a>
+    <button type="button" id="shutdown-btn" class="button ghost danger" title="Shutdown System">Stop System</button>
+  </div>
+</header>
+<main class="shell">
+  <div id="content">
+    <div class="loading">Loading case details...</div>
+  </div>
+</main>
+
+<script>
+(function() {
+  const caseId = {{ case_id | tojson }};
+  const esc = value => String(value ?? '')
+    .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+
+  async function loadCase() {
+    try {
+      const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}`);
+      if (!res.ok) throw new Error('Case not found');
+      const data = await res.json();
+      renderCase(data.case);
+    } catch (e) {
+      document.getElementById('content').innerHTML = `<div class="error"><h2>Case Not Found</h2><p>${esc(e.message)}</p><a href="/cases" class="button primary">Back to Cases</a></div>`;
+    }
+  }
+
+  function renderCase(c) {
+    const content = document.getElementById('content');
+    content.innerHTML = `
+      <div class="breadcrumb">
+        <a href="/cases">Cases</a>
+        <span>/</span>
+        <span class="current">${esc(c.part_name)}</span>
+      </div>
+
+      <div class="case-header">
+        <div>
+          <h1>${esc(c.part_name)}</h1>
+          <span class="tag">${esc(c.case_id)}</span>
+          <span class="tag">${esc(c.industry)}</span>
+        </div>
+        <div class="actions">
+          <a href="/custom?case=${encodeURIComponent(c.case_id)}" class="button primary">Use This Case</a>
+          <button class="button secondary" onclick="copyCase()">Copy Case</button>
+          <a href="/taxonomy?category=${encodeURIComponent(c.taxonomy_id)}" class="button ghost">Back to Category</a>
+        </div>
+      </div>
+
+      <div class="meta-grid">
+        <div class="meta-item">
+          <div class="label">Material</div>
+          <div class="value">${esc(c.material)}</div>
+        </div>
+        <div class="meta-item">
+          <div class="label">Heat Treatment</div>
+          <div class="value">${esc(c.heat_treatment || 'None')}</div>
+        </div>
+        <div class="meta-item">
+          <div class="label">Tolerance</div>
+          <div class="value">${esc(c.tolerance || '-')}</div>
+        </div>
+        <div class="meta-item">
+          <div class="label">Surface Roughness</div>
+          <div class="value">${esc(c.surface_roughness || '-')}</div>
+        </div>
+        <div class="meta-item">
+          <div class="label">Length</div>
+          <div class="value">${esc(c.length_mm ? c.length_mm + ' mm' : '-')}</div>
+        </div>
+        <div class="meta-item">
+          <div class="label">Diameter</div>
+          <div class="value">${esc(c.diameter_mm ? 'φ' + c.diameter_mm + ' mm' : '-')}</div>
+        </div>
+        ${c.application ? `
+          <div class="meta-item">
+            <div class="label">Application</div>
+            <div class="value">${esc(c.application)}</div>
+          </div>
+        ` : ''}
+      </div>
+
+      ${c.description ? `<p style="margin-bottom:24px;color:#475467">${esc(c.description)}</p>` : ''}
+
+      ${c.main_features && c.main_features.length ? `
+        <div class="section">
+          <h2>Features</h2>
+          <div class="features-list">
+            ${c.main_features.map(f => `<span class="feature-tag">${esc(f)}</span>`).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      ${c.process_plan && c.process_plan.length ? `
+        <div class="section">
+          <h2>Process Plan</h2>
+          <div class="process-timeline">
+            ${c.process_plan.map(step => `
+              <div class="process-step">
+                <div class="step-header">
+                  <span class="step-no">${esc(step.step_no)}</span>
+                  <span class="step-name">${esc(step.name)}</span>
+                  <span class="step-stage">${esc(step.stage)}</span>
+                </div>
+                <div class="step-desc">${esc(step.description)}</div>
+                ${step.machine ? `<div style="margin-top:4px;font-size:12px;color:var(--muted)">Machine: ${esc(step.machine)}</div>` : ''}
+                ${step.tool ? `<div style="font-size:12px;color:var(--muted)">Tool: ${esc(step.tool)}</div>` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+
+      ${c.notes ? `
+        <div class="section">
+          <h2>Notes</h2>
+          <p style="color:#475467">${esc(c.notes)}</p>
+        </div>
+      ` : ''}
+    `;
+  }
+
+  window.copyCase = function() {
+    alert('Copy functionality coming soon!');
+  };
+
+  loadCase();
+})();
+</script>
+<script>
+document.getElementById("shutdown-btn").addEventListener("click", async () => {
+  if (!confirm("Confirm shutdown of ShaftPlanner - PE Agent system?")) return;
+  const btn = document.getElementById("shutdown-btn");
+  btn.disabled = true; btn.textContent = "Shutting down...";
+  try { await fetch("/api/shutdown", { method: "POST" }); } catch {}
+  setTimeout(() => { document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#475467"><div style="text-align:center"><h1 style="margin:0 0 12px">System Shutdown</h1><p>This page can be closed.</p></div></div>'; }, 800);
+});
+</script>
+<script src="/static/heartbeat.js?v={{ range(100000, 999999) | random }}"></script>
+</body>
+</html>

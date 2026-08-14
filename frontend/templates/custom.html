@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShaftPlanner - PE Agent - Custom Process Planning</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+  <style>
+    .case-banner { background: var(--primary-soft); border: 1px solid #b8ccff; border-radius: var(--radius-sm); padding: 16px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; }
+    .case-banner .info { display: flex; align-items: center; gap: 12px; }
+    .case-banner .info .icon { font-size: 24px; }
+    .case-banner .info .text h3 { margin: 0; font-size: 16px; }
+    .case-banner .info .text p { margin: 4px 0 0; font-size: 13px; color: var(--muted); }
+    .case-banner .actions { display: flex; gap: 8px; }
+    /* Single-column layout: the route preview sits inline after the CAD import panel and flows with the form */
+    .preview-inline { margin-bottom: 20px; }
+    .preview-toggle { width: 100%; text-align: left; background: #f2f4f7; border: 1px solid var(--line); border-radius: var(--radius-btn); padding: 12px 16px; color: var(--ink); font-weight: 600; cursor: pointer; }
+    .preview-toggle:hover { background: #e8ebf0; }
+    .preview-toggle.open { border-radius: var(--radius-btn) var(--radius-btn) 0 0; }
+    .preview-panel { background: #f8fafc; border: 1px solid var(--line); border-top: none; border-radius: 0 0 var(--radius-sm) var(--radius-sm); padding: 16px; }
+    .preview-panel h3 { margin: 0 0 12px; font-size: 15px; color: #1e293b; display: flex; align-items: center; gap: 8px; }
+    .preview-panel .preview-scroll { max-height: 420px; overflow-y: auto; }
+    .preview-panel h3 .dot { width: 8px; height: 8px; border-radius: 50%; background: #94a3b8; }
+    .preview-panel h3 .dot.live { background: #22c55e; animation: pulse 1.5s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+    .route-preview-list { list-style: none; padding: 0; margin: 0; }
+    .route-preview-list li { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
+    .route-preview-list li:last-child { border-bottom: none; }
+    .route-preview-list .op-num { width: 24px; height: 24px; border-radius: 50%; background: #4f6ef7; color: #fff; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+    .route-preview-list .op-num.feature { background: #f59e0b; }
+    .route-preview-list .op-num.heat { background: #ef4444; }
+    .route-preview-list .op-num.final { background: #10b981; }
+    .route-preview-list .op-body { flex: 1; min-width: 0; }
+    .route-preview-list .op-name { font-weight: 600; color: #1e293b; }
+    .route-preview-list .op-desc { color: #64748b; font-size: 12px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .capability-summary { border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 10px; margin-bottom: 12px; font-size: 12px; }
+    .capability-summary.ok { background: #f0fdf4; border-color: #86efac; color: #166534; }
+    .capability-summary.fail { background: #fef2f2; border-color: #fca5a5; color: #b91c1c; }
+    .capability-summary .machine-name { display: block; color: #475569; margin-top: 4px; }
+    .resource-badge { display: inline-block; margin-left: 5px; padding: 2px 7px; border-radius: var(--radius-pill); font-size: 10px; font-weight: 600; vertical-align: 1px; }
+    .resource-badge.satisfied { background: #dcfce7; color: #166534; }
+    .resource-badge.not-applicable { background: #e2e8f0; color: #475569; }
+    .resource-badge.not-covered, .resource-badge.not-satisfied, .resource-badge.unknown { background: #fee2e2; color: #b91c1c; }
+    .route-preview-list .op-devices { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 5px; }
+    .route-preview-list .dev-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #334155; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: var(--radius-pill); padding: 2px 8px; }
+    .route-preview-list .dev-chip-label { font-weight: 700; color: #40578f; text-transform: uppercase; font-size: 9px; }
+    .preview-empty { color: #94a3b8; font-size: 13px; text-align: center; padding: 24px 0; }
+    .preview-warnings { margin-top: 10px; }
+    .preview-warnings .warn-item { font-size: 12px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a; border-radius: var(--radius-input); padding: 6px 10px; margin-bottom: 4px; }
+    .cad-drop-zone { border: 2px dashed var(--line-strong); border-radius: var(--radius-sm); padding: 16px 18px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: #f8fafc; }
+    /* Custom file button: hides the native input so the browser's localized "Choose File / No file chosen" is not shown */
+    .cad-drop-zone input[type=file] { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+    .cad-file-label { background: var(--primary-soft); color: var(--primary); border-radius: var(--radius-btn); padding: 10px 16px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .cad-file-label:hover { background: #dbe5fa; }
+    .cad-file-name { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+    .cad-render-grid { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+    .cad-render-view { flex: 1 1 110px; max-width: 150px; text-align: center; }
+    .cad-render-view img { width: 100%; border: 1px solid var(--line); border-radius: var(--radius-sm); background: #f8fafc; }
+    .cad-render-view .view-label { font-size: 11px; color: var(--muted); margin-top: 4px; }
+    .cad-status { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .cad-status.error { color: #b42318; }
+    .cad-status.ok { color: #027a48; }
+    input.suggested, select.suggested { border-color: #f59e0b !important; background: #fffbeb !important; box-shadow: 0 0 0 2px rgba(245,158,11,0.18); }
+    .suggested-tag { font-size: 10px; color: #b45309; background: #fef3c7; border-radius: var(--radius-input); padding: 1px 6px; margin-left: 6px; vertical-align: 1px; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div><a class="brand link" href="/">ShaftPlanner - PE Agent</a><div class="brand-row"><div class="subtitle">PS/PCB-AP</div><div class="service {{ 'ok' if backend_ok else 'bad' }}"><i></i>{{ 'Backend Connected' if backend_ok else 'Backend Disconnected' }}</div></div></div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <a href="/" class="button ghost light">Home</a>
+    <a href="/taxonomy" class="button ghost light">Shaft Library</a>
+    <a href="/cases" class="button ghost light">Case Library</a>
+    <button type="button" id="shutdown-btn" class="button ghost danger" title="Shutdown System">Stop System</button>
+  </div>
+</header>
+<main class="shell">
+  {% if backend_detail %}<div class="alert {{ 'warning' if backend_ok else 'danger' }}">{{ backend_detail }}</div>{% endif %}
+
+  <div id="case-banner" class="case-banner" style="display:none">
+    <div class="info">
+      <div class="icon">📋</div>
+      <div class="text">
+        <h3 id="case-banner-name">Loading case...</h3>
+        <p id="case-banner-desc">Based on case data</p>
+      </div>
+    </div>
+    <div class="actions">
+      <a id="case-banner-link" href="#" class="button ghost">View Case</a>
+      <button class="button secondary" onclick="clearCase()">Clear</button>
+    </div>
+  </div>
+
+  <form id="planning-form" class="stack">
+    <section class="panel" id="cad-import-panel">
+      <div class="heading"><div><b>00</b><h2>CAD Model Import</h2></div><span id="cad-agent-badge" class="badge neutral">Checking CAD service...</span></div>
+      <p class="muted">Upload a STEP / BREP model to auto-fill shaft segments and features. Engineering intent (material, tolerances, roughness, heat treatment) is suggested by AI and marked for your confirmation.</p>
+      <div class="cad-drop-zone">
+        <label for="cad-file" class="cad-file-label">Choose File</label>
+        <input type="file" id="cad-file" accept=".stp,.step,.brep" aria-hidden="true" tabindex="-1">
+        <span id="cad-file-name" class="cad-file-name">No file chosen</span>
+        <button type="button" id="cad-import-btn" class="button secondary" disabled>Import from CAD</button>
+        <button type="button" id="cad-clear-btn" class="button ghost hidden">Clear CAD Import</button>
+      </div>
+      <div id="cad-status" class="cad-status"></div>
+      <div id="cad-progress" class="cad-progress hidden">
+        <div class="progress"><div id="cad-progress-bar"></div></div>
+        <div class="progress-meta"><strong id="cad-progress-step">Preparing</strong><span id="cad-progress-value">0%</span></div>
+      </div>
+      <div id="cad-warnings" class="alert warning hidden"></div>
+      <div id="cad-render" class="cad-render-grid"></div>
+    </section>
+
+    <div class="preview-inline">
+      <button type="button" id="preview-toggle" class="preview-toggle">▸ Process Route Preview</button>
+      <div class="preview-panel hidden" id="preview-panel">
+        <h3><span class="dot" id="preview-dot"></span> Process Route Preview</h3>
+        <div class="preview-scroll">
+          <div id="route-preview-content">
+            <div class="preview-empty">Add segments and features to see the preview</div>
+          </div>
+          <div id="route-preview-warnings" class="preview-warnings"></div>
+        </div>
+      </div>
+    </div>
+
+    <section class="panel">
+      <div class="heading"><div><b>01</b><h2>Shaft Body Definition</h2></div><button type="button" id="load-example" class="button ghost">Load Example</button></div>
+      <div class="grid three">
+        <label>Material Grade<select id="material" required><option value="">Loading...</option></select><span id="material-desc" class="muted" style="font-size:12px;margin-top:4px"></span></label>
+        <label>Blank Diameter (mm)<input id="blank-diameter" type="number" min="0.001" step="0.001" value="65" required><span class="muted" style="font-size:12px">Must be ≥ max segment diameter (raw blank OD before machining)</span></label>
+        <div class="metric"><span>Auto-calculated Total Length</span><strong id="total-length">0 mm</strong></div>
+      </div>
+      <div class="grid three">
+        <label>Blank Type<select id="blank-type"><option value="solid">Solid</option><option value="hollow">Hollow (tube stock)</option></select></label>
+        <label>Blank Inner Diameter (mm)<input id="blank-inner-diameter" type="number" min="0" step="0.001" placeholder="For hollow blanks only"><span class="muted" style="font-size:12px">CAD-extracted main bore diameter (used when blank is hollow)</span></label>
+        <div class="metric"><span>CAD Main Axis</span><strong id="cad-main-axis">-</strong></div>
+      </div>
+      <div class="toolbar"><h3>Stepped Segments</h3><button type="button" id="add-segment" class="button secondary">+ Add Segment</button></div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Seg ID</th><th>Diameter (mm)</th><th>Length (mm)</th><th>Upper Dev (mm)</th><th>Lower Dev (mm)</th><th>Ra (μm)</th><th>Surf. Area (mm²)</th><th>Type</th><th></th></tr></thead>
+        <tbody id="segments-body"></tbody>
+      </table></div>
+    </section>
+
+    <section class="panel">
+      <div class="heading"><div><b>02</b><h2>Conditional Features</h2></div><button type="button" id="add-feature" class="button secondary">+ Add Feature</button></div>
+      <p class="muted">Segment offset is relative to the left end of the segment; global position is relative to the left end of the part. Hole position indicates the hole center.</p>
+      <div id="features-container" class="feature-stack"></div>
+      <div id="no-features" class="empty">No conditional features currently.</div>
+    </section>
+
+    <section class="panel">
+      <div class="heading"><div><b>03</b><h2>Heat Treatment Requirements</h2></div></div>
+      <p class="muted">Use drawing-approved values. The system uses these inputs to arrange pre-treatment, final heat treatment and post-heat finishing constraints.</p>
+      <div class="grid three">
+        <label>Final Heat Treatment
+          <select id="heat-treatment">
+            <option value="none">None / Drawing not specified</option>
+            <option value="normalizing">Normalizing</option>
+            <option value="quench_temper">Quench and Temper</option>
+            <option value="carburize_quench">Carburize and Quench</option>
+            <option value="nitriding">Nitriding</option>
+            <option value="induction_hardening">Induction Hardening</option>
+          </select>
+        </label>
+        <label>Blank Condition
+          <select id="blank-condition">
+            <option value="unknown">Unknown</option>
+            <option value="bar">Bar Stock</option>
+            <option value="forged">Forged</option>
+            <option value="normalized">Normalized</option>
+            <option value="annealed">Annealed</option>
+          </select>
+        </label>
+        <label>Pre-treatment
+          <select id="pre-heat-treatment">
+            <option value="auto">Auto (based on blank condition)</option>
+            <option value="none">None</option>
+            <option value="normalizing">Normalizing</option>
+            <option value="annealing">Annealing</option>
+            <option value="stress_relief">Stress Relief</option>
+          </select>
+        </label>
+        <label>Target Hardness (HRC)<input id="target-hardness" type="number" min="0.1" max="75" step="0.1" placeholder="Drawing value"></label>
+        <label>Effective Case Depth (mm)<input id="case-depth" type="number" min="0.001" max="20" step="0.001" placeholder="For carburizing"></label>
+        <label>Heat-treatment Note<input id="heat-treatment-note" type="text" maxlength="300" placeholder="Drawing/specification reference"></label>
+      </div>
+    </section>
+
+    <div id="form-error" class="alert danger hidden"></div>
+    <div class="submit-row">
+      <div></div>
+      <div style="display:flex;gap:10px">
+        <button type="button" id="save-case-btn" class="button secondary" onclick="openSaveCaseDialog()">Save as Case</button>
+        <button id="submit-button" class="button primary" type="submit" {% if not backend_ok %}disabled{% endif %}>Start Process Planning</button>
+      </div>
+    </div>
+  </form>
+</main>
+
+<!-- Save Case Dialog -->
+<div id="save-case-dialog" class="dialog-overlay" style="display:none">
+  <div class="dialog">
+    <div class="dialog-header">
+      <h3>Save as Case</h3>
+      <button class="dialog-close" onclick="closeSaveCaseDialog()">&times;</button>
+    </div>
+    <div class="dialog-body">
+      <label>Case Name <input id="case-name-input" type="text" placeholder="e.g., Motor Shaft A"></label>
+      <label>Taxonomy Category
+        <select id="case-taxonomy-select">
+          <option value="">Loading categories...</option>
+        </select>
+      </label>
+      <label>Industry <input id="case-industry-input" type="text" placeholder="e.g., Automotive, Aerospace"></label>
+      <label>Description <textarea id="case-desc-input" rows="3" placeholder="Optional description"></textarea></label>
+      <div id="save-case-error" class="alert danger hidden"></div>
+    </div>
+    <div class="dialog-footer">
+      <button class="button ghost" onclick="closeSaveCaseDialog()">Cancel</button>
+      <button class="button primary" onclick="saveCase()">Save Case</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  .dialog-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+  }
+  .dialog {
+    background: #ffffff;
+    border-radius: var(--radius-lg);
+    width: 500px;
+    max-width: 90vw;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    border: 1px solid #e5e7eb;
+  }
+  .dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid #e5e7eb;
+    background: #f9fafb;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+  .dialog-header h3 { margin: 0; font-size: 18px; color: #111827; }
+  .dialog-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #6b7280;
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--radius-input);
+    transition: all 0.15s;
+  }
+  .dialog-close:hover { background: #f3f4f6; color: #111827; }
+  .dialog-body {
+    padding: 24px;
+    overflow-y: auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .dialog-body label {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-weight: 600;
+    color: #374151;
+    font-size: 14px;
+  }
+  .dialog-body input,
+  .dialog-body select,
+  .dialog-body textarea {
+    height: 44px;
+    padding: 10px 14px;
+    border-radius: var(--radius-input);
+    border: 1px solid #d1d5db;
+    background: #ffffff;
+    font-size: 14px;
+    color: #111827;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .dialog-body input:focus,
+  .dialog-body select:focus,
+  .dialog-body textarea:focus {
+    outline: none;
+    border-color: #4f6ef7;
+    box-shadow: 0 0 0 3px rgba(79, 110, 247, 0.15);
+  }
+  .dialog-body textarea { height: auto; resize: vertical; min-height: 80px; }
+  .dialog-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 16px 24px 20px;
+    border-top: 1px solid #e5e7eb;
+    background: #f9fafb;
+    border-radius: 0 0 var(--radius-lg) var(--radius-lg);
+  }
+  .dialog-footer .button {
+    padding: 10px 20px;
+    border-radius: var(--radius-btn);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .dialog-footer .button.ghost {
+    background: #ffffff;
+    border: 1px solid #d1d5db;
+    color: #374151;
+  }
+  .dialog-footer .button.ghost:hover {
+    background: #f3f4f6;
+    border-color: #9ca3af;
+  }
+  .dialog-footer .button.primary {
+    background: #4f6ef7;
+    border: 1px solid #4f6ef7;
+    color: #ffffff;
+  }
+  .dialog-footer .button.primary:hover {
+    background: #3b5de7;
+    border-color: #3b5de7;
+  }
+</style>
+<script>
+  // Pass case ID to form.js
+  window.CASE_ID_FROM_URL = new URLSearchParams(window.location.search).get('case') || null;
+</script>
+<script src="{{ url_for('static', path='/form.js') }}?v={{ range(100000, 999999) | random }}"></script>
+<script src="{{ url_for('static', path='/heartbeat.js') }}?v={{ range(100000, 999999) | random }}"></script>
+</body>
+</html>

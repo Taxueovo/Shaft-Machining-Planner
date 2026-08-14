@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShaftPlanner - PE Agent - Shaft Library</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+  <style>
+    .taxonomy-layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; min-height: 600px; }
+    .tree-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 20px; overflow-y: auto; max-height: 700px; }
+    .tree-item { padding: 8px 12px; cursor: pointer; border-radius: var(--radius-sm); margin: 2px 0; display: flex; align-items: center; gap: 8px; }
+    .tree-item:hover { background: #f0f5ff; }
+    .tree-item.active { background: var(--primary-soft); color: var(--primary); font-weight: 600; }
+    .tree-item .icon { width: 20px; text-align: center; }
+    .tree-children { margin-left: 24px; }
+    .tree-toggle { cursor: pointer; user-select: none; }
+    .tree-toggle::before { content: "▶"; display: inline-block; width: 16px; font-size: 10px; transition: transform 0.2s; }
+    .tree-toggle.expanded::before { transform: rotate(90deg); }
+    .case-grid { display: grid; gap: 16px; }
+    .case-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 20px; cursor: pointer; transition: box-shadow 0.2s; }
+    .case-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .case-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .case-header h3 { margin: 0; font-size: 16px; }
+    .case-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 13px; }
+    .case-meta-item { color: var(--muted); }
+    .case-meta-item strong { color: var(--ink); display: block; }
+    .features-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .filter-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .filter-bar select, .filter-bar input { min-width: 150px; }
+    .breadcrumb { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; font-size: 14px; }
+    .breadcrumb a { color: var(--primary); text-decoration: none; }
+    .breadcrumb a:hover { text-decoration: underline; }
+    .breadcrumb .separator { color: var(--muted); }
+    .breadcrumb .current { font-weight: 600; }
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .stats { display: flex; gap: 20px; margin-bottom: 20px; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 16px 24px; }
+    .stat-card .label { font-size: 13px; color: var(--muted); }
+    .stat-card .value { font-size: 24px; font-weight: 700; color: var(--primary); }
+    .no-case-message { background: #fff8e8; border: 1px solid #ffd666; border-radius: var(--radius-sm); padding: 20px; margin-top: 20px; }
+    .no-case-message h3 { margin: 0 0 8px; color: #8c5200; }
+    .no-case-message p { margin: 0 0 12px; color: #666; }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div><a class="brand link" href="/">ShaftPlanner - PE Agent</a><div class="subtitle">PS/PCB-AP</div></div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <a href="/" class="button ghost light">Home</a>
+    <a href="/cases" class="button ghost light">All Cases</a>
+    <a href="/custom" class="button primary">Custom Planning</a>
+    <button type="button" id="shutdown-btn" class="button ghost danger" title="Shutdown System">Stop System</button>
+  </div>
+</header>
+<main class="shell">
+  <div class="stats">
+    <div class="stat-card"><div class="label">Categories</div><div class="value" id="stat-categories">-</div></div>
+    <div class="stat-card"><div class="label">Total Cases</div><div class="value" id="stat-cases">-</div></div>
+    <div class="stat-card"><div class="label">Industries</div><div class="value" id="stat-industries">-</div></div>
+  </div>
+
+  <div class="taxonomy-layout">
+    <div class="tree-panel">
+      <h3 style="margin:0 0 16px">Classification Tree</h3>
+      <div id="taxonomy-tree"></div>
+    </div>
+
+    <div>
+      <div class="breadcrumb" id="breadcrumb">
+        <span class="current">Select a category</span>
+      </div>
+
+      <div class="filter-bar" id="filter-bar" style="display:none">
+        <select id="filter-industry"><option value="">All Industries</option></select>
+        <select id="filter-material"><option value="">All Materials</option></select>
+      </div>
+
+      <div id="case-grid" class="case-grid">
+        <div class="empty-state">
+          <p>Select a category from the tree to view cases</p>
+        </div>
+      </div>
+
+      <div id="no-case-message" class="no-case-message" style="display:none">
+        <h3>No Matching Cases Found</h3>
+        <p>We don't have a case that matches your requirements yet. You can:</p>
+        <div style="display:flex;gap:12px">
+          <a href="/custom" class="button primary">Create Custom Process Plan</a>
+          <button class="button secondary" onclick="selectParent()">Browse Parent Category</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+(function() {
+  let taxonomyData = [];
+  let currentNodeId = null;
+  let expandedNodes = new Set(['shaft', 'motor', 'gear']);
+  const esc = value => String(value ?? '')
+    .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+
+  // Get category from URL
+  const urlParams = new URLSearchParams(window.location.search);
+  const initialCategory = urlParams.get('category');
+
+  // Load taxonomy
+  async function loadTaxonomy() {
+    try {
+      const res = await fetch('/api/taxonomy');
+      const data = await res.json();
+      taxonomyData = data.nodes || [];
+      renderTree();
+      updateStats();
+
+      // Auto-select category from URL
+      if (initialCategory) {
+        selectNode(initialCategory);
+        // Expand parent nodes
+        let current = taxonomyData.find(n => n.id === initialCategory);
+        while (current && current.parent_id) {
+          expandedNodes.add(current.parent_id);
+          current = taxonomyData.find(n => n.id === current.parent_id);
+        }
+        renderTree();
+      }
+    } catch (e) {
+      console.error('Failed to load taxonomy:', e);
+    }
+  }
+
+  // Load filters
+  async function loadFilters() {
+    try {
+      const res = await fetch('/api/cases/filters');
+      const data = await res.json();
+      const industrySelect = document.getElementById('filter-industry');
+      (data.industries || []).forEach(ind => {
+        industrySelect.innerHTML += `<option value="${esc(ind)}">${esc(ind)}</option>`;
+      });
+      const materialSelect = document.getElementById('filter-material');
+      (data.materials || []).forEach(mat => {
+        materialSelect.innerHTML += `<option value="${esc(mat)}">${esc(mat)}</option>`;
+      });
+    } catch (e) {
+      console.error('Failed to load filters:', e);
+    }
+  }
+
+  // Render tree
+  function renderTree() {
+    const container = document.getElementById('taxonomy-tree');
+    container.innerHTML = renderNode(null);
+  }
+
+  function renderNode(parentId) {
+    const children = taxonomyData.filter(n => n.parent_id === parentId);
+    if (!children.length) return '';
+
+    return '<div class="tree-children">' + children.map(node => {
+      const hasChildren = taxonomyData.some(n => n.parent_id === node.id);
+      const isExpanded = expandedNodes.has(node.id);
+      const isActive = currentNodeId === node.id;
+
+      return `
+        <div class="tree-item ${isActive ? 'active' : ''}" data-id="${node.id}">
+          ${hasChildren ? `<span class="tree-toggle ${isExpanded ? 'expanded' : ''}" data-id="${node.id}"></span>` : '<span style="width:16px"></span>'}
+          <span class="icon">${getNodeIcon(node.id)}</span>
+          <span onclick="selectNode('${node.id}')">${esc(node.name)}</span>
+        </div>
+        ${isExpanded ? renderNode(node.id) : ''}
+      `;
+    }).join('') + '</div>';
+  }
+
+  function getNodeIcon(id) {
+    if (id === 'shaft') return '🔧';
+    if (id.startsWith('motor')) return '⚡';
+    if (id.startsWith('gear')) return '⚙️';
+    if (id === 'drive') return '🔩';
+    if (id === 'pump') return '💧';
+    if (id === 'spindle') return '🎯';
+    if (id === 'camshaft') return '🔧';
+    if (id === 'crankshaft') return '🏎️';
+    if (id === 'steering') return '🚗';
+    if (id === 'roller') return '🏭';
+    return '📐';
+  }
+
+  // Toggle node expansion
+  document.addEventListener('click', function(e) {
+    if (e.target.classList.contains('tree-toggle')) {
+      const id = e.target.dataset.id;
+      if (expandedNodes.has(id)) {
+        expandedNodes.delete(id);
+      } else {
+        expandedNodes.add(id);
+      }
+      renderTree();
+    }
+  });
+
+  // Select node
+  window.selectNode = async function(nodeId) {
+    currentNodeId = nodeId;
+    renderTree();
+
+    const node = taxonomyData.find(n => n.id === nodeId);
+    if (!node) return;
+
+    // Update breadcrumb
+    updateBreadcrumb(nodeId);
+
+    // Show filter bar
+    document.getElementById('filter-bar').style.display = 'flex';
+
+    // Load cases
+    await loadCases(nodeId);
+  };
+
+  // Update breadcrumb
+  function updateBreadcrumb(nodeId) {
+    const path = [];
+    let current = taxonomyData.find(n => n.id === nodeId);
+    while (current) {
+      path.unshift(current);
+      current = current.parent_id ? taxonomyData.find(n => n.id === current.parent_id) : null;
+    }
+
+    const bc = document.getElementById('breadcrumb');
+    bc.innerHTML = path.map((n, i) => {
+      if (i === path.length - 1) {
+        return `<span class="current">${esc(n.name)}</span>`;
+      }
+      return `<a href="#" onclick="selectNode('${n.id}');return false">${esc(n.name)}</a><span class="separator">/</span>`;
+    }).join('');
+  }
+
+  // Load cases
+  async function loadCases(nodeId) {
+    try {
+      const params = new URLSearchParams();
+      const industry = document.getElementById('filter-industry').value;
+      const material = document.getElementById('filter-material').value;
+      if (industry) params.set('industry', industry);
+      if (material) params.set('material', material);
+      const query = params.toString();
+      const res = await fetch(`/api/taxonomy/${encodeURIComponent(nodeId)}/cases${query ? `?${query}` : ''}`);
+      const data = await res.json();
+      const cases = data.cases || [];
+
+      if (cases.length === 0) {
+        document.getElementById('case-grid').style.display = 'none';
+        document.getElementById('no-case-message').style.display = 'block';
+      } else {
+        document.getElementById('case-grid').style.display = 'grid';
+        document.getElementById('no-case-message').style.display = 'none';
+        renderCases(cases);
+      }
+    } catch (e) {
+      console.error('Failed to load cases:', e);
+    }
+  }
+
+  // Render cases
+  function renderCases(cases) {
+    const grid = document.getElementById('case-grid');
+
+    if (!cases.length) {
+      grid.innerHTML = '<div class="empty-state"><p>No cases found in this category</p></div>';
+      return;
+    }
+
+    grid.innerHTML = cases.map(c => `
+      <div class="case-card" onclick="location.href='/cases/${encodeURIComponent(c.case_id)}'">
+        <div class="case-header">
+          <h3>${esc(c.part_name)}</h3>
+          <span class="tag">${esc(c.case_id)}</span>
+        </div>
+        <div class="case-meta">
+          <div class="case-meta-item">Industry<strong>${esc(c.industry)}</strong></div>
+          <div class="case-meta-item">Material<strong>${esc(c.material)}</strong></div>
+          <div class="case-meta-item">Tolerance<strong>${esc(c.tolerance || '-')}</strong></div>
+        </div>
+        ${c.main_features && c.main_features.length ? `
+          <div class="features-list">
+            ${c.main_features.map(f => `<span class="tag">${esc(f)}</span>`).join('')}
+          </div>
+        ` : ''}
+        ${c.description ? `<p class="muted" style="margin:8px 0 0;font-size:13px">${esc(c.description)}</p>` : ''}
+      </div>
+    `).join('');
+  }
+
+  // Update stats
+  function updateStats() {
+    const categories = taxonomyData.filter(n => n.parent_id !== null).length;
+    document.getElementById('stat-categories').textContent = categories;
+
+    fetch('/api/cases').then(r => r.json()).then(data => {
+      document.getElementById('stat-cases').textContent = (data.cases || []).length;
+    });
+
+    fetch('/api/cases/filters').then(r => r.json()).then(data => {
+      document.getElementById('stat-industries').textContent = (data.industries || []).length;
+    });
+  }
+
+  // Select parent category
+  window.selectParent = function() {
+    if (!currentNodeId) return;
+    const current = taxonomyData.find(n => n.id === currentNodeId);
+    if (current && current.parent_id) {
+      selectNode(current.parent_id);
+    }
+  };
+
+  // Filter change handlers
+  document.getElementById('filter-industry').addEventListener('change', function() {
+    if (currentNodeId) loadCases(currentNodeId);
+  });
+  document.getElementById('filter-material').addEventListener('change', function() {
+    if (currentNodeId) loadCases(currentNodeId);
+  });
+
+  // Init
+  loadTaxonomy();
+  loadFilters();
+})();
+</script>
+<script>
+document.getElementById("shutdown-btn").addEventListener("click", async () => {
+  if (!confirm("Confirm shutdown of ShaftPlanner - PE Agent system?")) return;
+  const btn = document.getElementById("shutdown-btn");
+  btn.disabled = true; btn.textContent = "Shutting down...";
+  try { await fetch("/api/shutdown", { method: "POST" }); } catch {}
+  setTimeout(() => { document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#475467"><div style="text-align:center"><h1 style="margin:0 0 12px">System Shutdown</h1><p>This page can be closed.</p></div></div>'; }, 800);
+});
+</script>
+<script src="/static/heartbeat.js?v={{ range(100000, 999999) | random }}"></script>
+</body>
+</html>

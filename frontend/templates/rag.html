@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RAG Management - ShaftPlanner</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+  <style>
+    .rag-layout { display: grid; grid-template-columns: 380px 1fr; gap: 24px; align-items: start; }
+    .status-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
+    .status-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 16px; text-align: center; }
+    .status-card .ch-count { font-size: 36px; font-weight: 700; color: var(--primary); }
+    .status-card .ch-count.zero { color: var(--muted); }
+    .status-card .ch-label { font-size: 13px; color: var(--muted); margin-top: 4px; }
+    .status-card .ch-files { font-size: 12px; color: var(--muted); margin-top: 8px; }
+    .file-list { list-style: none; padding: 0; margin: 8px 0 0; font-size: 12px; color: var(--muted); max-height: 80px; overflow-y: auto; }
+    .file-list li { padding: 2px 0; }
+    .action-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 20px; margin-bottom: 16px; }
+    .action-panel h3 { margin: 0 0 12px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+    .action-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .search-box { display: flex; gap: 8px; width: 100%; }
+    .search-box input { flex: 1; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-input); font-size: 14px; }
+    .result-item { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 14px; margin-bottom: 10px; }
+    .result-item .r-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .result-item .r-meta { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+    .result-item .r-content { font-size: 13px; color: var(--ink); line-height: 1.5; white-space: pre-wrap; max-height: 120px; overflow-y: auto; }
+    .chunk-item { font-size: 13px; padding: 10px 14px; border-left: 3px solid var(--primary); margin-bottom: 8px; background: var(--panel); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+    .chunk-item summary { cursor: pointer; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; list-style: none; }
+    .chunk-item summary::-webkit-details-marker { display: none; }
+    .chunk-item summary::before { content: "▶"; font-size: 10px; transition: transform .15s; color: var(--primary); }
+    .chunk-item[open] summary::before { transform: rotate(90deg); }
+    .chunk-item .ch-content { font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+    .toast { position: fixed; top: 20px; right: 20px; z-index: 9999; padding: 12px 24px; border-radius: var(--radius-sm); font-size: 14px; animation: fadein 0.3s; }
+    .toast.success { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+    .toast.error { background: #fce4e4; color: #991b1b; border: 1px solid #fca5a5; }
+    .toast.info { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+    @keyframes fadein { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    @media(max-width:900px) { .rag-layout { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div><div class="brand">ShaftPlanner - PE Agent</div><div class="brand-row"><div class="subtitle">RAG Management</div><span id="rag-indicator" class="service bad"><i></i>RAG Unavailable</span></div></div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <a href="/" class="button ghost light">Home</a>
+    <a href="/custom" class="button ghost light">Custom Planning</a>
+    <button type="button" id="shutdown-btn" class="button ghost danger" title="Shutdown System">Stop System</button>
+  </div>
+</header>
+
+<main class="shell">
+
+  <!-- RAG Unavailable -->
+  <div id="rag-unavailable" class="alert warning hidden">
+    <strong>RAG service unavailable.</strong>
+    Install chromadb and configure EMBEDDING_API_KEY / EMBEDDING_MODEL in the .env file.
+  </div>
+
+  <div id="rag-content" class="hidden">
+  <div class="rag-layout">
+
+    <!-- Left Sidebar: Status + Actions -->
+    <div>
+
+      <!-- Status Cards -->
+      <div class="status-cards" id="status-cards">
+        <div class="status-card" id="card-specs">
+          <div class="ch-count zero" id="spec-count">-</div>
+          <div class="ch-label">📖 Specs Chunks</div>
+          <div class="ch-files" id="spec-files">0 source files</div>
+          <ul class="file-list" id="spec-file-list"></ul>
+        </div>
+        <div class="status-card" id="card-cases">
+          <div class="ch-count zero" id="case-count">-</div>
+          <div class="ch-label">📋 Cases Chunks</div>
+          <div class="ch-files" id="case-files">0 source files</div>
+          <ul class="file-list" id="case-file-list"></ul>
+        </div>
+      </div>
+
+      <!-- Build Actions -->
+      <div class="action-panel">
+        <h3>🔨 Index Management</h3>
+        <div class="action-row">
+          <button class="button primary" onclick="buildIndex('all')" id="btn-build-all">🚀 Build All</button>
+          <button class="button secondary" onclick="buildIndex('specs')" id="btn-build-specs">📖 Build Specs</button>
+          <button class="button secondary" onclick="buildIndex('cases')" id="btn-build-cases">📋 Build Cases</button>
+        </div>
+        <div class="action-row">
+          <button class="button ghost danger" onclick="clearIndex('all')">🧹 Clear All</button>
+          <button class="button ghost" onclick="loadStatus()">🔄 Refresh Status</button>
+        </div>
+      </div>
+
+      <!-- Search -->
+      <div class="action-panel">
+        <h3>🔍 Test Search</h3>
+        <div class="search-box">
+          <input type="text" id="search-input" placeholder="e.g. motor shaft rough turning 40Cr..."
+                 onkeydown="if(event.key==='Enter')doSearch()">
+          <button class="button primary" onclick="doSearch()">Search</button>
+        </div>
+        <div id="search-results" style="margin-top:12px"></div>
+      </div>
+    </div>
+
+    <!-- Right: Chunk Details -->
+    <div>
+      <div class="action-panel">
+        <h3>📋 Indexed Chunks</h3>
+        <div class="action-row">
+          <button class="button ghost" onclick="loadChunks('all')" id="btn-chunks-all">All</button>
+          <button class="button ghost" onclick="loadChunks('specs')" id="btn-chunks-specs">📖 Specs</button>
+          <button class="button ghost" onclick="loadChunks('cases')" id="btn-chunks-cases">📋 Cases</button>
+        </div>
+        <div id="chunks-content">
+          <p class="empty">Click a button above to browse indexed chunks.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+  </div>
+</main>
+
+<script src="{{ url_for('static', path='/rag.js') }}?v={{ range(100000, 999999) | random }}"></script>
+<script src="{{ url_for('static', path='/heartbeat.js') }}?v={{ range(100000, 999999) | random }}"></script>
+</body>
+</html>

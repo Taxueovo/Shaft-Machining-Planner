@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShaftPlanner - PE Agent · {{ job_id }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+</head>
+<body>
+<header class="topbar">
+  <div><a class="brand link" href="/">ShaftPlanner - PE Agent</a><div class="subtitle">PS/PCB-AP</div></div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <a href="/" class="button ghost light">Home</a>
+    <button type="button" id="shutdown-btn" class="button ghost danger" title="Shutdown System">Stop System</button>
+  </div>
+</header>
+<main class="shell">
+  <section class="panel">
+    <div class="heading"><div><h2>Execution Status</h2></div><span id="status-badge" class="badge neutral">Loading</span></div>
+    <div class="progress"><div id="progress-bar"></div></div>
+    <div class="progress-meta"><strong id="current-step">Connecting</strong><span id="progress-value">0%</span></div>
+    <p id="status-message" class="muted">Fetching task status...</p>
+  </section>
+
+  <section id="choice-panel" class="panel hidden">
+    <div class="heading"><div><b class="warn">HITL</b><h2>High-Precision Feature Timing</h2></div></div>
+    <form id="choice-form"><div id="choice-list" class="feature-stack"></div><button class="button primary" type="submit">Submit Choices & Continue</button></form>
+  </section>
+
+  <section id="error-panel" class="panel hidden"><div id="error-message" class="alert danger"></div></section>
+  <div id="result-container" class="stack hidden"></div>
+</main>
+<script>window.SHAFTPLANNER_JOB_ID={{ job_id | tojson }};</script>
+<script type="importmap">
+{ "imports": { "three": "/static/three.module.min.js" } }
+</script>
+<script type="module" src="{{ url_for('static', path='/shaft3d.js') }}?v={{ range(100000, 999999) | random }}"></script>
+<script src="{{ url_for('static', path='/job.js') }}?v={{ range(100000, 999999) | random }}"></script>
+<script src="{{ url_for('static', path='/heartbeat.js') }}?v={{ range(100000, 999999) | random }}"></script>
+</body>
+</html>

@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShaftPlanner - PE Agent - Shaft Process Planning</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+  <style>
+    .hero { text-align: center; padding: 40px 20px; margin-bottom: 30px; }
+    .hero h1 { font-size: 32px; margin-bottom: 12px; }
+    .hero p { color: var(--muted); font-size: 18px; max-width: 600px; margin: 0 auto; }
+    .module-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin: 26px 0 40px; }
+    .module-card { display: flex; flex-direction: column; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 26px 24px; cursor: pointer; text-decoration: none; color: var(--ink); box-shadow: var(--shadow-sm); transition: border-color .15s, box-shadow .15s, transform .15s; }
+    .module-card:hover { border-color: var(--primary); box-shadow: var(--shadow-md); transform: translateY(-2px); }
+    .module-card .icon { font-size: 40px; line-height: 1; }
+    .module-card h3 { margin: 0; font-size: 18px; }
+    .module-card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; flex: 1; }
+    .module-card .go { font-size: 13px; font-weight: 700; color: var(--primary); }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div><div class="brand">ShaftPlanner - PE Agent</div><div class="brand-row"><div class="subtitle">PS/PCB-AP</div><div class="service {{ 'ok' if backend_ok else 'bad' }}"><i></i>{{ 'Backend Connected' if backend_ok else 'Backend Disconnected' }}</div></div></div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <a href="/rag" class="button ghost light" title="RAG Management">RAG</a>
+    <button type="button" id="shutdown-btn" class="button ghost danger" title="Shutdown System">Stop System</button>
+  </div>
+</header>
+<main class="shell">
+  {% if backend_detail %}<div class="alert {{ 'warning' if backend_ok else 'danger' }}">{{ backend_detail }}</div>{% endif %}
+
+  <div class="hero">
+    <h1>Shaft Process Planning Platform</h1>
+    <p>Choose how to start: import a CAD model, enter parameters manually, pick a preset, or browse the case library.</p>
+  </div>
+
+  <div class="module-grid">
+    <a class="module-card" href="/custom?mode=cad">
+      <div class="icon">📁</div>
+      <h3>Import CAD File</h3>
+      <p>Upload a STEP / BREP model to auto-extract shaft segments, keyways, gears, splines and more, then prefill the form.</p>
+      <span class="go">Import CAD Model →</span>
+    </a>
+    <a class="module-card" href="/custom">
+      <div class="icon">⌨️</div>
+      <h3>Enter Parameters</h3>
+      <p>Manually specify material, stepped segments, features and heat treatment to plan the process route from scratch.</p>
+      <span class="go">Custom Process Planning →</span>
+    </a>
+    <a class="module-card" href="/taxonomy">
+      <div class="icon">🗂️</div>
+      <h3>Select Preset</h3>
+      <p>Pick a preset by shaft type (motor, gear, pump, spline shaft, etc.) to quickly prefill segments and features.</p>
+      <span class="go">Browse Shaft Presets →</span>
+    </a>
+    <a class="module-card" href="/cases">
+      <div class="icon">📚</div>
+      <h3>Case Library</h3>
+      <p>Browse existing process cases and load their parameters with one click.</p>
+      <span class="go">Browse Case Library →</span>
+    </a>
+  </div>
+</main>
+
+<script>
+(function() {
+  // Shutdown button
+  const shutdownBtn = document.getElementById("shutdown-btn");
+  if (shutdownBtn) {
+    shutdownBtn.addEventListener("click", async () => {
+      if (!confirm("Confirm shutdown of ShaftPlanner - PE Agent system?")) return;
+      shutdownBtn.disabled = true;
+      shutdownBtn.textContent = "Shutting down...";
+      try {
+        await fetch("/api/shutdown", { method: "POST" });
+      } catch {}
+      setTimeout(() => {
+        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#475467"><div style="text-align:center"><h1 style="margin:0 0 12px">System Shutdown</h1><p>This page can be closed.</p></div></div>';
+      }, 800);
+    });
+  }
+
+  // Init
+  loadData();
+})();
+</script>
+<script src="/static/heartbeat.js?v={{ range(100000, 999999) | random }}"></script>
+</body>
+</html>

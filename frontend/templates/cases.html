@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShaftPlanner - PE Agent - Case Library</title>
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+  <style>
+    .filter-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
+    .filter-bar select, .filter-bar input { min-width: 150px; }
+    .case-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(350px, 1fr)); gap: 16px; }
+    .case-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 20px; cursor: pointer; transition: box-shadow 0.2s; }
+    .case-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+    .case-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+    .case-header h3 { margin: 0; font-size: 16px; }
+    .case-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-size: 13px; }
+    .case-meta-item { color: var(--muted); }
+    .case-meta-item strong { color: var(--ink); display: block; }
+    .features-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
+    .process-preview { margin-top: 12px; font-size: 12px; color: var(--muted); }
+    .process-preview .step { display: inline; }
+    .process-preview .step::after { content: " → "; }
+    .process-preview .step:last-child::after { content: ""; }
+    .stats { display: flex; gap: 20px; margin-bottom: 20px; }
+    .stat-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 16px 24px; }
+    .stat-card .label { font-size: 13px; color: var(--muted); }
+    .stat-card .value { font-size: 24px; font-weight: 700; color: var(--primary); }
+    .empty-state { text-align: center; padding: 60px 20px; color: var(--muted); }
+    .search-input { flex: 1; min-width: 200px; }
+    .search-feedback { min-height: 20px; margin: -8px 0 12px; font-size: 13px; color: var(--muted); }
+    .search-feedback.error { color: var(--danger); }
+  </style>
+</head>
+<body>
+<header class="topbar">
+  <div><a class="brand link" href="/">ShaftPlanner - PE Agent</a><div class="subtitle">PS/PCB-AP</div></div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <a href="/" class="button ghost light">Home</a>
+    <a href="/taxonomy" class="button ghost light">Shaft Library</a>
+    <button type="button" id="shutdown-btn" class="button ghost danger" title="Shutdown System">Stop System</button>
+  </div>
+</header>
+<main class="shell">
+  <div class="stats">
+    <div class="stat-card"><div class="label">Total Cases</div><div class="value" id="stat-total">-</div></div>
+    <div class="stat-card"><div class="label">Industries</div><div class="value" id="stat-industries">-</div></div>
+    <div class="stat-card"><div class="label">Materials</div><div class="value" id="stat-materials">-</div></div>
+  </div>
+
+  <div class="filter-bar">
+    <input type="text" id="search-input" class="search-input" placeholder="Search cases...">
+    <select id="filter-industry"><option value="">All Industries</option></select>
+    <select id="filter-material"><option value="">All Materials</option></select>
+    <button type="button" class="button primary" onclick="loadCases()">Search</button>
+  </div>
+  <div id="case-feedback" class="search-feedback" role="status" aria-live="polite"></div>
+
+  <div id="case-grid" class="case-grid">
+    <div class="empty-state">Loading cases...</div>
+  </div>
+</main>
+
+<script>
+(function() {
+  const esc = value => String(value ?? '')
+    .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+
+  function setFeedback(message = '', isError = false) {
+    const feedback = document.getElementById('case-feedback');
+    feedback.textContent = message;
+    feedback.classList.toggle('error', isError);
+  }
+
+  async function readError(response) {
+    try {
+      const body = await response.json();
+      return body.detail?.message || body.detail || `Request failed (${response.status})`;
+    } catch {
+      return `Request failed (${response.status})`;
+    }
+  }
+
+  // Load filters
+  async function loadFilters() {
+    try {
+      const res = await fetch('/api/cases/filters');
+      if (!res.ok) throw new Error(await readError(res));
+      const data = await res.json();
+
+      const industrySelect = document.getElementById('filter-industry');
+      (data.industries || []).forEach(ind => {
+        industrySelect.innerHTML += `<option value="${esc(ind)}">${esc(ind)}</option>`;
+      });
+
+      const materialSelect = document.getElementById('filter-material');
+      (data.materials || []).forEach(mat => {
+        materialSelect.innerHTML += `<option value="${esc(mat)}">${esc(mat)}</option>`;
+      });
+
+      document.getElementById('stat-industries').textContent = (data.industries || []).length;
+      document.getElementById('stat-materials').textContent = (data.materials || []).length;
+    } catch (e) {
+      console.error('Failed to load filters:', e);
+      setFeedback(`Unable to load search filters: ${e.message}`, true);
+    }
+  }
+
+  // Load cases
+  window.loadCases = async function() {
+    try {
+      const keyword = document.getElementById('search-input').value.trim();
+      const industry = document.getElementById('filter-industry').value;
+      const material = document.getElementById('filter-material').value;
+      const params = new URLSearchParams({ limit: '100' });
+      if (keyword) params.set('keyword', keyword);
+      if (industry) params.set('industry', industry);
+      if (material) params.set('material', material);
+
+      setFeedback('Searching cases…');
+      const res = await fetch(`/api/cases?${params.toString()}`);
+      if (!res.ok) throw new Error(await readError(res));
+
+      const data = await res.json();
+      const cases = data.cases || [];
+      renderCases(cases);
+      document.getElementById('stat-total').textContent = data.total ?? cases.length;
+      setFeedback(`Showing ${cases.length} of ${data.total ?? cases.length} cases.`);
+    } catch (e) {
+      console.error('Failed to load cases:', e);
+      document.getElementById('case-grid').innerHTML = `<div class="empty-state"><p>Unable to load cases: ${esc(e.message)}</p></div>`;
+      document.getElementById('stat-total').textContent = '-';
+      setFeedback(`Search failed: ${e.message}`, true);
+    }
+  };
+
+  // Render cases
+  function renderCases(cases) {
+    const grid = document.getElementById('case-grid');
+
+    if (!cases.length) {
+      grid.innerHTML = '<div class="empty-state"><p>No cases found</p></div>';
+      return;
+    }
+
+    grid.innerHTML = cases.map(c => `
+      <div class="case-card" onclick="location.href='/cases/${encodeURIComponent(c.case_id)}'">
+        <div class="case-header">
+          <h3>${esc(c.part_name)}</h3>
+          <span class="tag">${esc(c.case_id)}</span>
+        </div>
+        <div class="case-meta">
+          <div class="case-meta-item">Industry<strong>${esc(c.industry)}</strong></div>
+          <div class="case-meta-item">Material<strong>${esc(c.material)}</strong></div>
+          <div class="case-meta-item">Tolerance<strong>${esc(c.tolerance || '-')}</strong></div>
+        </div>
+        ${c.main_features && c.main_features.length ? `
+          <div class="features-list">
+            ${c.main_features.map(f => `<span class="tag">${esc(f)}</span>`).join('')}
+          </div>
+        ` : ''}
+        ${c.description ? `<p class="muted" style="margin:8px 0 0;font-size:13px">${esc(c.description)}</p>` : ''}
+      </div>
+    `).join('');
+  }
+
+  // Search on Enter
+  document.getElementById('search-input').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') loadCases();
+  });
+
+  // Filter change
+  document.getElementById('filter-industry').addEventListener('change', loadCases);
+  document.getElementById('filter-material').addEventListener('change', loadCases);
+
+  // Init
+  loadFilters();
+  loadCases();
+})();
+</script>
+<script>
+document.getElementById("shutdown-btn").addEventListener("click", async () => {
+  if (!confirm("Confirm shutdown of ShaftPlanner - PE Agent system?")) return;
+  const btn = document.getElementById("shutdown-btn");
+  btn.disabled = true; btn.textContent = "Shutting down...";
+  try { await fetch("/api/shutdown", { method: "POST" }); } catch {}
+  setTimeout(() => { document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#475467"><div style="text-align:center"><h1 style="margin:0 0 12px">System Shutdown</h1><p>This page can be closed.</p></div></div>'; }, 800);
+});
+</script>
+<script src="/static/heartbeat.js?v={{ range(100000, 999999) | random }}"></script>
+</body>
+</html>
