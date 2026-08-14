@@ -308,7 +308,7 @@
     border-color: #3b5de7;
   }
 </style>
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
   // Pass case ID to form.js
   window.CASE_ID_FROM_URL = new URLSearchParams(window.location.search).get('case') || null;
 </script>

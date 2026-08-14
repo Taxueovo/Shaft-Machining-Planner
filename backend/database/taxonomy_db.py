@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import os
+import tempfile
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -24,6 +27,7 @@ class TaxonomyDB:
     def __init__(self, file_path: Optional[Path] = None):
         self._file_path = file_path or TAXONOMY_FILE
         self._tree: Optional[TaxonomyTree] = None
+        self._lock = threading.RLock()
 
     def _load(self) -> TaxonomyTree:
         """Load taxonomy from JSON file."""
@@ -48,8 +52,13 @@ class TaxonomyDB:
             return
 
         self._file_path.parent.mkdir(parents=True, exist_ok=True)
-        with open(self._file_path, "w", encoding="utf-8") as f:
-            json.dump(self._tree.model_dump(), f, indent=2, ensure_ascii=False)
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=self._file_path.parent,
+            prefix=f".{self._file_path.name}.", suffix=".tmp", delete=False,
+        ) as temp_file:
+            json.dump(self._tree.model_dump(), temp_file, indent=2, ensure_ascii=False)
+            temp_path = Path(temp_file.name)
+        os.replace(temp_path, self._file_path)
 
         logger.info("Saved %d taxonomy nodes", len(self._tree.nodes))
 
@@ -84,6 +93,10 @@ class TaxonomyDB:
 
     def add_node(self, node: TaxonomyNode) -> None:
         """Add a new node."""
+        with self._lock:
+            self._add_node_locked(node)
+
+    def _add_node_locked(self, node: TaxonomyNode) -> None:
         tree = self._load()
 
         # Check if ID already exists
@@ -100,6 +113,10 @@ class TaxonomyDB:
 
     def update_node(self, node_id: str, updates: dict) -> None:
         """Update an existing node."""
+        with self._lock:
+            self._update_node_locked(node_id, updates)
+
+    def _update_node_locked(self, node_id: str, updates: dict) -> None:
         tree = self._load()
         node = tree.get_node(node_id)
 
@@ -116,6 +133,10 @@ class TaxonomyDB:
 
     def delete_node(self, node_id: str, recursive: bool = False) -> None:
         """Delete a node."""
+        with self._lock:
+            self._delete_node_locked(node_id, recursive)
+
+    def _delete_node_locked(self, node_id: str, recursive: bool = False) -> None:
         tree = self._load()
         node = tree.get_node(node_id)
 

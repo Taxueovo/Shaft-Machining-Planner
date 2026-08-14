@@ -78,11 +78,11 @@ MANDATORY_OPERATION_NAMES = {
 class ProcessOperation(BaseModel):
     """Single operation model."""
     operation_no: int = Field(ge=1)
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=120)
     stage: ProcessStage
-    description: str = ""
-    process_category: Optional[str] = None
-    feature_id: Optional[str] = None
+    description: str = Field(default="", max_length=2000)
+    process_category: Optional[str] = Field(default=None, max_length=120)
+    feature_id: Optional[str] = Field(default=None, max_length=80)
     conditional: bool = False
 
 
@@ -94,7 +94,7 @@ class RouteCustomizeRequest(BaseModel):
     operation_no from the frontend (no resource match).
     """
 
-    operations: list[ProcessOperation] = Field(min_length=1)
+    operations: list[ProcessOperation] = Field(min_length=1, max_length=100)
 
     @model_validator(mode="after")
     def validate_unique_operation_no(self) -> "RouteCustomizeRequest":

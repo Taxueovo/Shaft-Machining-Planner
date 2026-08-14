@@ -230,7 +230,7 @@
       const resp = await fetch(`/api/jobs/${jobId}/process-card/export`, { method: "POST" });
       const data = await resp.json();
       if (!resp.ok) throw new Error(JSON.stringify(data.detail || data));
-      container.innerHTML = `<div class="alert success">Process card exported: <strong>${esc(data.file_path)}</strong></div>`;
+      container.innerHTML = `<div class="alert success">Process card generated. <a class="btn" href="/api/jobs/${encodeURIComponent(jobId)}/process-card/download">Download Excel</a></div>`;
     } catch (err) {
       container.innerHTML = `<div class="alert danger">Export failed: ${esc(err.message)}</div>`;
     } finally {

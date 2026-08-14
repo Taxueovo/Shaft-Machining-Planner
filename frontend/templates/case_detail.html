@@ -50,7 +50,7 @@
   </div>
 </main>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 (function() {
   const caseId = {{ case_id | tojson }};
   const esc = value => String(value ?? '')
@@ -170,7 +170,7 @@
   loadCase();
 })();
 </script>
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 document.getElementById("shutdown-btn").addEventListener("click", async () => {
   if (!confirm("Confirm shutdown of Shaft Machining Planner - PE Agent system?")) return;
   const btn = document.getElementById("shutdown-btn");

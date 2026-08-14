@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import secrets
 import subprocess
 import sys
 import time
@@ -97,6 +98,8 @@ def main() -> None:
 
     # Child-process environment: make sure local (127.0.0.1) requests bypass the corporate proxy
     env = dict(os.environ)
+    token_was_supplied = bool(env.get("LOCAL_API_TOKEN"))
+    env.setdefault("LOCAL_API_TOKEN", secrets.token_urlsafe(32))
     no_proxy = [p for p in ("127.0.0.1", "localhost") if p not in (env.get("NO_PROXY") or "").split(",")]
     env["NO_PROXY"] = ",".join(no_proxy + ([env["NO_PROXY"]] if env.get("NO_PROXY") else []))
     if no_proxy:
@@ -110,7 +113,14 @@ def main() -> None:
         targets: list[tuple[str, str]] = []  # (display name, health check URL)
 
         # 1. peagent backend :8001
-        if _ready(PE_BACKEND_HEALTH, 2):
+        backend_was_running = _ready(PE_BACKEND_HEALTH, 2)
+        frontend_was_running = _ready(PE_FRONTEND_URL, 2)
+        if backend_was_running and not frontend_was_running and not token_was_supplied:
+            raise RuntimeError(
+                "A backend is already running, but its LOCAL_API_TOKEN is unknown. "
+                "Stop it and relaunch both services, or supply the same token explicitly."
+            )
+        if backend_was_running:
             print(f"[Shaft Machining Planner] peagent backend already running ({PE_BACKEND_HEALTH})")
         else:
             _start(processes, "peagent backend (8001)",
@@ -123,7 +133,7 @@ def main() -> None:
             print("[Shaft Machining Planner] Warning: peagent backend startup timed out, check the console error output.")
 
         # 2. peagent frontend :8000 (only started if already running or the backend is ready)
-        if _ready(PE_FRONTEND_URL, 2):
+        if frontend_was_running or _ready(PE_FRONTEND_URL, 2):
             print(f"[Shaft Machining Planner] peagent frontend already running ({PE_FRONTEND_URL})")
         elif backend_ready_now or _ready(PE_BACKEND_HEALTH, 1):
             frontend_cmd = [python, str(PE_FRONTEND_RUNNER), "--frontend-only", "--no-browser"]

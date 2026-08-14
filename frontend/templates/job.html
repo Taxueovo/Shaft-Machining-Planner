@@ -30,8 +30,8 @@
   <section id="error-panel" class="panel hidden"><div id="error-message" class="alert danger"></div></section>
   <div id="result-container" class="stack hidden"></div>
 </main>
-<script>window.SHAFTPLANNER_JOB_ID={{ job_id | tojson }};</script>
-<script type="importmap">
+<script nonce="{{ request.state.csp_nonce }}">window.SHAFTPLANNER_JOB_ID={{ job_id | tojson }};</script>
+<script nonce="{{ request.state.csp_nonce }}" type="importmap">
 { "imports": { "three": "/static/three.module.min.js" } }
 </script>
 <script type="module" src="{{ url_for('static', path='/shaft3d.js') }}?v={{ range(100000, 999999) | random }}"></script>

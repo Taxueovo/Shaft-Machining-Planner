@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import logging
+import hmac
 import os
+import secrets
 import signal
 import uuid
+from pathlib import Path
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from dotenv import load_dotenv
 
 # Unified environment configuration lives in the project root .env (one level above backend)
@@ -44,11 +48,39 @@ case_db = CaseDB()
 # ---- FastAPI application ----
 
 app = FastAPI(title="Shaft Machining Planner Backend", version="1.0.0", description="Motor shaft structured process planning backend")
+LOCAL_API_TOKEN = os.getenv("LOCAL_API_TOKEN") or secrets.token_urlsafe(32)
+MAX_REQUEST_BYTES = 2_000_000
+
+
+@app.middleware("http")
+async def require_local_api_token(request: Request, call_next):
+    """Keep privileged backend routes behind a token known only to the local proxy."""
+    if request.url.path.startswith("/api/v1/"):
+        try:
+            content_length = int(request.headers.get("content-length", "0"))
+        except ValueError:
+            return Response("Invalid Content-Length", status_code=400)
+        if content_length > MAX_REQUEST_BYTES:
+            return Response("Request body too large", status_code=413)
+        provided = request.headers.get("x-local-api-token", "")
+        if not hmac.compare_digest(provided, LOCAL_API_TOKEN):
+            return Response(
+                content='{"detail":"Local API authorization required"}',
+                status_code=401,
+                media_type="application/json",
+                headers={"Cache-Control": "no-store"},
+            )
+    response = await call_next(request)
+    response.headers.setdefault("Cache-Control", "no-store")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    return response
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:8000", "http://localhost:8000"],
     allow_credentials=False, allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type"],
 )
 
 
@@ -59,8 +91,7 @@ app.add_middleware(
 @app.get("/health")
 async def health() -> dict[str, Any]:
     checks = {"machine_db": MACHINE_FILE.is_file(), "tool_db": TOOL_FILE.is_file(), "llm_available": llm_available()}
-    active_jobs = len([j for j in service.store.jobs.values() if j.get("status") in ("running", "queued", "waiting_user_choice")])
-    return {"status": "ok" if all(checks.values()) else "degraded", "checks": checks, "machine_db_file": str(MACHINE_FILE), "tool_db_file": str(TOOL_FILE), "active_jobs": active_jobs, "total_jobs": len(service.store.jobs)}
+    return {"status": "ok" if all(checks.values()) else "degraded", "checks": checks, **service.store.stats()}
 
 
 @app.post("/api/v1/heartbeat")
@@ -127,6 +158,20 @@ def export_process_card(job_id: str) -> dict[str, Any]:
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     return {"file_path": str(file_path), "message": "Process card exported successfully."}
+
+
+@app.get("/api/v1/jobs/{job_id}/process-card/download", response_class=FileResponse)
+def download_process_card(job_id: str) -> FileResponse:
+    """Download an already generated process card without exposing its filesystem path."""
+    project_root = Path(__file__).resolve().parent.parent
+    file_path = project_root / "output" / f"process_card_{job_id}.xlsx"
+    if not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Generate the process card before downloading it.")
+    return FileResponse(
+        path=file_path,
+        filename=f"process_card_{job_id}.xlsx",
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
 
 
 @app.post("/api/v1/jobs/{job_id}/process-route/customize")
@@ -268,11 +313,21 @@ def preview_route(request_data: dict[str, Any]) -> dict[str, Any]:
     tool_checks: dict[str, dict[str, Any]] = {}
     machine_checks: dict[str, dict[str, Any]] = {}
     resource_notes: list[str] = []
+    required_module = max(
+        [float(feature[key]) for feature in features
+         for key in ("gear_module", "spline_module", "worm_module")
+         if feature.get(key) is not None],
+        default=None,
+    )
+    high_precision_required = any(bool(feature.get("high_precision")) for feature in features)
     for process in process_categories:
         if process == "Heat Treatment":
             continue
         machine_checks[process] = service.workflow.machine_repo.search_process(
-            process, total, float(blank_dia)
+            process, total, float(blank_dia),
+            required_weight_kg=request_data.get("estimated_workpiece_weight_kg"),
+            required_module=required_module if process in {"Gear Hobbing", "Gear Grinding"} else None,
+            high_precision_required=high_precision_required,
         )
         try:
             tool_checks[process] = service.workflow.tool_repo.search(material, process)
@@ -347,6 +402,12 @@ def preview_route(request_data: dict[str, Any]) -> dict[str, Any]:
             "tool_recommendations": recommendations,
             "machine_recommendations": machine_recommendations,
             "note": note,
+            "recommendation_provenance": {
+                "method": "deterministic_rule_filter",
+                "machine_data": "manufacturer_public_data",
+                "tool_data": "manufacturer_public_data",
+                "confidence": "screening_only" if any(item.get("unverified_constraints") for item in machine_recommendations) else "verified_against_published_limits",
+            },
         })
 
     if not critical_ok:

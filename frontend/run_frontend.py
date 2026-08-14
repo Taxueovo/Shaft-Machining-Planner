@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import os
+import secrets
 import subprocess
 import sys
 import threading
@@ -46,6 +48,8 @@ def wait_backend(timeout: int = 35) -> None:
 
 
 def main() -> None:
+    token_was_supplied = bool(os.environ.get("LOCAL_API_TOKEN"))
+    os.environ.setdefault("LOCAL_API_TOKEN", secrets.token_urlsafe(32))
     parser = argparse.ArgumentParser(description="Start the Shaft Machining Planner frontend.")
     parser.add_argument(
         "--frontend-only",
@@ -57,7 +61,13 @@ def main() -> None:
 
     backend_process = None
     try:
-        if not backend_ready():
+        backend_is_ready = backend_ready()
+        if backend_is_ready and not token_was_supplied:
+            raise RuntimeError(
+                "A backend is already running, but LOCAL_API_TOKEN was not supplied. "
+                "Stop it and let this launcher start both services, or export the same token for both."
+            )
+        if not backend_is_ready:
             if args.frontend_only:
                 raise RuntimeError(
                     "Backend is not running. Run python backend/run_backend.py first."
@@ -72,10 +82,17 @@ def main() -> None:
         if not args.no_browser:
             threading.Timer(1.2, lambda: webbrowser.open(FRONTEND_URL)).start()
 
+        host = os.getenv("FRONTEND_HOST", "127.0.0.1")
+        try:
+            is_loopback = host.lower() == "localhost" or ipaddress.ip_address(host).is_loopback
+        except ValueError as error:
+            raise RuntimeError("FRONTEND_HOST must be localhost or a loopback IP address.") from error
+        if not is_loopback:
+            raise RuntimeError("FRONTEND_HOST must be a loopback address; remote hosting is intentionally disabled.")
         uvicorn.run(
             "main:app",
             app_dir=str(FRONTEND_DIR),
-            host=os.getenv("FRONTEND_HOST", "127.0.0.1"),
+            host=host,
             port=int(os.getenv("FRONTEND_PORT", "8000")),
             reload=False,
             log_level=os.getenv("LOG_LEVEL", "info"),

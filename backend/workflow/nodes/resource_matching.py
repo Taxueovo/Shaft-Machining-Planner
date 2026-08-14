@@ -34,10 +34,21 @@ class SelectionNodesMixin:
         }
         machine_processes = processes - {"Heat Treatment"}
         tool_processes = machine_processes
+        required_module = max(
+            [float(feature[key]) for feature in geometry["features"]
+             for key in ("gear_module", "spline_module", "worm_module")
+             if feature.get(key) is not None],
+            default=None,
+        )
+        high_precision_required = any(bool(feature.get("high_precision")) for feature in geometry["features"])
+        required_weight_kg = request.get("estimated_workpiece_weight_kg")
         tool_checks = {p: self.tool_repo.search(request["material"], p) for p in sorted(tool_processes)}
         machine_checks = {
             p: self.machine_repo.search_process(
-                p, geometry["total_length_mm"], float(request["blank_diameter_mm"])
+                p, geometry["total_length_mm"], float(request["blank_diameter_mm"]),
+                required_weight_kg=required_weight_kg,
+                required_module=required_module if p in {"Gear Hobbing", "Gear Grinding"} else None,
+                high_precision_required=high_precision_required,
             )
             for p in sorted(machine_processes)
         }
@@ -106,6 +117,12 @@ class SelectionNodesMixin:
                 "tool_recommendations": recommendations,
                 "machine_recommendations": machine_recommendations,
                 "note": note, "llm_ranking": None,
+                "recommendation_provenance": {
+                    "method": "deterministic_rule_filter",
+                    "machine_data": "manufacturer_public_data",
+                    "tool_data": "manufacturer_public_data",
+                    "confidence": "screening_only" if any(item.get("unverified_constraints") for item in machine_recommendations) else "verified_against_published_limits",
+                },
             })
         t1 = datetime.now(timezone.utc)
         ExecutionTrace.record_tool(tool_calls, "rule_resource_filter",
@@ -159,4 +176,4 @@ class SelectionNodesMixin:
         t1 = datetime.now(timezone.utc)
         ExecutionTrace.record_tool(tool_calls, "llm_resource_ranking", {"operation_count": len(operation_resources)},
                                    f"LLM evaluation complete, score {result.get('overall_score', '?')}", (t1 - t0).total_seconds() * 1000)
-        return result
+        return {**result, "provenance": "model_generated_advisory", "confidence": "requires_engineer_review"}
