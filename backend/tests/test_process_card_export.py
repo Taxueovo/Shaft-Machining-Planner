@@ -4,6 +4,7 @@ import uuid
 from unittest import mock
 
 import pandas as pd
+from openpyxl import load_workbook
 
 from service import PlanningService
 from workflow import JobStore
@@ -134,6 +135,25 @@ def _route_rows(path):
 
 
 class TestCustomRouteExport:
+    def test_formula_like_operation_text_is_exported_as_literal_text(self):
+        service = _service_without_rag()
+        job_id = uuid.uuid4().hex[:12]
+        service.store.create(job_id, {"global_requirements": {}})
+        result = _make_result()
+        result["process_route"][0]["name"] = '=HYPERLINK("https://example.invalid","click")'
+        service.store.update(job_id, status="completed", result=result)
+
+        path = service.export_process_card_excel(job_id)
+        try:
+            workbook = load_workbook(path, data_only=False)
+            cells = [cell for row in workbook["Process Card"].iter_rows() for cell in row]
+            matching = [cell for cell in cells if isinstance(cell.value, str) and "HYPERLINK" in cell.value]
+            assert len(matching) == 1
+            assert matching[0].data_type == "s"
+            assert matching[0].value.startswith("'=")
+        finally:
+            path.unlink(missing_ok=True)
+
     def test_custom_route_reorders_operations_and_keeps_resources(self, tmp_path):
         """Custom route exports in user order with sequential Op# numbering; machine/tool/status still
         associate by original operation_no (the stable resource key)."""

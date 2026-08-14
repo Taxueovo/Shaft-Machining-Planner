@@ -71,7 +71,7 @@ def test_grinding_routes_query_local_grinding_machine_records():
     )
     assert grinding_operation["machine_recommendations"]
     assert any(
-        machine["unique_identifier"] == "CP-GRIND-001"
+        machine["unique_identifier"] == "PUBLIC-DMGMORI-NVG-7LH"
         for machine in grinding_operation["machine_recommendations"]
     )
 
@@ -80,7 +80,10 @@ def test_machine_repository_matches_new_gear_grinding_records():
     matches = MachineRepository().search_process("Gear Grinding", 450, 250)
 
     assert matches["conclusion"] == "satisfied"
-    assert any(machine["unique_identifier"] == "CP-GEARGRIND-001" for machine in matches["active_matches"])
+    assert any(
+        machine["unique_identifier"] == "PUBLIC-KAPPNILES-KNG3P"
+        for machine in matches["active_matches"]
+    )
 
 
 def test_machine_repository_matches_expanded_gear_hobbing_library():
@@ -88,5 +91,18 @@ def test_machine_repository_matches_expanded_gear_hobbing_library():
 
     assert matches["conclusion"] == "satisfied"
     assert {machine["unique_identifier"] for machine in matches["active_matches"]} >= {
-        "CP-GEARHOB-001", "CP-GEARHOB-002", "CP-GEARHOB-003",
+        "PUBLIC-GLEASON-100H", "PUBLIC-GLEASON-PSERIES-MIDSIZE",
     }
+
+
+def test_machine_repository_enforces_module_and_labels_unverified_precision():
+    matches = MachineRepository().search_process(
+        "Gear Hobbing", 150, 50, required_module=8, high_precision_required=True
+    )
+
+    identifiers = {machine["unique_identifier"] for machine in matches["active_matches"]}
+    assert "PUBLIC-GLEASON-100H" not in identifiers
+    assert "PUBLIC-GLEASON-PSERIES-MIDSIZE" in identifiers
+    selected = next(machine for machine in matches["active_matches"] if machine["unique_identifier"] == "PUBLIC-GLEASON-PSERIES-MIDSIZE")
+    assert selected["confidence"] == "partial_public_limits"
+    assert "required tolerance/accuracy grade" in selected["unverified_constraints"]

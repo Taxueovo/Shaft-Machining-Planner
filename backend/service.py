@@ -8,6 +8,7 @@ import logging
 import os
 import signal
 import threading
+import tempfile
 import time
 import traceback
 import uuid
@@ -38,9 +39,17 @@ JOB_CACHE_ENABLED = (
 )
 JOB_CACHE_TTL_SECONDS = int(os.getenv("JOB_CACHE_TTL_SECONDS", "3600"))
 JOB_CACHE_MAX_ENTRIES = int(os.getenv("JOB_CACHE_MAX_ENTRIES", "50"))
+RAG_STORE_EXPORTS = os.getenv("RAG_STORE_EXPORTS", "false").strip().lower() in ("1", "true", "yes", "on")
 
 # Concurrency lock for exporting the process card -> syncing to the RAG case library
 _RAG_CASE_LOCK = threading.Lock()
+
+
+def safe_excel_value(value: Any) -> Any:
+    """Prevent user/model-controlled text from being interpreted as an Excel formula."""
+    if isinstance(value, str) and value != "-" and value.startswith(("=", "+", "-", "@")):
+        return "'" + value
+    return value
 
 
 class JobCache:
@@ -288,7 +297,7 @@ class PlanningService:
 
         def wr(row, vals):
             for c, v in enumerate(vals, 1):
-                ws.cell(row=row, column=c, value=v)
+                ws.cell(row=row, column=c, value=safe_excel_value(v))
 
         r = 1
         # ═══════════════════════════════════════
@@ -455,16 +464,22 @@ class PlanningService:
         wb.save(file_path)
         logger.info("Process card exported: %s", file_path)
 
-        # ---- RAG: store the exported process card into the case library and vectorize it (failure does not affect the export flow) ----
-        try:
-            self._store_exported_card_to_rag(
+        # Exported process data may contain proprietary details. Persistence is opt-in and
+        # runs asynchronously so normal Excel export never waits on embeddings/index rebuilds.
+        if RAG_STORE_EXPORTS:
+            self.executor.submit(
+                self._store_exported_card_to_rag_safely,
                 job_id, result, request_data, geometry, route,
                 heat_label, op_resources_map,
             )
-        except Exception as exc:  # noqa: BLE001 - a RAG storage failure must not block the export
-            logger.warning("Failed to store process card into RAG case library: %s", exc)
 
         return file_path
+
+    def _store_exported_card_to_rag_safely(self, *args: Any) -> None:
+        try:
+            self._store_exported_card_to_rag(*args)
+        except Exception as exc:  # noqa: BLE001 - background indexing must not affect export
+            logger.warning("Failed to store process card into RAG case library: %s", exc)
 
     def _store_exported_card_to_rag(
         self,
@@ -546,16 +561,20 @@ class PlanningService:
                     _loaded = _json.loads(cases_file.read_text(encoding="utf-8"))
                     if isinstance(_loaded, dict) and isinstance(_loaded.get("cases"), list):
                         data = _loaded
-                except Exception:  # noqa: BLE001 - restart from scratch if the file is corrupted
-                    data = {"cases": []}
+                except Exception as exc:
+                    raise ValueError("RAG export case file is corrupted; refusing to overwrite it") from exc
 
             case_id = case["case_id"]
             data["cases"] = [c for c in data["cases"] if c.get("case_id") != case_id]
             data["cases"].append(case)
-            cases_file.write_text(
-                _json.dumps(data, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+            serialized = _json.dumps(data, ensure_ascii=False, indent=2)
+            with tempfile.NamedTemporaryFile(
+                "w", encoding="utf-8", dir=cases_file.parent,
+                prefix=f".{cases_file.name}.", suffix=".tmp", delete=False,
+            ) as temp_file:
+                temp_file.write(serialized)
+                temp_path = _Path(temp_file.name)
+            os.replace(temp_path, cases_file)
             logger.info("Process card stored to RAG case file: %s", cases_file)
 
             # ---- 3. Rebuild the case library index (chunking -> vectorization -> ChromaDB + BM25) ----

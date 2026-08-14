@@ -18,9 +18,11 @@ LANGSMITH_PROJECT
 from __future__ import annotations
 
 import json
+import ipaddress
 import logging
 import os
 from typing import Optional
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -46,8 +48,11 @@ OPENAI_API_KEY = os.getenv(
 
 OPENAI_MODEL = os.getenv(
     "OPENAI_MODEL",
-    "GPT-5-nano"
+    "gpt-5-nano"
 )
+LLM_PROVIDER = os.getenv("LLM_PROVIDER", "remote").strip().lower()
+LOCAL_MODEL_BASE_URL = os.getenv("LOCAL_MODEL_BASE_URL", "http://127.0.0.1:11434/v1")
+LOCAL_MODEL_NAME = os.getenv("LOCAL_MODEL_NAME", "qwen3:8b")
 
 
 # GPT-5: forcing temperature is not recommended
@@ -66,6 +71,32 @@ OPENAI_MAX_TOKENS = int(
 _client = None
 
 
+def _is_loopback_url(value: str) -> bool:
+    parsed = urlparse(value)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        return False
+    if parsed.hostname.lower() == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(parsed.hostname).is_loopback
+    except ValueError:
+        return False
+
+
+def _runtime_config() -> tuple[str, str, str]:
+    if LLM_PROVIDER == "local":
+        if not _is_loopback_url(LOCAL_MODEL_BASE_URL):
+            raise RuntimeError("LOCAL_MODEL_BASE_URL must use a loopback address")
+        return LOCAL_MODEL_BASE_URL.rstrip("/"), os.getenv("LOCAL_MODEL_API_KEY", "local-only"), LOCAL_MODEL_NAME
+    if LLM_PROVIDER == "rules":
+        raise RuntimeError("LLM provider is disabled; deterministic rules remain available")
+    if LLM_PROVIDER != "remote":
+        raise RuntimeError("LLM_PROVIDER must be remote, local, or rules")
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is not configured")
+    return OPENAI_BASE_URL.rstrip("/"), OPENAI_API_KEY, OPENAI_MODEL
+
+
 
 # =====================================================
 # Client
@@ -77,10 +108,7 @@ def _get_client():
 
     if _client is None:
 
-        if not OPENAI_API_KEY:
-            raise RuntimeError(
-                "OPENAI_API_KEY is not configured"
-            )
+        base_url, api_key, _ = _runtime_config()
 
         try:
             from openai import OpenAI
@@ -94,9 +122,9 @@ def _get_client():
 
         _client = OpenAI(
 
-            base_url=OPENAI_BASE_URL,
+            base_url=base_url,
 
-            api_key=OPENAI_API_KEY,
+            api_key=api_key,
 
             timeout=120,
 
@@ -118,7 +146,11 @@ def llm_available() -> bool:
     Determine whether the LLM client is available
     """
 
-    if not OPENAI_API_KEY:
+    if LLM_PROVIDER == "rules":
+        return False
+    if LLM_PROVIDER == "remote" and not OPENAI_API_KEY:
+        return False
+    if LLM_PROVIDER == "local" and not _is_loopback_url(LOCAL_MODEL_BASE_URL):
         return False
 
     try:
@@ -150,9 +182,10 @@ def chat(
     client = _get_client()
 
 
+    _, _, configured_model = _runtime_config()
     kwargs = {
 
-        "model": model or OPENAI_MODEL,
+        "model": model or configured_model,
 
         "messages": messages,
 

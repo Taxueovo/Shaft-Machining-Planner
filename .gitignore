@@ -19,6 +19,7 @@ capture-*.jpeg
 
 # Testing and caches
 .pytest_cache/
+.ruff_cache/
 .coverage
 htmlcov/
 *.pytest_cache
@@ -29,5 +30,10 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Local data (capability/case libraries are controlled data, excluded by default)
+# User-entered and generated data must never be committed. The two public,
+# source-attributed capability samples are intentionally tracked.
 data/cases.json
+data/jobs.sqlite3*
+backend/rag/data/cases/
+backend/rag/data/chroma/
+backend/rag/data/specs/

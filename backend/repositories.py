@@ -291,6 +291,9 @@ class MachineRepository:
         required_length_mm: float,
         required_diameter_mm: float,
         top_n: int = 5,
+        required_weight_kg: Optional[float] = None,
+        required_module: Optional[float] = None,
+        high_precision_required: bool = False,
     ) -> dict[str, Any]:
         """Match route operations against local machine capability records.
 
@@ -324,8 +327,22 @@ class MachineRepository:
             diameter = convert_length_to_mm(
                 row.get("Max workpiece diameter"), row.get("Max workpiece diameter (Unit)")
             )
+            max_weight = to_float(row.get("Max workpiece weight"))
+            max_module = to_float(row.get("Max gear module"))
             if length is None or diameter is None or length < required_length_mm or diameter < required_diameter_mm:
                 continue
+            if required_weight_kg is not None and max_weight is not None and max_weight < required_weight_kg:
+                continue
+            if required_module is not None and max_module is not None and max_module < required_module:
+                continue
+
+            unverified = []
+            if required_weight_kg is not None and max_weight is None:
+                unverified.append("workpiece weight capacity")
+            if required_module is not None and max_module is None:
+                unverified.append("gear/spline module capacity")
+            if high_precision_required:
+                unverified.append("required tolerance/accuracy grade")
 
             stopped_flag = parse_optional_bool(row.get("Machine production stopped"))
             status = "stopped" if stopped_flag is True else "active"
@@ -338,10 +355,13 @@ class MachineRepository:
                 "production_status": status,
                 "max_workpiece_length_mm": clean_number(length),
                 "max_workpiece_diameter_mm": clean_number(diameter),
-                "max_workpiece_weight_kg": clean_number(to_float(row.get("Max workpiece weight"))),
-                "max_gear_module": clean_number(to_float(row.get("Max gear module"))),
+                "max_workpiece_weight_kg": clean_number(max_weight),
+                "max_gear_module": clean_number(max_module),
                 "capability_source_url": normalize_excel_value(row.get("Capability source URL")),
                 "capability_notes": normalize_excel_value(row.get("Capability notes")),
+                "unverified_constraints": unverified,
+                "confidence": "verified_public_limits" if not unverified else "partial_public_limits",
+                "provenance": "manufacturer_public_data",
                 "_fit_score": (float(length) - required_length_mm) + (float(diameter) - required_diameter_mm),
             }
             (active if status == "active" else stopped).append(record)
@@ -361,6 +381,9 @@ class MachineRepository:
             "process": process,
             "required_length_mm": required_length_mm,
             "required_diameter_mm": required_diameter_mm,
+            "required_weight_kg": required_weight_kg,
+            "required_module": required_module,
+            "high_precision_required": high_precision_required,
             "active_matches": clean(active),
             "stopped_matches": clean(stopped),
         }

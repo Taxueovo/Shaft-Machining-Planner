@@ -7,7 +7,7 @@ Thank you for contributing! Shaft Machining Planner is a motor-shaft process pla
 
 1. Fork the repository and clone your fork.
 2. Create a conda environment: `conda env create -f environment.yml`
-3. Install Python dependencies: `pip install -r requirements.txt`
+3. Install reproducible development dependencies: `pip install --require-hashes -r requirements-dev.lock.txt`
 4. Run the tests: `pytest` (from the repository root)
 
 ## Submitting Changes
@@ -26,6 +26,9 @@ Thank you for contributing! Shaft Machining Planner is a motor-shaft process pla
 
 - Follow PEP 8; use type hints for new public functions.
 - Keep f-strings for string interpolation.
+- Run `python scripts/verify_public_sources.py` for capability workbook changes;
+  automatic scraping must never overwrite engineering values. Record source URLs
+  and review dates only after a human comparison with the official page.
 - The project is fully English by design; keep all UI strings, comments, and
   documentation in English.
 

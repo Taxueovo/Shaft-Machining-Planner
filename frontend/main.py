@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -8,7 +9,7 @@ from typing import Any
 import httpx
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -20,17 +21,46 @@ FRONTEND_DIR = Path(__file__).resolve().parent
 load_dotenv(FRONTEND_DIR.parent / ".env")
 load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8001")
+LOCAL_API_TOKEN = os.getenv("LOCAL_API_TOKEN", "")
+if not LOCAL_API_TOKEN:
+    raise RuntimeError("LOCAL_API_TOKEN is required. Start the application with frontend/run_frontend.py.")
+_ALLOWED_ORIGINS = {"http://127.0.0.1:8000", "http://localhost:8000"}
+MAX_REQUEST_BYTES = 2_000_000
 
 
 class NoCacheMiddleware(BaseHTTPMiddleware):
     """Middleware to disable static file caching."""
 
     async def dispatch(self, request: Request, call_next):
+        request.state.csp_nonce = secrets.token_urlsafe(18)
         response = await call_next(request)
         if request.url.path.startswith("/static"):
             response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
             response.headers["Pragma"] = "no-cache"
             response.headers["Expires"] = "0"
+        return response
+
+
+class LocalOriginMiddleware(BaseHTTPMiddleware):
+    """Reject cross-site state-changing requests before they reach the local proxy."""
+
+    async def dispatch(self, request: Request, call_next):
+        if request.method not in {"GET", "HEAD", "OPTIONS"}:
+            try:
+                content_length = int(request.headers.get("content-length", "0"))
+            except ValueError:
+                return Response("Invalid Content-Length", status_code=400)
+            if content_length > MAX_REQUEST_BYTES:
+                return Response("Request body too large", status_code=413)
+            origin = request.headers.get("origin")
+            fetch_site = request.headers.get("sec-fetch-site")
+            if (origin and origin not in _ALLOWED_ORIGINS) or fetch_site == "cross-site":
+                return Response("Cross-site request rejected", status_code=403)
+        response = await call_next(request)
+        response.headers.setdefault("Content-Security-Policy", f"default-src 'self'; script-src 'self' 'nonce-{request.state.csp_nonce}'; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
         return response
 
 
@@ -46,6 +76,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Shaft Machining Planner Frontend", version="1.0.0", lifespan=lifespan)
 app.add_middleware(NoCacheMiddleware)
+app.add_middleware(LocalOriginMiddleware)
 templates = Jinja2Templates(directory=str(FRONTEND_DIR / "templates"))
 app.mount(
     "/static",
@@ -95,6 +126,7 @@ async def forward(
             method,
             path,
             json=payload,
+            headers={"x-local-api-token": LOCAL_API_TOKEN},
         )
         response.raise_for_status()
         return response.json()
@@ -152,6 +184,35 @@ async def get_result(request: Request, job_id: str) -> dict[str, Any]:
 @app.post("/api/jobs/{job_id}/process-card/export")
 async def export_process_card(request: Request, job_id: str) -> dict[str, Any]:
     return await forward(request, "POST", f"/api/v1/jobs/{job_id}/process-card/export")
+
+
+@app.get("/api/jobs/{job_id}/process-card/download")
+async def download_process_card(request: Request, job_id: str) -> Response:
+    stream_context = request.app.state.backend.stream(
+        "GET",
+        f"/api/v1/jobs/{job_id}/process-card/download",
+        headers={"x-local-api-token": LOCAL_API_TOKEN},
+    )
+    upstream = await stream_context.__aenter__()
+    if upstream.status_code != 200:
+        await stream_context.__aexit__(None, None, None)
+        raise HTTPException(status_code=upstream.status_code, detail="Process card is not available.")
+
+    async def chunks():
+        try:
+            async for chunk in upstream.aiter_bytes():
+                yield chunk
+        finally:
+            await stream_context.__aexit__(None, None, None)
+
+    headers = {"Content-Disposition": f'attachment; filename="process_card_{job_id}.xlsx"'}
+    if upstream.headers.get("content-length"):
+        headers["Content-Length"] = upstream.headers["content-length"]
+    return StreamingResponse(
+        chunks(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
 
 
 @app.post("/api/jobs/{job_id}/process-route/customize")
@@ -346,7 +407,7 @@ async def rag_health(request: Request) -> dict[str, Any]:
 async def heartbeat(request: Request) -> dict[str, str]:
     """Forward heartbeat to backend watchdog."""
     try:
-        await request.app.state.backend.post("/api/v1/heartbeat")
+        await request.app.state.backend.post("/api/v1/heartbeat", headers={"x-local-api-token": LOCAL_API_TOKEN})
     except Exception:
         pass
     return {"status": "ok"}
@@ -361,7 +422,7 @@ async def shutdown(request: Request) -> dict[str, str]:
 
     # 1. Notify backend to shutdown
     try:
-        await request.app.state.backend.post("/api/v1/shutdown")
+        await request.app.state.backend.post("/api/v1/shutdown", headers={"x-local-api-token": LOCAL_API_TOKEN})
     except Exception:
         pass  # Backend may already be shutdown
 

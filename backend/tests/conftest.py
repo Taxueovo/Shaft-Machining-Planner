@@ -1,18 +1,21 @@
 """pytest configuration - automatically adds the backend directory to the Python path."""
+import os
 import sys
 from pathlib import Path
 
 import pytest
+
+os.environ.setdefault("LOCAL_API_TOKEN", "pytest-loopback-token")
+os.environ.setdefault("JOB_DB_FILE", ":memory:")
 
 # Add the backend directory to the Python path to avoid manual sys.path.insert in each test file
 backend_dir = Path(__file__).resolve().parent.parent
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
-# Machine/tool capability libraries (data/machines.xlsx, data/tools.xlsx) and
-# the case library (data/cases.json) are private business data, intentionally
-# not shipped with the repository. Tests that exercise those resources are
-# skipped automatically when the files are absent (e.g. CI) instead of failing.
+# The repository ships a small source-attributed public machine/tool sample.
+# Private case data remains excluded. Resource tests are skipped only if a fork
+# intentionally removes the public capability workbooks.
 _REQUIRE_DATA_FILES = {
     "test_preview_resources",
     "test_heat_treatment_provider",

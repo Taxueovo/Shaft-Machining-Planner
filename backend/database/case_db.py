@@ -5,6 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import sys
+import os
+import tempfile
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -25,6 +28,7 @@ class CaseDB:
     def __init__(self, file_path: Optional[Path] = None):
         self._file_path = file_path or CASES_FILE
         self._cases: Optional[list[Case]] = None
+        self._lock = threading.RLock()
 
     def _load(self) -> list[Case]:
         """Load cases from JSON file."""
@@ -51,8 +55,13 @@ class CaseDB:
         self._file_path.parent.mkdir(parents=True, exist_ok=True)
         data = {"cases": [case.model_dump(mode="json") for case in self._cases]}
 
-        with open(self._file_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False, default=str)
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=self._file_path.parent,
+            prefix=f".{self._file_path.name}.", suffix=".tmp", delete=False,
+        ) as temp_file:
+            json.dump(data, temp_file, indent=2, ensure_ascii=False, default=str)
+            temp_path = Path(temp_file.name)
+        os.replace(temp_path, self._file_path)
 
         logger.info("Saved %d cases", len(self._cases))
 
@@ -120,6 +129,10 @@ class CaseDB:
 
     def create(self, case: Case) -> Case:
         """Create a new case."""
+        with self._lock:
+            return self._create_locked(case)
+
+    def _create_locked(self, case: Case) -> Case:
         cases = self._load()
 
         # Check if ID already exists
@@ -140,6 +153,10 @@ class CaseDB:
 
     def update(self, case_id: str, updates: dict) -> Case:
         """Update an existing case."""
+        with self._lock:
+            return self._update_locked(case_id, updates)
+
+    def _update_locked(self, case_id: str, updates: dict) -> Case:
         cases = self._load()
         case = next((c for c in cases if c.case_id == case_id), None)
 
@@ -160,6 +177,10 @@ class CaseDB:
 
     def delete(self, case_id: str) -> None:
         """Delete a case."""
+        with self._lock:
+            self._delete_locked(case_id)
+
+    def _delete_locked(self, case_id: str) -> None:
         cases = self._load()
         original_count = len(cases)
         cases = [c for c in cases if c.case_id != case_id]

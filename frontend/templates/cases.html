@@ -60,7 +60,7 @@
   </div>
 </main>
 
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 (function() {
   const esc = value => String(value ?? '')
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
@@ -178,7 +178,7 @@
   loadCases();
 })();
 </script>
-<script>
+<script nonce="{{ request.state.csp_nonce }}">
 document.getElementById("shutdown-btn").addEventListener("click", async () => {
   if (!confirm("Confirm shutdown of Shaft Machining Planner - PE Agent system?")) return;
   const btn = document.getElementById("shutdown-btn");

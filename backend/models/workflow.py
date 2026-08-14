@@ -27,8 +27,9 @@ class PlanningRequest(BaseModel):
     blank_type: Literal["solid", "hollow"] = "solid"
     blank_diameter_mm: float = Field(gt=0)
     blank_inner_diameter_mm: Optional[float] = Field(default=None, gt=0)
-    segments: list[ShaftSegment] = Field(min_length=1)
-    features: list[FeatureInput] = Field(default_factory=list)
+    estimated_workpiece_weight_kg: Optional[float] = Field(default=None, gt=0)
+    segments: list[ShaftSegment] = Field(min_length=1, max_length=50)
+    features: list[FeatureInput] = Field(default_factory=list, max_length=100)
     global_requirements: GlobalRequirements = Field(default_factory=GlobalRequirements)
     # Additional geometry information (input-provided, preserved when the request round-trips)
     main_axis: Optional[list[float]] = Field(default=None, max_length=3)
