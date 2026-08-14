@@ -1,5 +1,12 @@
 name: CI
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 on:
   push:
     branches: [main]
@@ -20,12 +27,14 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: pip install --require-hashes -r requirements-dev.lock.txt
 
       - name: Lint with ruff
         run: |
-          pip install ruff
-          ruff check backend scripts
+          ruff check backend frontend scripts start_shaftplanner.py
+
+      - name: Scan for committed secrets
+        run: python scripts/release_audit.py && python scripts/scan_secrets.py
 
       - name: Run backend tests
         run: pytest backend/tests -v
