@@ -482,7 +482,7 @@ class RAGCli:
     def _print_header(self):
         if HAS_RICH:
             title = Panel(
-                "[bold white]ShaftPlanner RAG Management Console[/]\n"
+                "[bold white]Shaft Machining Planner RAG Management Console[/]\n"
                 "[dim]Dual-channel differentiated chunks | Specs + Cases | ChromaDB[/]",
                 box=box.DOUBLE,
                 border_style="cyan",
@@ -490,7 +490,7 @@ class RAGCli:
             self._print(title)
         else:
             print("\n" + "=" * 60)
-            print("  ShaftPlanner RAG Management Console")
+            print("  Shaft Machining Planner RAG Management Console")
             print("  Dual-channel differentiated chunks | Specs + Cases")
             print("=" * 60)
 

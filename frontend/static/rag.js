@@ -1,5 +1,5 @@
 /**
- * ShaftPlanner RAG Management — frontend logic.
+ * Shaft Machining Planner RAG Management — frontend logic.
  *
  * Loaded only on /rag page. Uses the same fetch() pattern as the rest of
  * the project. All RAG API calls go through the frontend proxy (/api/rag/...)
@@ -33,7 +33,7 @@
     const btn = getEl("shutdown-btn");
     if (btn) {
       btn.addEventListener("click", async () => {
-        if (!confirm("Confirm shutdown of ShaftPlanner - PE Agent system?")) return;
+        if (!confirm("Confirm shutdown of Shaft Machining Planner - PE Agent system?")) return;
         btn.disabled = true;
         btn.textContent = "Shutting down...";
         try { await fetch("/api/shutdown", { method: "POST" }); } catch (_) {}

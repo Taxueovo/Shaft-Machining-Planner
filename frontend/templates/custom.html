@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ShaftPlanner - PE Agent - Custom Process Planning</title>
+  <title>Shaft Machining Planner - PE Agent - Custom Process Planning</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
   <style>
     .case-banner { background: var(--primary-soft); border: 1px solid #b8ccff; border-radius: var(--radius-sm); padding: 16px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; }
@@ -51,7 +51,7 @@
 </head>
 <body>
 <header class="topbar">
-  <div><a class="brand link" href="/">ShaftPlanner - PE Agent</a><div class="brand-row"><div class="subtitle">PS/PCB-AP</div><div class="service {{ 'ok' if backend_ok else 'bad' }}"><i></i>{{ 'Backend Connected' if backend_ok else 'Backend Disconnected' }}</div></div></div>
+  <div><a class="brand link" href="/">Shaft Machining Planner - PE Agent</a><div class="brand-row"><div class="subtitle">PS/PCB-AP</div><div class="service {{ 'ok' if backend_ok else 'bad' }}"><i></i>{{ 'Backend Connected' if backend_ok else 'Backend Disconnected' }}</div></div></div>
   <div style="display:flex;align-items:center;gap:12px">
     <a href="/" class="button ghost light">Home</a>
     <a href="/taxonomy" class="button ghost light">Shaft Library</a>

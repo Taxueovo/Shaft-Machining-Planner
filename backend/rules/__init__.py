@@ -1,4 +1,4 @@
-"""ShaftPlanner rule engine."""
+"""Shaft Machining Planner rule engine."""
 
 from .constants import (
     FEATURE_NAME, FEATURE_PROCESS, HEAT_NAME, SURFACE_NAME,

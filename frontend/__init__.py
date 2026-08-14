@@ -1,1 +1,1 @@
-"""ShaftPlanner frontend package."""
+"""Shaft Machining Planner frontend package."""

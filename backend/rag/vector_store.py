@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 # NameError and mask the real cause (see the check in __init__).
 if HAS_CHROMADB:
 
-    class ShaftPlannerEmbeddingFunction(EmbeddingFunction):
+    class ShaftMachiningPlannerEmbeddingFunction(EmbeddingFunction):
         """Wrap the OpenAI-compatible embedding API as a ChromaDB embedding function.
 
         Does not use ChromaDB's built-in all-MiniLM-L6-v2; instead calls the
@@ -124,7 +124,7 @@ class VectorStoreManager:
         self._cases: Any = None
 
         # Use the dedicated embedding model; ChromaDB falls back to the built-in model if unavailable
-        self._embedding_fn = ShaftPlannerEmbeddingFunction() if _embedding_available() else None
+        self._embedding_fn = ShaftMachiningPlannerEmbeddingFunction() if _embedding_available() else None
         ef_label = f"custom:{EMBEDDING_MODEL}" if self._embedding_fn else "chromadb:default"
         logger.info("VectorStore initialized at %s (embedding=%s)", self._persist_dir, ef_label)
 
@@ -136,7 +136,7 @@ class VectorStoreManager:
         if self._specs is None:
             self._specs = _get_or_recreate_collection(
                 self._client, COLLECTION_SPECS, self._embedding_fn,
-                "ShaftPlanner process handbook - semantic chunks of chapters/sections/process step descriptions",
+                "Shaft Machining Planner process handbook - semantic chunks of chapters/sections/process step descriptions",
             )
         return self._specs
 
@@ -146,7 +146,7 @@ class VectorStoreManager:
         if self._cases is None:
             self._cases = _get_or_recreate_collection(
                 self._client, COLLECTION_CASES, self._embedding_fn,
-                "ShaftPlanner part case base - full case process routes",
+                "Shaft Machining Planner part case base - full case process routes",
             )
         return self._cases
 

@@ -3,7 +3,7 @@
   const shutdownBtn = document.getElementById("shutdown-btn");
   if (shutdownBtn) {
     shutdownBtn.addEventListener("click", async () => {
-      if (!confirm("Confirm shutdown of ShaftPlanner system? Both frontend and backend will stop.")) return;
+      if (!confirm("Confirm shutdown of Shaft Machining Planner system? Both frontend and backend will stop.")) return;
       shutdownBtn.disabled = true;
       shutdownBtn.textContent = "Shutting down...";
       try {
@@ -607,7 +607,7 @@
     } catch (error) {
       let msg = error.message;
       if (error.name === "TypeError") {
-        msg = "Unable to connect to server. Please confirm ShaftPlanner is running (execute python start_shaftplanner.py in terminal).";
+        msg = "Unable to connect to server. Please confirm Shaft Machining Planner is running (execute python start_shaftplanner.py in terminal).";
       }
       showError(`Submission failed: ${msg}`);
       submit.disabled = false; submit.textContent = "Start Process Planning";

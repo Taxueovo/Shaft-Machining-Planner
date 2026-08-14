@@ -1,4 +1,4 @@
-"""ShaftPlanner workflow module."""
+"""Shaft Machining Planner workflow module."""
 
 from .tool_registry import ToolRegistry
 from .job_store import JobStore

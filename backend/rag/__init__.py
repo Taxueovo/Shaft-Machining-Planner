@@ -1,4 +1,4 @@
-"""ShaftPlanner RAG module - dual-channel differentiated chunk retrieval-augmented generation.
+"""Shaft Machining Planner RAG module - dual-channel differentiated chunk retrieval-augmented generation.
 
 Module structure:
 - Specs (process handbook): long-form process handbook text, semantically split by

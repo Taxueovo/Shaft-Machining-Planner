@@ -1,4 +1,4 @@
-"""ShaftPlanner database layer."""
+"""Shaft Machining Planner database layer."""
 
 from .taxonomy_db import TaxonomyDB
 from .case_db import CaseDB

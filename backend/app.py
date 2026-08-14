@@ -43,7 +43,7 @@ case_db = CaseDB()
 
 # ---- FastAPI application ----
 
-app = FastAPI(title="ShaftPlanner Backend", version="1.0.0", description="Motor shaft structured process planning backend")
+app = FastAPI(title="Shaft Machining Planner Backend", version="1.0.0", description="Motor shaft structured process planning backend")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://127.0.0.1:8000", "http://localhost:8000"],

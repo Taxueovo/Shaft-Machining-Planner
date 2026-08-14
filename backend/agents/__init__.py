@@ -1,4 +1,4 @@
-"""ShaftPlanner Agent framework."""
+"""Shaft Machining Planner Agent framework."""
 
 from .base import BaseAgent, AgentCapability, AgentResult
 from .registry import AgentRegistry
