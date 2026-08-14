@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ShaftPlanner - PE Agent - Case Library</title>
+  <title>Shaft Machining Planner - PE Agent - Case Library</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
   <style>
     .filter-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
@@ -33,7 +33,7 @@
 </head>
 <body>
 <header class="topbar">
-  <div><a class="brand link" href="/">ShaftPlanner - PE Agent</a><div class="subtitle">PS/PCB-AP</div></div>
+  <div><a class="brand link" href="/">Shaft Machining Planner - PE Agent</a><div class="subtitle">PS/PCB-AP</div></div>
   <div style="display:flex;align-items:center;gap:12px">
     <a href="/" class="button ghost light">Home</a>
     <a href="/taxonomy" class="button ghost light">Shaft Library</a>
@@ -180,7 +180,7 @@
 </script>
 <script>
 document.getElementById("shutdown-btn").addEventListener("click", async () => {
-  if (!confirm("Confirm shutdown of ShaftPlanner - PE Agent system?")) return;
+  if (!confirm("Confirm shutdown of Shaft Machining Planner - PE Agent system?")) return;
   const btn = document.getElementById("shutdown-btn");
   btn.disabled = true; btn.textContent = "Shutting down...";
   try { await fetch("/api/shutdown", { method: "POST" }); } catch {}

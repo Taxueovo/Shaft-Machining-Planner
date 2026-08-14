@@ -295,7 +295,7 @@ class PlanningService:
         # Title
         # ═══════════════════════════════════════
         ws.merge_cells("A1:H1")
-        ws["A1"] = "ShaftPlanner - Process Card"
+        ws["A1"] = "Shaft Machining Planner - Process Card"
         ws["A1"].font = title_font
         ws["A1"].alignment = Alignment(horizontal="center")
 

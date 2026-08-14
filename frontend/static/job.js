@@ -3,7 +3,7 @@
   const shutdownBtn = document.getElementById("shutdown-btn");
   if (shutdownBtn) {
     shutdownBtn.addEventListener("click", async () => {
-      if (!confirm("Confirm shutdown of ShaftPlanner system? Both frontend and backend will stop.")) return;
+      if (!confirm("Confirm shutdown of Shaft Machining Planner system? Both frontend and backend will stop.")) return;
       shutdownBtn.disabled = true;
       shutdownBtn.textContent = "Shutting down...";
       try {
@@ -514,7 +514,7 @@
         try {
           return renderResult(output);
         } catch (renderErr) {
-          console.error("[ShaftPlanner] renderResult error:", renderErr);
+          console.error("[Shaft Machining Planner] renderResult error:", renderErr);
           showError(`Result rendering failed: ${renderErr.message}`);
         }
       }

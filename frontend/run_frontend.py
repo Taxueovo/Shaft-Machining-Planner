@@ -46,7 +46,7 @@ def wait_backend(timeout: int = 35) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Start the ShaftPlanner frontend.")
+    parser = argparse.ArgumentParser(description="Start the Shaft Machining Planner frontend.")
     parser.add_argument(
         "--frontend-only",
         action="store_true",
@@ -62,12 +62,12 @@ def main() -> None:
                 raise RuntimeError(
                     "Backend is not running. Run python backend/run_backend.py first."
                 )
-            print("[ShaftPlanner] Backend not running, starting a separate backend process...")
+            print("[Shaft Machining Planner] Backend not running, starting a separate backend process...")
             backend_process = start_backend()
             wait_backend()
 
-        print(f"[ShaftPlanner] Backend: {BACKEND_URL}")
-        print(f"[ShaftPlanner] Frontend: {FRONTEND_URL}")
+        print(f"[Shaft Machining Planner] Backend: {BACKEND_URL}")
+        print(f"[Shaft Machining Planner] Frontend: {FRONTEND_URL}")
 
         if not args.no_browser:
             threading.Timer(1.2, lambda: webbrowser.open(FRONTEND_URL)).start()
@@ -82,7 +82,7 @@ def main() -> None:
         )
     finally:
         if backend_process is not None and backend_process.poll() is None:
-            print("[ShaftPlanner] Closing the backend process started by the frontend...")
+            print("[Shaft Machining Planner] Closing the backend process started by the frontend...")
             backend_process.terminate()
             try:
                 backend_process.wait(timeout=8)

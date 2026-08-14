@@ -1,5 +1,5 @@
 /**
- * ShaftPlanner Heartbeat — keeps backend watchdog alive.
+ * Shaft Machining Planner Heartbeat — keeps backend watchdog alive.
  * Include this script in every page.
  * If no heartbeat is received by the backend within HEARTBEAT_TIMEOUT (default 30s),
  * both frontend and backend auto-shutdown.

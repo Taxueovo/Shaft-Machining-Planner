@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ShaftPlanner - PE Agent - Shaft Process Planning</title>
+  <title>Shaft Machining Planner - PE Agent - Shaft Process Planning</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
   <style>
     .hero { text-align: center; padding: 40px 20px; margin-bottom: 30px; }
@@ -20,7 +20,7 @@
 </head>
 <body>
 <header class="topbar">
-  <div><div class="brand">ShaftPlanner - PE Agent</div><div class="brand-row"><div class="subtitle">PS/PCB-AP</div><div class="service {{ 'ok' if backend_ok else 'bad' }}"><i></i>{{ 'Backend Connected' if backend_ok else 'Backend Disconnected' }}</div></div></div>
+  <div><div class="brand">Shaft Machining Planner - PE Agent</div><div class="brand-row"><div class="subtitle">PS/PCB-AP</div><div class="service {{ 'ok' if backend_ok else 'bad' }}"><i></i>{{ 'Backend Connected' if backend_ok else 'Backend Disconnected' }}</div></div></div>
   <div style="display:flex;align-items:center;gap:12px">
     <a href="/rag" class="button ghost light" title="RAG Management">RAG</a>
     <button type="button" id="shutdown-btn" class="button ghost danger" title="Shutdown System">Stop System</button>
@@ -62,7 +62,7 @@
   const shutdownBtn = document.getElementById("shutdown-btn");
   if (shutdownBtn) {
     shutdownBtn.addEventListener("click", async () => {
-      if (!confirm("Confirm shutdown of ShaftPlanner - PE Agent system?")) return;
+      if (!confirm("Confirm shutdown of Shaft Machining Planner - PE Agent system?")) return;
       shutdownBtn.disabled = true;
       shutdownBtn.textContent = "Shutting down...";
       try {

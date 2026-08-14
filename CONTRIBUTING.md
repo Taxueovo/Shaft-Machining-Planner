@@ -1,6 +1,6 @@
-# Contributing to ShaftPlanner
+# Contributing to Shaft Machining Planner
 
-Thank you for contributing! ShaftPlanner is a motor-shaft process planning system
+Thank you for contributing! Shaft Machining Planner is a motor-shaft process planning system
 (Python backend + frontend).
 
 ## Getting Started

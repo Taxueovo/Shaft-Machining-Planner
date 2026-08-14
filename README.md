@@ -1,15 +1,17 @@
-# ShaftPlanner
+# Shaft Machining Planner
 
-[![CI](https://github.com/Taxueovo/ShaftPlanner/actions/workflows/ci.yml/badge.svg)](https://github.com/Taxueovo/ShaftPlanner/actions/workflows/ci.yml)
+[![CI](https://github.com/Taxueovo/Shaft-Machining-Planner/actions/workflows/ci.yml/badge.svg)](https://github.com/Taxueovo/Shaft-Machining-Planner/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.10-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Maintainer](https://img.shields.io/badge/maintainer-Taxueovo-blue)](https://github.com/Taxueovo)
 
-Structured process planning for motor shafts, with one-click launch.
+Machining process planning for motor shafts.
 
-ShaftPlanner plans the machining process route (process planning) of stepped shafts —
-turning, keyways, splines, gears, bores, heat treatment and finishing — and verifies
-the plan against the local machine tool and cutting tool capability libraries.
+Input the shaft geometry — stepped segments, keyways, splines, gears, bores, tapers —
+and it generates the complete machining plan: operations, machine tools, cutting
+tools, heat treatment and finishing. The plan is grounded in RAG handbooks and a case
+base, verified against the local machine tool and cutting tool capability libraries,
+and exported as a process-card Excel.
 
 Two components:
 
@@ -129,7 +131,7 @@ the RAG management page (`/rag`) shows a notice when it is unavailable.
 ## 6. Directory structure
 
 ```
-ShaftPlanner/
+Shaft Machining Planner/
 ├── backend/          # peagent backend (process planning workflow)
 │   ├── app.py / run_backend.py / service.py / repositories.py
 │   ├── models/ rules/ agents/ workflow/ providers/ workers/ planners/

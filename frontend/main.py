@@ -44,7 +44,7 @@ async def lifespan(app: FastAPI):
     await app.state.backend.aclose()
 
 
-app = FastAPI(title="ShaftPlanner Frontend", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Shaft Machining Planner Frontend", version="1.0.0", lifespan=lifespan)
 app.add_middleware(NoCacheMiddleware)
 templates = Jinja2Templates(directory=str(FRONTEND_DIR / "templates"))
 app.mount(

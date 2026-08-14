@@ -1,4 +1,4 @@
-"""ShaftPlanner data models."""
+"""Shaft Machining Planner data models."""
 
 from .taxonomy import TaxonomyNode, TaxonomyTree
 from .case import CaseMetadata, ProcessStep, Case
