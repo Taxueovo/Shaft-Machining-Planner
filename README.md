@@ -22,7 +22,6 @@ One project, two subsystems:
 ## Authors & Maintainers
 
 - **Taxueovo** — core maintainer and primary developer.
-- **Melanie-Fan** — documentation and design.
 
 ## 1. Architecture
 
