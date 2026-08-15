@@ -114,6 +114,8 @@ class PlanningService:
         self.store = JobStore()
         self.workflow = Workflow(self.store)
         self.job_cache = JobCache()
+        # Bound the worker pool to a small fixed range regardless of host core count,
+        # so concurrent LangGraph workflow execution stays predictable on shared machines.
         max_workers = min(max(2, os.cpu_count() or 4), 8)
         self.executor = ThreadPoolExecutor(max_workers=max_workers)
 
