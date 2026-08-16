@@ -1,15 +1,14 @@
-"""Process handbook splitter.
+"""规范库分块器。
 
-Semantically splits Markdown by heading level (H1 chapter -> H2 section -> H3
-process step description). Each chunk carries its full hierarchy path,
-preserving contextual relationships.
+按 Markdown 标题层级（H1 章 → H2 节 → H3 工序说明）进行语义切分。
+每个 Chunk 携带完整的层级路径，保留上下文关系。
 
-Supported:
-- # Chapter 1 ... (chapter)
-- ## 1.1 ... (section)
-- ### 1.1.1 ... (subsection / process step description)
+支持：
+- # 第一章 …（章）
+- ## 1.1 …（节）
+- ### 1.1.1 …（子节/工序说明）
 
-Plain text without headings is split by paragraphs and character count.
+无标题的纯文本按段落 + 字符数切分。
 """
 
 from __future__ import annotations
@@ -24,7 +23,7 @@ from ..schemas import SpecChunk
 
 logger = logging.getLogger(__name__)
 
-# ── Heading matching regex ──
+# ── 标题匹配正则 ──
 
 HEADING_PATTERN = re.compile(
     r"^(#{1,3})\s+(.+?)(?:\s*\{[^}]*\})?\s*$", re.MULTILINE
@@ -32,13 +31,13 @@ HEADING_PATTERN = re.compile(
 
 
 def _parse_hierarchy(markdown_text: str) -> list[dict[str, Any]]:
-    """Parse the heading hierarchy of Markdown text, returning section structure.
+    """解析 Markdown 文本的标题层级，返回段落结构。
 
-    Each item in the returned list is:
+    返回列表中每一项为：
         {
             "level": 1|2|3,
-            "heading": "heading text",
-            "content": "raw text under this heading (including sub-headings)",
+            "heading": "标题文本",
+            "content": "该标题下的原始文本（含子标题）",
             "start_line": int,
         }
     """
@@ -70,26 +69,77 @@ def _parse_hierarchy(markdown_text: str) -> list[dict[str, Any]]:
         }
         sections.append(current_section)
 
-    # Last section
+    # 最后一段
     if current_section is not None:
         current_section["content"] = "\n".join(current_section.pop("content_lines"))
 
     return sections
 
 
+def _split_long_subsection(
+    heading: str,
+    text: str,
+    chapter: Optional[str],
+    section: Optional[str],
+    source_file: str,
+) -> list[SpecChunk]:
+    """超长 H3 按字符数二次切分，保留层级路径，段落级不跨段。
+
+    一个超长 H3 被拆为多个 chunk，subsection 标注 (1/n) 便于追溯；
+    切分点在段落边界，避免割裂一个完整句段。
+    """
+    paragraphs = text.split("\n\n")
+    sub_chunks: list[SpecChunk] = []
+    buffer = ""
+    overlap = ""
+    total_len = len(text)
+    max_len = max(SPEC_CHUNK_SIZE, SPEC_MIN_CHUNK_SIZE)
+
+    def flush() -> None:
+        nonlocal buffer, overlap
+        if len(buffer.strip()) < SPEC_MIN_CHUNK_SIZE:
+            return
+        sub_chunks.append(
+            SpecChunk(
+                source_file=source_file,
+                chapter=chapter,
+                section=section,
+                subsection=heading,
+                part=len(sub_chunks) + 1,
+                total_parts=max(1, (total_len + max_len - 1) // max_len),
+                content=buffer.strip(),
+            )
+        )
+        overlap = buffer[-SPEC_CHUNK_OVERLAP:] if len(buffer) > SPEC_CHUNK_OVERLAP else buffer
+        buffer = ""
+
+    for para in paragraphs:
+        para = para.strip()
+        if not para:
+            continue
+        if len(buffer) + len(para) + 2 <= SPEC_CHUNK_SIZE:
+            buffer = (buffer + "\n\n" + para).strip()
+        else:
+            flush()
+            buffer = ((overlap + "\n\n" + para) if overlap else para).strip()
+            overlap = ""
+    flush()
+    return sub_chunks
+
+
 def _build_chunks_from_hierarchy(
     sections: list[dict[str, Any]], source_file: str
 ) -> list[SpecChunk]:
-    """Build the SpecChunk list from hierarchical sections.
+    """从层级段落构建 SpecChunk 列表。
 
-    Rules:
-    - H1 -> chapter
-    - H2 -> section
-    - H3 -> subsection
-    - H3 is the smallest semantic unit; one H3 section = one chunk
-    - Without H3, an H2 section becomes a chunk
-    - With only H1, H1 sections are split by character count
-    - Each chunk records the current chapter / section / subsection context
+    规则：
+    - H1 → chapter
+    - H2 → section
+    - H3 → subsection
+    - H3 作为最小语义单元，一个 H3 段落 = 一个 chunk
+    - 无 H3 时，H2 段落作为 chunk
+    - 仅 H1 时，H1 段落按字符数切分
+    - 每个 chunk 记录当前 chapter / section / subsection 上下文
     """
     chunks: list[SpecChunk] = []
     current_chapter: Optional[str] = None
@@ -102,7 +152,7 @@ def _build_chunks_from_hierarchy(
         if sec["level"] == 1:
             current_chapter = sec["heading"]
             current_section = None
-            # The H1 itself is also a chunk (chapter intro)
+            # H1 自身也作为一个 chunk（章简介）
             if sec["content"].strip():
                 chunks.append(
                     SpecChunk(
@@ -115,7 +165,7 @@ def _build_chunks_from_hierarchy(
 
         elif sec["level"] == 2:
             current_section = sec["heading"]
-            # The H2 itself is a chunk (section intro)
+            # H2 自身作为 chunk（节简介）
             if sec["content"].strip():
                 chunks.append(
                     SpecChunk(
@@ -128,20 +178,28 @@ def _build_chunks_from_hierarchy(
             i += 1
 
         elif sec["level"] == 3:
-            # H3 = smallest semantic unit, one chunk
+            # H3 = 最小语义单元；超长 H3 按字符二次切分，保留层级路径
             text = sec["content"].strip()
             if not text:
                 i += 1
                 continue
-            chunks.append(
-                SpecChunk(
-                    source_file=source_file,
-                    chapter=current_chapter,
-                    section=current_section,
-                    subsection=sec["heading"],
-                    content=text,
+            if len(text) <= SPEC_CHUNK_SIZE:
+                chunks.append(
+                    SpecChunk(
+                        source_file=source_file,
+                        chapter=current_chapter,
+                        section=current_section,
+                        subsection=sec["heading"],
+                        content=text,
+                    )
                 )
-            )
+            else:
+                chunks.extend(
+                    _split_long_subsection(
+                        sec["heading"], text, current_chapter,
+                        current_section, source_file,
+                    )
+                )
             i += 1
 
         else:
@@ -157,7 +215,7 @@ def _fallback_chunk_by_size(
     overlap: int = SPEC_CHUNK_OVERLAP,
     min_size: int = SPEC_MIN_CHUNK_SIZE,
 ) -> list[SpecChunk]:
-    """Fallback strategy: split heading-less text with a character-count sliding window."""
+    """兜底策略：无标题文本按字符数滑动窗口切分。"""
     if not text.strip():
         return []
 
@@ -177,7 +235,7 @@ def _fallback_chunk_by_size(
                 chunks.append(
                     SpecChunk(source_file=source_file, content=buffer)
                 )
-                # Keep the overlap portion
+                # 保留 overlap 部分
                 overlap_text = buffer[-overlap:] if len(buffer) > overlap else ""
                 buffer = (overlap_text + "\n\n" + para).strip()
             else:
@@ -190,14 +248,14 @@ def _fallback_chunk_by_size(
 
 
 def split_spec(source_path: str, content: str) -> list[SpecChunk]:
-    """Main entry point for chunking process handbook documents.
+    """规范库文档分块主入口。
 
     Parameters
     ----------
     source_path : str
-        Source file path.
+        源文件路径。
     content : str
-        Document content (Markdown or plain text).
+        文档内容（Markdown 或纯文本）。
 
     Returns
     -------
@@ -205,7 +263,7 @@ def split_spec(source_path: str, content: str) -> list[SpecChunk]:
     """
     source_file = Path(source_path).name
 
-    # Detect whether the document has Markdown headings
+    # 检测是否有 Markdown 标题
     has_headings = bool(HEADING_PATTERN.search(content))
 
     if has_headings:
