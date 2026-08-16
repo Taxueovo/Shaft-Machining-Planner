@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-16
+
+### Added
+
+- **RAG retrieval enhancement**:
+  - Deterministic feature-penalty reranking — penalize candidates missing the
+    query's discriminating feature keywords (thread/spline/hole/gear/chrome...),
+    compensating for semantic rerankers' weak feature-level discrimination
+  - Cloud rerank via `RERANKER_CLOUD_MODEL` (DashScope qwen3-rerank) with
+    graceful fallback to the local CrossEncoder
+  - `EMBEDDING_DIMENSIONS` config and batch-size 10 to support text-embedding-v4
+  - Long `###` spec subsections are now auto-split by character count
+
 ## [0.1.0] - 2026-08-14
 
 Initial public release.
