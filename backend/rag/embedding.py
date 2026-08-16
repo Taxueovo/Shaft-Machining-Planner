@@ -1,42 +1,46 @@
-"""Dedicated vector model client.
+"""专用向量模型客户端。
 
-Wraps the OpenAI-compatible Embeddings API, independent of the main LLM configuration.
-Lazy initialization, batch vectorization, automatic retries.
+封装 OpenAI-compatible Embeddings API，独立于主 LLM 配置。
+延迟初始化，批量向量化，自动重试，自动分批（适配不同 provider 的 batch 上限）。
 """
 
 from __future__ import annotations
 
 import logging
+import os
 import time
 from typing import Any, Optional
 
-from .config import EMBEDDING_BASE_URL, EMBEDDING_API_KEY, EMBEDDING_MODEL
+from .config import EMBEDDING_BASE_URL, EMBEDDING_API_KEY, EMBEDDING_DIMENSIONS, EMBEDDING_MODEL
 
 logger = logging.getLogger(__name__)
 
-# ── Retry configuration ──
+# ── 重试配置 ──
 
 MAX_RETRIES: int = 2
 RETRY_DELAY_SECONDS: float = 1.0
+# 单次请求最大文本数：不同 provider 上限不同（DashScope qwen3.7=20、text-embedding-v4=10），
+# 取较小值 10 兼容两者，自动分批规避。
+EMBEDDING_BATCH_SIZE: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "10"))
 
-# ── Singleton client ──
+# ── 单例客户端 ──
 
 _client: Any = None
 
 
 def _get_client() -> Any:
-    """Lazily initialize the OpenAI client (embedding only)."""
+    """延迟初始化 OpenAI 客户端（embedding 专用）。"""
     global _client
     if _client is None:
         if not EMBEDDING_API_KEY:
             raise RuntimeError(
-                "EMBEDDING_API_KEY is not configured. Set EMBEDDING_API_KEY=your-key in the .env file"
+                "EMBEDDING_API_KEY 未配置。请在 .env 文件中设置 EMBEDDING_API_KEY=your-key"
             )
         try:
             from openai import OpenAI
         except ImportError:
             raise RuntimeError(
-                "The openai package is not installed. Run: pip install openai>=1.0"
+                "openai 包未安装。请运行: pip install openai>=1.0"
             )
         _client = OpenAI(
             base_url=EMBEDDING_BASE_URL,
@@ -48,7 +52,7 @@ def _get_client() -> Any:
 
 
 def embedding_available() -> bool:
-    """Check whether the embedding service is available."""
+    """检查 embedding 服务是否可用。"""
     if not EMBEDDING_API_KEY:
         return False
     try:
@@ -63,23 +67,37 @@ def embed(
     *,
     model: Optional[str] = None,
 ) -> list[list[float]]:
-    """Batch text vectorization.
+    """批量文本向量化（自动分批，适配 provider 的 batch 上限）。
 
     Parameters
     ----------
     texts : list of str
-        The texts to embed.
+        待向量化的文本列表。
     model : str, optional
-        Embedding model name; defaults to EMBEDDING_MODEL.
+        Embedding 模型名称，默认使用 EMBEDDING_MODEL。
 
     Returns
     -------
     list of list of float
-        The embedding vector for each text; dimension depends on the model.
+        每条文本对应的向量列表，维度取决于模型。
     """
     if not texts:
         return []
 
+    # 分批调用，避免超出 provider 的单次 batch 上限（如 DashScope=20）
+    vectors: list[list[float]] = []
+    for start in range(0, len(texts), EMBEDDING_BATCH_SIZE):
+        batch = texts[start : start + EMBEDDING_BATCH_SIZE]
+        vectors.extend(_embed_batch(batch, model=model))
+    return vectors
+
+
+def _embed_batch(
+    texts: list[str],
+    *,
+    model: Optional[str] = None,
+) -> list[list[float]]:
+    """单批文本向量化（含自动重试）。"""
     client = _get_client()
     effective_model = model or EMBEDDING_MODEL
 
@@ -89,15 +107,21 @@ def embed(
             logger.info(
                 "Embedding request: model=%s, texts=%d", effective_model, len(texts)
             )
-            response = client.embeddings.create(
-                model=effective_model,
-                input=texts,
-            )
+            request_kwargs: dict[str, Any] = {
+                "model": effective_model,
+                "input": texts,
+            }
+            if EMBEDDING_DIMENSIONS:
+                request_kwargs["dimensions"] = EMBEDDING_DIMENSIONS
+            response = client.embeddings.create(**request_kwargs)
             vectors = [item.embedding for item in response.data]
             logger.info("Embedding response: %d vectors", len(vectors))
             return vectors
         except Exception as exc:
             last_error = exc
+            # 鉴权/凭据错误不会因重试而恢复，快速失败交给上层降级
+            if _is_credential_error(exc):
+                raise
             if attempt < MAX_RETRIES:
                 wait = RETRY_DELAY_SECONDS * (attempt + 1)
                 logger.warning(
@@ -110,24 +134,33 @@ def embed(
                 time.sleep(wait)
 
     raise RuntimeError(
-        f"Embedding request still failing after {MAX_RETRIES + 1} attempts: {last_error}"
+        f"Embedding 请求在 {MAX_RETRIES + 1} 次尝试后仍失败: {last_error}"
+    )
+
+
+def _is_credential_error(exc: Exception) -> bool:
+    """判断是否为鉴权/凭据类错误（不可重试）。"""
+    text = str(exc).lower()
+    return any(
+        keyword in text
+        for keyword in ("authentication", "401", "invalid api key", "apikey", "unauthorized")
     )
 
 
 def embed_query(text: str, *, model: Optional[str] = None) -> list[float]:
-    """Vectorize a single query text.
+    """单条查询文本向量化。
 
     Parameters
     ----------
     text : str
-        The query text.
+        查询文本。
     model : str, optional
-        Embedding model name.
+        Embedding 模型名称。
 
     Returns
     -------
     list of float
-        The query vector.
+        查询向量。
     """
     vectors = embed([text], model=model)
     return vectors[0]

@@ -47,7 +47,7 @@ case_db = CaseDB()
 
 # ---- FastAPI application ----
 
-app = FastAPI(title="Shaft Machining Planner Backend", version="1.0.0", description="Motor shaft structured process planning backend")
+app = FastAPI(title="Shaft Machining Planner Backend", version="1.1.0", description="Motor shaft structured process planning backend")
 LOCAL_API_TOKEN = os.getenv("LOCAL_API_TOKEN") or secrets.token_urlsafe(32)
 MAX_REQUEST_BYTES = 2_000_000
 
