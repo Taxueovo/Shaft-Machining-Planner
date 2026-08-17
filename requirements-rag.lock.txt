@@ -2862,9 +2862,9 @@ tqdm==4.70.0 \
     #   openai
     #   sentence-transformers
     #   transformers
-transformers==4.57.6 \
-    --hash=sha256:4c9e9de11333ddfe5114bc872c9f370509198acf0b87a832a0ab9458e2bd0550 \
-    --hash=sha256:55e44126ece9dc0a291521b7e5492b572e6ef2766338a610b9ab5afbb70689d3
+transformers==5.15.0 \
+    --hash=sha256:bbf98f57b2ddd7c4ecbccfa2c0069017aa6fd01cc204bd50cbc0eeadcf2a13b8 \
+    --hash=sha256:d7f007736f67749ae9490c4f8cb5d30b452ae2d68c8675e50ba8d63ea7feb107
     # via sentence-transformers
 typer==0.27.1 \
     --hash=sha256:53150287edd11baeb4e4722c8e394fcdf8181c0ae89485cba8d25c778d5edd56 \
