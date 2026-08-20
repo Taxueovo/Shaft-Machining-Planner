@@ -647,3 +647,91 @@ class TestSurfaceHardenedShaftRoute:
         assert "Deep Hole Drilling" in names  # L/D = 100/10 = 10 > 5
         assert "Rough Boring" in names
         assert "Finish Boring" in names
+
+
+class TestKnowledgeBaseAlignment:
+    """Knowledge-base-driven rule engine behavior (cnc_machining.md / grinding_process.md / turning_process.md)."""
+
+    def _make_feature(self, feature_type, **fields):
+        feature = {
+            "feature_id": "F1", "feature_type": feature_type,
+            "positioning_mode": "global_absolute", "global_position_mm": 30,
+            "high_precision": False, "processing_timing": "undecided",
+        }
+        feature.update(fields)
+        return feature
+
+    def test_quenched_seal_area_uses_hard_turn(self):
+        """Quench-split seal area uses hard turning instead of grinding (以车代磨)."""
+        feature = self._make_feature(
+            "seal_area", seal_type="rubber", seal_diameter_mm=28, feature_length_mm=25,
+            roughness_ra=0.4, high_precision=True, processing_timing="before_and_after_heat_treatment",
+        )
+        req = _make_request(
+            global_requirements={"heat_treatment": "quench_temper", "surface_treatment": "none", "batch_quantity": 1},
+            features=[feature],
+        )
+        geom = _make_geometry(req)
+        geom["features"] = [feature]
+        route = build_route(req, geom, {})
+        feature_ops = [op for op in route if op.get("feature_id") == "F1"]
+        assert [(op["name"], op.get("process_category")) for op in feature_ops] == [
+            ("Rough turn seal area", "ISO Turning"),
+            ("Finish hard turn seal area", "ISO Turning"),
+        ]
+
+    def test_unquenched_precision_seal_area_keeps_grinding(self):
+        """A precision seal area without heat treatment keeps the finish-grind path."""
+        feature = self._make_feature(
+            "seal_area", seal_type="rubber", seal_diameter_mm=28, feature_length_mm=25,
+            roughness_ra=0.4, high_precision=True,
+        )
+        req = _make_request(features=[feature])
+        geom = _make_geometry(req)
+        geom["features"] = [feature]
+        route = build_route(req, geom, {})
+        feature_ops = [op for op in route if op.get("feature_id") == "F1"]
+        assert [(op["name"], op.get("process_category")) for op in feature_ops] == [
+            ("Precision grind seal area", "Cylindrical Grinding"),
+        ]
+
+    def test_center_hole_lapping_precedes_finish_grind(self):
+        """Grinding routes schedule center-hole lapping before the finish grind (grinding datum)."""
+        req = _make_request(segments=[{
+            "segment_id": "S1", "diameter_mm": 30, "length_mm": 100,
+            "diameter_upper_deviation_mm": 0.005,
+            "diameter_lower_deviation_mm": -0.005,
+        }])
+        geom = _make_geometry(req)
+        route = build_route(req, geom, {})
+        names = [op["name"] for op in route]
+        assert "Center Hole Lapping" in names
+        assert names.index("Center Hole Lapping") < names.index("Finish Grind OD")
+
+    def test_slender_shaft_straighten_note(self):
+        """Slender shafts (L/D > 30) carry the deflection-control straightening note."""
+        req = _make_request(blank_diameter_mm=20, segments=[
+            {"segment_id": "S1", "diameter_mm": 18, "length_mm": 560, "roughness_ra": 3.2},
+        ])
+        geom = _make_geometry(req)
+        assert geom["total_length_mm"] / geom["max_finished_diameter_mm"] > 30
+        route = build_route(req, geom, {})
+        straighten = next(op for op in route if op["name"] == "Straighten")
+        assert "Slender shaft (L/D>30)" in straighten["description"]
+
+    def test_non_slender_shaft_standard_straighten_note(self):
+        req = _make_request()
+        geom = _make_geometry(req)
+        route = build_route(req, geom, {})
+        straighten = next(op for op in route if op["name"] == "Straighten")
+        assert "Slender shaft" not in straighten["description"]
+
+    def test_turning_allowance_in_descriptions(self):
+        """Turning descriptions carry knowledge-base allowance values."""
+        req = _make_request()
+        geom = _make_geometry(req)
+        route = build_route(req, geom, {})
+        rough = next(op for op in route if op["name"] == "Rough Turning")
+        semi = next(op for op in route if op["name"] == "Semi-finish Turning")
+        assert "allowance ~" in rough["description"]
+        assert "allowance ~" in semi["description"]
