@@ -23,6 +23,28 @@ def add_operation(
     })
 
 
+# ============================================================
+# Turning allowance lookup (turning_process.md external turning allowance table, length <= 200 mm band)
+# ============================================================
+
+_ALLOWANCE_ROUGH_MM = [1.5, 1.5, 2.0, 2.0, 2.3, 2.5, 2.5, 2.8]
+_ALLOWANCE_FINISH_MM = [0.8, 1.0, 1.3, 1.4, 1.5, 1.5, 1.8, 2.0]
+_ALLOWANCE_BOUNDS_MM = [10, 18, 30, 50, 80, 120, 180, 260]
+
+
+def _allowance(diameter_mm: float, *, finish: bool) -> float:
+    """Diameter-based rough/finish turning allowance (mm); values beyond the table use the top band."""
+    table = _ALLOWANCE_FINISH_MM if finish else _ALLOWANCE_ROUGH_MM
+    for idx, bound in enumerate(_ALLOWANCE_BOUNDS_MM):
+        if diameter_mm <= bound:
+            return table[idx]
+    return table[-1]
+
+
+def _allowance_text(diameter_mm: float, *, finish: bool) -> str:
+    return f"{_allowance(diameter_mm, finish=finish):.1f} mm"
+
+
 def _get_feature_operation(feature_type: str, is_split: bool) -> str:
     """Get the feature operation name before heat treatment."""
     return {
@@ -51,7 +73,9 @@ def _get_finish_operation(feature_type: str) -> str:
         "keyway": "Precision grind keyway", "hole": "Ream hole", "flat": "Grind flat",
         "thread": "Thread grinding", "bearing_seat": "Precision grind bearing seat",
         "spline": "Precision grind spline", "taper": "Precision grind taper",
-        "seal_area": "Precision grind seal area", "gear_teeth": "Precision grind gear teeth",
+        # 以车代磨: after quenching, seal areas are hard-turned with CBN instead of ground (cnc_machining.md);
+        # bearing seats keep grinding.
+        "seal_area": "Finish hard turn seal area", "gear_teeth": "Precision grind gear teeth",
         "bore": "Finish bore",
         "cam": "Precision grind cam",
         "worm": "Precision grind worm",
@@ -100,7 +124,8 @@ def _hard_finish_process(feature_type: str) -> Optional[str]:
         "keyway": "Indexable Milling", "hole": "Drilling", "flat": "Indexable Milling",
         "thread": "Thread Grinding", "bearing_seat": "Cylindrical Grinding",
         "spline": "Gear Grinding", "taper": "Cylindrical Grinding",
-        "seal_area": "Cylindrical Grinding", "gear_teeth": "Gear Grinding",
+        # 以车代磨: quenched seal areas are hard-turned (ISO Turning / CBN), not ground.
+        "seal_area": "ISO Turning", "gear_teeth": "Gear Grinding",
         "bore": "Boring",
         "cam": "Cam Grinding", "worm": "Worm Grinding", "crank_pin": "Cylindrical Grinding",
     }.get(feature_type)
@@ -195,6 +220,12 @@ def build_route(request: dict[str, Any], geometry: dict[str, Any], choices: dict
     elif material_props["machinability"] == "excellent":
         material_notes = f" ({material} is easy to cut, can increase cutting parameters)"
 
+    max_finished_dia = float(geometry.get("max_finished_diameter_mm") or request["blank_diameter_mm"])
+    rough_allowance = _allowance_text(max_finished_dia, finish=False)
+    finish_allowance = _allowance_text(max_finished_dia, finish=True)
+    # Slender shafts (L/D > 30) are deflection-prone and need straightening/stable cutting (cnc_machining.md / grinding_process.md).
+    is_slender = geometry["total_length_mm"] / max(max_finished_dia, 1.0) > 30
+
     blank_desc = f"tube stock OD{request['blank_diameter_mm']}mm ID{inner_dia}mm" if is_hollow else f"bar stock, total length {geometry['total_length_mm']} mm"
     add_operation(operations, "Blanking", "blank",
                   f"Cut from {blank_desc}, reserve face allowance.", None)
@@ -203,7 +234,7 @@ def build_route(request: dict[str, Any], geometry: dict[str, Any], choices: dict
     add_operation(operations, "Center Drilling", "datum",
                   "Drill center holes at both ends for center clamping.", "Drilling")
     add_operation(operations, "Rough Turning", "rough",
-                  f"Rough turn stepped profile with allowance.{material_notes}", "ISO Turning")
+                  f"Rough turn stepped profile with allowance (rough allowance ~{rough_allowance}).{material_notes}", "ISO Turning")
 
     # Hollow shaft: rough bore the inner diameter
     if is_hollow:
@@ -212,7 +243,7 @@ def build_route(request: dict[str, Any], geometry: dict[str, Any], choices: dict
                       "Boring", feature_id=main_bore_fid)
 
     add_operation(operations, "Semi-finish Turning", "semi_finish",
-                  f"Semi-finish turn segments with finishing allowance.{material_notes}", "ISO Turning")
+                  f"Semi-finish turn segments with finishing allowance (finish allowance ~{finish_allowance}).{material_notes}", "ISO Turning")
 
     # Stabilization/aging: relieve stress after semi-finish turning and before final heat treatment
     # (typical operation for motor shafts etc., scheduled per drawing requirements)
@@ -319,8 +350,13 @@ def build_route(request: dict[str, Any], geometry: dict[str, Any], choices: dict
                              item.get("roughness_ra"))
     ]
     if grinding_segments:
+        # Center holes are the grinding datum; lap them to >85% dead-center contact before finish grinding (grinding_process.md).
+        add_operation(operations, "Center Hole Lapping", "precision_finish",
+                      "Lap 60 degree center holes to reach >85% dead-center contact before finish grinding.",
+                      None, conditional=True)
         add_operation(operations, "Finish Grind OD", "precision_finish",
-                      "High-precision segment grinding: " + ", ".join(grinding_segments),
+                      "High-precision segment grinding: " + ", ".join(grinding_segments)
+                      + " (finish grinding allowance 0.07-0.09 mm).",
                       "Cylindrical Grinding", conditional=True)
 
     # ---- 7. Hard finishing after heat treatment (split high-precision features + gears requiring post-heat finishing) ----
@@ -386,8 +422,13 @@ def build_route(request: dict[str, Any], geometry: dict[str, Any], choices: dict
             )
 
     # ---- 9. Finishing steps after the finished-part datum is established (straightening / dynamic balancing, per drawing, conditional) ----
+    straighten_desc = (
+        "Slender shaft (L/D>30): straighten and control bending within 0.15 mm per 1000 mm after machining/heat treatment."
+        if is_slender else
+        "Straighten if distortion exceeds tolerance after machining/heat treatment."
+    )
     add_operation(operations, "Straighten", "feature_before_inspection",
-                  "Straighten if distortion exceeds tolerance after machining/heat treatment.",
+                  straighten_desc,
                   None, conditional=True)
     add_operation(operations, "Dynamic Balancing", "feature_before_inspection",
                   "Dynamic balancing for high-speed / dynamically balanced shafts.",
