@@ -110,6 +110,7 @@ class IndexBuilder:
             if f.is_file()
             and f.suffix.lower() in extensions
             and not f.name.startswith(".")  # skip .gitkeep
+            and f.name.lower() != "readme.md"  # the manifest is not process knowledge
         )
         if not files:
             logger.info("No source files found in %s", source_dir)
