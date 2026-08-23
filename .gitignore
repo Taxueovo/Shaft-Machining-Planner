@@ -10,6 +10,8 @@ dist/
 .env
 *.env
 node_modules/
+.venv/
+venv/
 
 # Runtime artifacts
 output/
@@ -34,6 +36,8 @@ Thumbs.db
 # source-attributed capability samples are intentionally tracked.
 data/cases.json
 data/jobs.sqlite3*
+backend/data/
 backend/rag/data/cases/
 backend/rag/data/chroma/
 backend/rag/data/specs/
+backend/rag/data/index_state.json

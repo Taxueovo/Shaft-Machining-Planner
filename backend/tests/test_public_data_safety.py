@@ -8,8 +8,11 @@ from openpyxl import load_workbook
 
 ROOT = Path(__file__).resolve().parents[2]
 ALLOWED_SOURCE_HOSTS = {
-    "en.dmgmori.com", "us.dmgmori.com", "www.gleason.com",
-    "www.iscar.com", "www.kapp-niles.com",
+    "en.dmgmori.com",
+    "us.dmgmori.com",
+    "www.gleason.com",
+    "www.iscar.com",
+    "www.kapp-niles.com",
 }
 
 
@@ -31,7 +34,9 @@ def _assert_safe_workbook(path: Path, data_sheet: str, source_header: str) -> No
         assert checked is not None
     for worksheet in workbook.worksheets:
         for row in worksheet.iter_rows():
-            assert all(cell.data_type != "f" for cell in row), f"Formula found in public data: {worksheet.title}"
+            assert all(cell.data_type != "f" for cell in row), (
+                f"Formula found in public data: {worksheet.title}"
+            )
 
 
 def test_public_machine_data_is_attributed_and_formula_free() -> None:

@@ -1,6 +1,7 @@
 """ChromaDB vector store manager.
 
-Manages two collections - shaftplanner_specs (process handbook) and shaftplanner_cases (case base).
+Manages two collections - specs (process handbook) and cases (case base).
+Collection names come from ``config.COLLECTION_SPECS`` / ``config.COLLECTION_CASES``.
 Each collection uses a dedicated embedding model (configured via EMBEDDING_API_KEY),
 instead of ChromaDB's built-in default model.
 """
@@ -14,6 +15,7 @@ try:
     import chromadb
     from chromadb.config import Settings as ChromaSettings
     from chromadb.api.types import EmbeddingFunction
+
     HAS_CHROMADB = True
 except ImportError:
     HAS_CHROMADB = False
@@ -49,6 +51,7 @@ if HAS_CHROMADB:
 
         def __call__(self, input_texts: list[str]) -> list[list[float]]:
             from .embedding import embed
+
             return embed(input_texts)
 
 
@@ -82,7 +85,8 @@ def _get_or_recreate_collection(
             logger.warning(
                 "Embedding function mismatch for '%s', recreating collection. "
                 "All existing data will be lost. Error: %s",
-                name, exc,
+                name,
+                exc,
             )
             try:
                 client.delete_collection(name)
@@ -95,6 +99,7 @@ def _get_or_recreate_collection(
 # ═══════════════════════════════════════════════════════════════
 # VectorStoreManager
 # ═══════════════════════════════════════════════════════════════
+
 
 class VectorStoreManager:
     """ChromaDB dual-collection manager.
@@ -111,9 +116,7 @@ class VectorStoreManager:
 
     def __init__(self, persist_dir: Optional[str] = None):
         if not HAS_CHROMADB:
-            raise RuntimeError(
-                "chromadb is not installed. Run: pip install chromadb>=0.5"
-            )
+            raise RuntimeError("chromadb is not installed. Run: pip install chromadb>=0.5")
 
         self._persist_dir = str(persist_dir or CHROMA_DIR.resolve())
         self._client = chromadb.PersistentClient(
@@ -124,7 +127,9 @@ class VectorStoreManager:
         self._cases: Any = None
 
         # Use the dedicated embedding model; ChromaDB falls back to the built-in model if unavailable
-        self._embedding_fn = ShaftMachiningPlannerEmbeddingFunction() if _embedding_available() else None
+        self._embedding_fn = (
+            ShaftMachiningPlannerEmbeddingFunction() if _embedding_available() else None
+        )
         ef_label = f"custom:{EMBEDDING_MODEL}" if self._embedding_fn else "chromadb:default"
         logger.info("VectorStore initialized at %s (embedding=%s)", self._persist_dir, ef_label)
 
@@ -135,7 +140,9 @@ class VectorStoreManager:
         """Specs collection (lazy-loaded, created if missing)."""
         if self._specs is None:
             self._specs = _get_or_recreate_collection(
-                self._client, COLLECTION_SPECS, self._embedding_fn,
+                self._client,
+                COLLECTION_SPECS,
+                self._embedding_fn,
                 "Shaft Machining Planner process handbook - semantic chunks of chapters/sections/process step descriptions",
             )
         return self._specs
@@ -145,7 +152,9 @@ class VectorStoreManager:
         """Cases collection (lazy-loaded, created if missing)."""
         if self._cases is None:
             self._cases = _get_or_recreate_collection(
-                self._client, COLLECTION_CASES, self._embedding_fn,
+                self._client,
+                COLLECTION_CASES,
+                self._embedding_fn,
                 "Shaft Machining Planner part case base - full case process routes",
             )
         return self._cases
@@ -199,6 +208,7 @@ class VectorStoreManager:
                 "taxonomy_id": c.taxonomy_id or "",
                 "industry": c.industry or "",
                 "features": ", ".join(c.features),
+                "source_file": c.source_file,
                 "source_type": "case",
                 **c.metadata,
             }
@@ -215,9 +225,7 @@ class VectorStoreManager:
 
     # ── Retrieval ──
 
-    def search_specs(
-        self, query_text: str, top_k: int = 5
-    ) -> list[SearchResult]:
+    def search_specs(self, query_text: str, top_k: int = 5) -> list[SearchResult]:
         """Search the specs collection."""
         if self.specs_collection.count() == 0:
             return []
@@ -228,13 +236,9 @@ class VectorStoreManager:
             include=["documents", "metadatas", "distances"],
         )
 
-        return _to_search_results(
-            results, Channel.SPECS, query_text
-        )
+        return _to_search_results(results, Channel.SPECS, query_text)
 
-    def search_cases(
-        self, query_text: str, top_k: int = 5
-    ) -> list[SearchResult]:
+    def search_cases(self, query_text: str, top_k: int = 5) -> list[SearchResult]:
         """Search the cases collection."""
         if self.cases_collection.count() == 0:
             return []
@@ -245,33 +249,73 @@ class VectorStoreManager:
             include=["documents", "metadatas", "distances"],
         )
 
-        return _to_search_results(
-            results, Channel.CASES, query_text
-        )
+        return _to_search_results(results, Channel.CASES, query_text)
 
     def search_all(
         self, query_text: str, top_k_per_channel: int = 5
     ) -> tuple[list[SearchResult], list[SearchResult]]:
         """Dual-channel search: queries both the specs and cases collections.
 
+        The query text is embedded ONCE and the vector reused for both channels,
+        halving embedding round-trips. Falls back to per-channel embedding when the
+        embedding service is unavailable (e.g. chromadb's built-in model).
+
         Returns
         -------
         tuple[list[SearchResult], list[SearchResult]]
             (specs_results, cases_results)
         """
-        spec_results = self.search_specs(query_text, top_k_per_channel)
-        case_results = self.search_cases(query_text, top_k_per_channel)
+        try:
+            from .embedding import embed
+
+            qvec = embed([query_text])[0]
+        except Exception as exc:
+            logger.warning(
+                "Single-embed search failed (%s); falling back to per-channel embedding.", exc
+            )
+            return self.search_specs(query_text, top_k_per_channel), self.search_cases(
+                query_text, top_k_per_channel
+            )
+
+        spec_results = self._query_embedded(
+            self.specs_collection, qvec, top_k_per_channel, Channel.SPECS, query_text
+        )
+        case_results = self._query_embedded(
+            self.cases_collection, qvec, top_k_per_channel, Channel.CASES, query_text
+        )
         return spec_results, case_results
+
+    def _query_embedded(
+        self,
+        col: Any,
+        query_embedding: list[float],
+        top_k: int,
+        channel: Channel,
+        query_text: str,
+    ) -> list[SearchResult]:
+        """Query one collection with a precomputed embedding (avoids re-embedding)."""
+        if col.count() == 0:
+            return []
+        results = col.query(
+            query_embeddings=[query_embedding],
+            n_results=min(top_k, col.count()),
+            include=["documents", "metadatas", "distances"],
+        )
+        return _to_search_results(results, channel, query_text)
 
     # ── Status ──
 
     def get_collection_status(self, collection_name: str) -> dict[str, Any]:
         """Get the status of a single collection."""
-        col = (
-            self.specs_collection
-            if collection_name == COLLECTION_SPECS
-            else self.cases_collection
-        )
+        if collection_name == COLLECTION_SPECS:
+            col = self.specs_collection
+        elif collection_name == COLLECTION_CASES:
+            col = self.cases_collection
+        else:
+            raise ValueError(
+                f"Unknown RAG collection name {collection_name!r}; "
+                f"expected {COLLECTION_SPECS!r} or {COLLECTION_CASES!r}"
+            )
         try:
             count = col.count()
         except Exception:
@@ -314,6 +358,27 @@ class VectorStoreManager:
             )
         ]
 
+    def delete_by_source(self, source_file: str, channel: Channel) -> int:
+        """Delete all chunks that came from a given source file (idempotent upsert support).
+
+        Returns the number of deleted chunks.
+        """
+        col = self.specs_collection if channel == Channel.SPECS else self.cases_collection
+        try:
+            data = col.get(where={"source_file": source_file}, include=["documents"])
+            ids = data.get("ids", [])
+        except Exception as exc:
+            logger.warning("Failed to look up chunks for %s: %s", source_file, exc)
+            return 0
+        if ids:
+            try:
+                col.delete(ids=ids)
+            except Exception as exc:
+                logger.warning("Failed to delete chunks for %s: %s", source_file, exc)
+                return 0
+            logger.info("Deleted %d chunks for source %s", len(ids), source_file)
+        return len(ids)
+
     def clear(self, collection_name: Optional[str] = None) -> None:
         """Clear a collection.
 
@@ -329,11 +394,15 @@ class VectorStoreManager:
                     col.delete(ids=ids)
             logger.info("All RAG collections cleared")
         else:
-            col = (
-                self.specs_collection
-                if collection_name == COLLECTION_SPECS
-                else self.cases_collection
-            )
+            if collection_name == COLLECTION_SPECS:
+                col = self.specs_collection
+            elif collection_name == COLLECTION_CASES:
+                col = self.cases_collection
+            else:
+                raise ValueError(
+                    f"Unknown RAG collection name {collection_name!r}; "
+                    f"expected {COLLECTION_SPECS!r} or {COLLECTION_CASES!r}"
+                )
             ids = col.get()["ids"]
             if ids:
                 col.delete(ids=ids)
@@ -341,6 +410,7 @@ class VectorStoreManager:
 
 
 # ── Helper functions ──
+
 
 def _to_search_results(
     chroma_result: dict[str, Any],

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shaft Machining Planner - PE Agent - Case Library</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
   <style>
     .filter-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
     .filter-bar select, .filter-bar input { min-width: 150px; }
@@ -51,7 +51,7 @@
     <input type="text" id="search-input" class="search-input" placeholder="Search cases...">
     <select id="filter-industry"><option value="">All Industries</option></select>
     <select id="filter-material"><option value="">All Materials</option></select>
-    <button type="button" class="button primary" onclick="loadCases()">Search</button>
+    <button type="button" class="button primary" data-click="loadCases">Search</button>
   </div>
   <div id="case-feedback" class="search-feedback" role="status" aria-live="polite"></div>
 
@@ -144,7 +144,7 @@
     }
 
     grid.innerHTML = cases.map(c => `
-      <div class="case-card" onclick="location.href='/cases/${encodeURIComponent(c.case_id)}'">
+      <div class="case-card" data-href="/cases/${encodeURIComponent(c.case_id)}">
         <div class="case-header">
           <h3>${esc(c.part_name)}</h3>
           <span class="tag">${esc(c.case_id)}</span>
@@ -187,6 +187,7 @@ document.getElementById("shutdown-btn").addEventListener("click", async () => {
   setTimeout(() => { document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#475467"><div style="text-align:center"><h1 style="margin:0 0 12px">System Shutdown</h1><p>This page can be closed.</p></div></div>'; }, 800);
 });
 </script>
-<script src="/static/heartbeat.js?v={{ range(100000, 999999) | random }}"></script>
+<script src="/static/app.js?v={{ static_version }}"></script>
+<script src="/static/heartbeat.js?v={{ static_version }}"></script>
 </body>
 </html>

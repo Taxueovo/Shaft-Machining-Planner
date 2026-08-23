@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 
 class ProcessStage(str, Enum):
     """Process stage enumeration - Single source for all stage values."""
+
     blank = "blank"
     datum = "datum"
     rough = "rough"
@@ -70,13 +71,19 @@ STAGE_DEPENDENCY_RULES: list[tuple[str, str]] = [
 
 # Mandatory operation names (LLM cannot delete)
 MANDATORY_OPERATION_NAMES = {
-    "Blanking", "Face Turning", "Center Drilling",
-    "Rough Turning", "Semi-finish Turning", "Finish Turning", "Final Inspection",
+    "Blanking",
+    "Face Turning",
+    "Center Drilling",
+    "Rough Turning",
+    "Semi-finish Turning",
+    "Finish Turning",
+    "Final Inspection",
 }
 
 
 class ProcessOperation(BaseModel):
     """Single operation model."""
+
     operation_no: int = Field(ge=1)
     name: str = Field(min_length=1, max_length=120)
     stage: ProcessStage
@@ -106,6 +113,7 @@ class RouteCustomizeRequest(BaseModel):
 
 class ResourceStatus(str, Enum):
     """Resource validation status."""
+
     satisfied = "satisfied"
     not_satisfied = "not_satisfied"
     not_covered = "not_covered"
@@ -115,6 +123,7 @@ class ResourceStatus(str, Enum):
 
 class ValidationIssue(BaseModel):
     """Validation issue structured output."""
+
     error_code: str
     object_id: Optional[str] = None
     expected: Optional[str] = None
@@ -125,6 +134,7 @@ class ValidationIssue(BaseModel):
 
 class FeatureProcessStrategy(str, Enum):
     """Feature processing strategy."""
+
     single_stage_before_heat = "single_stage_before_heat"
     single_stage_after_finish = "single_stage_after_finish"
     rough_before_heat_finish_after_heat = "rough_before_heat_finish_after_heat"
@@ -132,11 +142,13 @@ class FeatureProcessStrategy(str, Enum):
 
 class LLMRouteOutput(BaseModel):
     """LLM process route output contract."""
+
     process_route: list[ProcessOperation]
 
 
 class ResourceRecommendation(BaseModel):
     """LLM resource recommendation output contract."""
+
     recommended_machine: Optional[str] = None
     machine_candidate_ids: list[str] = []
     process_consolidation_suggestions: list[str] = []

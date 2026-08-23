@@ -9,7 +9,10 @@ from langgraph.types import interrupt
 from models.process import ProcessStage, ProcessOperation, MANDATORY_OPERATION_NAMES
 from models.workflow import WorkflowState, traced
 from rules import (
-    FEATURE_NAME, FEATURE_SUPPORTS_SPLIT, HEAT_NAME, SURFACE_NAME,
+    FEATURE_NAME,
+    FEATURE_SUPPORTS_SPLIT,
+    HEAT_NAME,
+    SURFACE_NAME,
     build_route,
 )
 from llm_client import chat_json, llm_available
@@ -36,24 +39,41 @@ class ProcessNodesMixin:
             if not FEATURE_SUPPORTS_SPLIT.get(feature_type, False):
                 auto_choices[feature["feature_id"]] = "before_heat_treatment"
                 continue
-            pending.append({
-                "feature_id": feature["feature_id"], "feature_type": feature_type,
-                "feature_name": FEATURE_NAME[feature_type],
-                "global_position_mm": feature["global_position_mm"],
-                "tolerance_upper_mm": feature.get("tolerance_upper_mm"),
-                "tolerance_lower_mm": feature.get("tolerance_lower_mm"),
-                "roughness_ra": feature.get("roughness_ra"),
-                "recommended": "before_and_after_heat_treatment",
-                "options": [{"value": "before_and_after_heat_treatment", "label": "Rough before heat + finish after heat", "description": "Recommended for best precision and roughness."}],
-            })
+            pending.append(
+                {
+                    "feature_id": feature["feature_id"],
+                    "feature_type": feature_type,
+                    "feature_name": FEATURE_NAME[feature_type],
+                    "global_position_mm": feature["global_position_mm"],
+                    "tolerance_upper_mm": feature.get("tolerance_upper_mm"),
+                    "tolerance_lower_mm": feature.get("tolerance_lower_mm"),
+                    "roughness_ra": feature.get("roughness_ra"),
+                    "recommended": "before_and_after_heat_treatment",
+                    "options": [
+                        {
+                            "value": "before_and_after_heat_treatment",
+                            "label": "Rough before heat + finish after heat",
+                            "description": "Recommended for best precision and roughness.",
+                        }
+                    ],
+                }
+            )
 
         if not pending:
             return {"pending_choices": [], "user_choices": auto_choices}
 
-        self.store.update(state["job_id"], status="waiting_user_choice", progress=50, current_step="precision_choice",
-                          message="High-precision features detected, please select processing timing.", pending_choices=pending)
+        self.store.update(
+            state["job_id"],
+            status="waiting_user_choice",
+            progress=50,
+            current_step="precision_choice",
+            message="High-precision features detected, please select processing timing.",
+            pending_choices=pending,
+        )
         response = interrupt({"type": "precision_choices", "pending_choices": pending})
-        user_choices = {item["feature_id"]: item["processing_timing"] for item in response.get("choices", [])}
+        user_choices = {
+            item["feature_id"]: item["processing_timing"] for item in response.get("choices", [])
+        }
         missing = [item["feature_id"] for item in pending if item["feature_id"] not in user_choices]
         if missing:
             raise ValueError("Missing feature choices: " + ", ".join(missing))
@@ -66,10 +86,18 @@ class ProcessNodesMixin:
         # is repair_count. Use repair_count to trigger the Replan Hint so that replanning
         # carries the failure reasons from the previous verification.
         retry_count = state.get("retry_count", 0) or state.get("repair_count", 0)
-        msg = f"Regenerating process route (attempt {retry_count})." if retry_count > 0 else "Generating process route."
+        msg = (
+            f"Regenerating process route (attempt {retry_count})."
+            if retry_count > 0
+            else "Generating process route."
+        )
         self.progress(state, 50, "process_planning", msg)
 
-        request, geometry, choices = state["request"], state["geometry"], state.get("user_choices", {})
+        request, geometry, choices = (
+            state["request"],
+            state["geometry"],
+            state.get("user_choices", {}),
+        )
         verification = state.get("verification")
         route_request = {**request, "heat_treatment_plan": state.get("heat_treatment_decision", {})}
         base_route = build_route(route_request, geometry, choices)
@@ -77,43 +105,70 @@ class ProcessNodesMixin:
         if llm_available():
             try:
                 heat_decision = state.get("heat_treatment_decision", {})
-                self.store.update(state["job_id"], current_step="process_planning",
-                                  message="Retrieving reference process cases (RAG)...")
-                rag_context = build_rag_context(
-                    request, geometry, choices, heat_decision,
-                    top_k=3, max_chars=3000,
+                self.store.update(
+                    state["job_id"],
+                    current_step="process_planning",
+                    message="Retrieving reference process cases (RAG)...",
                 )
-                self.store.update(state["job_id"], current_step="process_planning",
-                                  message="AI optimizing process route (may take 10-20s)...")
+                rag_context = build_rag_context(
+                    request,
+                    geometry,
+                    choices,
+                    heat_decision,
+                    top_k=3,
+                    max_chars=3000,
+                )
+                self.store.update(
+                    state["job_id"],
+                    current_step="process_planning",
+                    message="AI optimizing process route (may take 10-20s)...",
+                )
                 patched = self._llm_process_planning(
-                    request, geometry, choices, verification, retry_count,
-                    base_route, rag_context,
+                    request,
+                    geometry,
+                    choices,
+                    verification,
+                    retry_count,
+                    base_route,
+                    rag_context,
                 )
                 if patched:
                     return {"process_route": patched}
             except Exception:
-                self.store.update(state["job_id"], message="LLM route correction failed, keeping rule-based route.")
+                self.store.update(
+                    state["job_id"],
+                    message="LLM route correction failed, keeping rule-based route.",
+                )
 
         return {"process_route": base_route}
 
     def _llm_process_planning(
-        self, request: dict[str, Any], geometry: dict[str, Any],
-        choices: dict[str, str], verification: Optional[dict[str, Any]],
-        retry_count: int, base_route: list[dict[str, Any]],
+        self,
+        request: dict[str, Any],
+        geometry: dict[str, Any],
+        choices: dict[str, str],
+        verification: Optional[dict[str, Any]],
+        retry_count: int,
+        base_route: list[dict[str, Any]],
         rag_context: str = "",
     ) -> Optional[list[dict[str, Any]]]:
         segments, features = request["segments"], geometry.get("features", [])
         global_req = request["global_requirements"]
 
-        segment_desc = "\n".join(f"  - {s['segment_id']}: {s['diameter_mm']}mm x {s['length_mm']}mm" for s in segments)
-        feature_desc = "\n".join(
-            f"  - {f['feature_id']}: {FEATURE_NAME.get(f['feature_type'], f['feature_type'])}, pos {f['global_position_mm']}mm"
-            + (" [high-precision]" if f.get("high_precision") else "")
-            for f in features
-        ) or "  None"
+        segment_desc = "\n".join(
+            f"  - {s['segment_id']}: {s['diameter_mm']}mm x {s['length_mm']}mm" for s in segments
+        )
+        feature_desc = (
+            "\n".join(
+                f"  - {f['feature_id']}: {FEATURE_NAME.get(f['feature_type'], f['feature_type'])}, pos {f['global_position_mm']}mm"
+                + (" [high-precision]" if f.get("high_precision") else "")
+                for f in features
+            )
+            or "  None"
+        )
         base_route_desc = "\n".join(
             f"  {op['operation_no']}. {op['name']} ({op['stage']})"
-            + (f" [{op.get('process_category') or '-'}]" if op.get('process_category') else "")
+            + (f" [{op.get('process_category') or '-'}]" if op.get("process_category") else "")
             + (" [conditional]" if op.get("conditional") else "")
             for op in base_route
         )
@@ -127,19 +182,32 @@ class ProcessNodesMixin:
                     retry_context += f"- [{iss.get('error_code', '')}] {iss.get('message', '')}\n"
                 retry_context += "Please fix above issues via patches. Mandatory operations cannot be deleted or renamed.\n"
             else:
-                failed_checks = [c["name"] for c in verification.get("checks", []) if not c["passed"]]
+                failed_checks = [
+                    c["name"] for c in verification.get("checks", []) if not c["passed"]
+                ]
                 retry_context = f"\n\n[Replan Hint] Previous verification failed: {', '.join(failed_checks)}. Please correct."
 
-        messages = self.prompt_manager.render_messages("process_planning", {
-            "material": request["material"], "blank_diameter_mm": request["blank_diameter_mm"],
-            "total_length_mm": geometry["total_length_mm"], "segment_desc": segment_desc,
-            "feature_desc": feature_desc,
-            "heat_treatment": HEAT_NAME.get(global_req["heat_treatment"], global_req["heat_treatment"]),
-            "surface_treatment": SURFACE_NAME.get(global_req["surface_treatment"], global_req["surface_treatment"]),
-            "batch_quantity": global_req["batch_quantity"], "choices": choices or "None",
-            "base_route_desc": base_route_desc, "retry_context": retry_context,
-            "rag_context": rag_context,
-        })
+        messages = self.prompt_manager.render_messages(
+            "process_planning",
+            {
+                "material": request["material"],
+                "blank_diameter_mm": request["blank_diameter_mm"],
+                "total_length_mm": geometry["total_length_mm"],
+                "segment_desc": segment_desc,
+                "feature_desc": feature_desc,
+                "heat_treatment": HEAT_NAME.get(
+                    global_req["heat_treatment"], global_req["heat_treatment"]
+                ),
+                "surface_treatment": SURFACE_NAME.get(
+                    global_req["surface_treatment"], global_req["surface_treatment"]
+                ),
+                "batch_quantity": global_req["batch_quantity"],
+                "choices": choices or "None",
+                "base_route_desc": base_route_desc,
+                "retry_context": retry_context,
+                "rag_context": rag_context,
+            },
+        )
 
         result = chat_json(messages, temperature=0.2)
         if not isinstance(result, dict):
@@ -150,29 +218,55 @@ class ProcessNodesMixin:
         return self._apply_route_patches(base_route, patches)
 
     @staticmethod
-    def _apply_route_patches(base_route: list[dict[str, Any]], patches: list[dict[str, Any]]) -> Optional[list[dict[str, Any]]]:
+    def _apply_route_patches(
+        base_route: list[dict[str, Any]], patches: list[dict[str, Any]]
+    ) -> Optional[list[dict[str, Any]]]:
         route = [dict(op) for op in base_route]
         route_by_no = {op["operation_no"]: op for op in route}
         insertions: list[tuple[int, dict[str, Any]]] = []
 
         for patch in patches:
-            action, target_no, op_data = patch.get("action"), patch.get("target_operation_no"), patch.get("operation", {})
+            action, target_no, op_data = (
+                patch.get("action"),
+                patch.get("target_operation_no"),
+                patch.get("operation", {}),
+            )
             if action == "remove":
-                if target_no in route_by_no and route_by_no[target_no]["name"] not in MANDATORY_OPERATION_NAMES:
+                if (
+                    target_no in route_by_no
+                    and route_by_no[target_no]["name"] not in MANDATORY_OPERATION_NAMES
+                ):
                     del route_by_no[target_no]
             elif action == "insert" and op_data:
-                new_op = {"operation_no": 0, "name": op_data.get("name", ""), "stage": op_data.get("stage", "inspection"),
-                          "description": op_data.get("description", ""), "process_category": op_data.get("process_category"),
-                          "feature_id": op_data.get("feature_id"), "conditional": op_data.get("conditional", False)}
+                new_op = {
+                    "operation_no": 0,
+                    "name": op_data.get("name", ""),
+                    "stage": op_data.get("stage", "inspection"),
+                    "description": op_data.get("description", ""),
+                    "process_category": op_data.get("process_category"),
+                    "feature_id": op_data.get("feature_id"),
+                    "conditional": op_data.get("conditional", False),
+                }
                 try:
                     ProcessStage(new_op["stage"])
                 except ValueError:
                     continue
                 insertions.append((target_no or 0, new_op))
             elif action == "update" and target_no in route_by_no and op_data:
-                if route_by_no[target_no]["name"] in MANDATORY_OPERATION_NAMES and "name" in op_data and op_data["name"] != route_by_no[target_no]["name"]:
+                if (
+                    route_by_no[target_no]["name"] in MANDATORY_OPERATION_NAMES
+                    and "name" in op_data
+                    and op_data["name"] != route_by_no[target_no]["name"]
+                ):
                     continue
-                for key in ("name", "stage", "description", "process_category", "feature_id", "conditional"):
+                for key in (
+                    "name",
+                    "stage",
+                    "description",
+                    "process_category",
+                    "feature_id",
+                    "conditional",
+                ):
                     if key in op_data:
                         route_by_no[target_no][key] = op_data[key]
 

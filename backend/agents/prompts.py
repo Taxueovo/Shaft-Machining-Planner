@@ -30,7 +30,9 @@ class PromptManager:
     def list_templates(self) -> list[dict[str, str]]:
         return [{"name": name, "version": tpl["version"]} for name, tpl in self._templates.items()]
 
-    def render_messages(self, name: str, variables: dict[str, Any] | None = None) -> list[dict[str, str]]:
+    def render_messages(
+        self, name: str, variables: dict[str, Any] | None = None
+    ) -> list[dict[str, str]]:
         rendered = self.get(name, variables)
         messages = []
         if rendered["system"]:

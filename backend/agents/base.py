@@ -72,8 +72,10 @@ class BaseAgent(ABC):
         cap = self.capabilities()
         if cap.output_schema:
             try:
+
                 class _Output(BaseModel):
                     __annotations__ = {k: Any for k in cap.produces_state_keys}
+
                 _Output(**result.state_updates)
             except Exception as exc:
                 return f"{self.name} output validation failed: {exc}"
@@ -84,20 +86,25 @@ class BaseAgent(ABC):
         input_error = self.validate_input(state)
         if input_error:
             logger.error("Input validation failed for %s: %s", self.name, input_error)
-            return AgentResult(success=False, error=input_error, message=f"Input validation failed: {input_error}")
+            return AgentResult(
+                success=False, error=input_error, message=f"Input validation failed: {input_error}"
+            )
 
         t0 = time.monotonic()
         try:
             result = self.execute(state)
         except Exception as exc:
             from langgraph.errors import GraphInterrupt
+
             if isinstance(exc, GraphInterrupt):
                 raise
             duration = (time.monotonic() - t0) * 1000
             logger.exception("Agent %s execution failed after %.0fms", self.name, duration)
             return AgentResult(
-                success=False, error=f"{type(exc).__name__}: {exc}",
-                message=f"{self.name} execution failed: {exc}", metadata={"duration_ms": round(duration)},
+                success=False,
+                error=f"{type(exc).__name__}: {exc}",
+                message=f"{self.name} execution failed: {exc}",
+                metadata={"duration_ms": round(duration)},
             )
 
         duration = (time.monotonic() - t0) * 1000

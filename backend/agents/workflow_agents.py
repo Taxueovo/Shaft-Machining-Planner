@@ -19,9 +19,12 @@ class TaskPlanningAgent(BaseAgent):
 
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
-            name="task_planning", description="Analyze request and create execution plan.",
-            input_schema={"request": "object"}, output_schema={"plan": "object", "retry_count": "integer"},
-            required_state_keys=["job_id", "request"], produces_state_keys=["plan", "retry_count"],
+            name="task_planning",
+            description="Analyze request and create execution plan.",
+            input_schema={"request": "object"},
+            output_schema={"plan": "object", "retry_count": "integer"},
+            required_state_keys=["job_id", "request"],
+            produces_state_keys=["plan", "retry_count"],
             tags=["planner", "priority:high"],
         )
 
@@ -38,8 +41,10 @@ class FeatureAnalysisAgent(BaseAgent):
 
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
-            name="feature_analysis", description="Calculate segment and feature coordinates.",
-            required_state_keys=["job_id", "request"], produces_state_keys=["geometry"],
+            name="feature_analysis",
+            description="Calculate segment and feature coordinates.",
+            required_state_keys=["job_id", "request"],
+            produces_state_keys=["geometry"],
             tags=["worker", "priority:high"],
         )
 
@@ -56,13 +61,17 @@ class HeatTreatmentPlanningAgent(BaseAgent):
 
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
-            name="heat_treatment_planning", description="Decide heat-treatment process family and route constraints.",
-            required_state_keys=["job_id", "request", "geometry"], produces_state_keys=["heat_treatment_decision"],
+            name="heat_treatment_planning",
+            description="Decide heat-treatment process family and route constraints.",
+            required_state_keys=["job_id", "request", "geometry"],
+            produces_state_keys=["heat_treatment_decision"],
             tags=["worker", "decision", "priority:high"],
         )
 
     def execute(self, state: dict[str, Any]) -> AgentResult:
-        return AgentResult(success=True, state_updates=self._workflow.heat_treatment_planning(state))
+        return AgentResult(
+            success=True, state_updates=self._workflow.heat_treatment_planning(state)
+        )
 
 
 class PrecisionChoiceAgent(BaseAgent):
@@ -74,8 +83,10 @@ class PrecisionChoiceAgent(BaseAgent):
 
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
-            name="precision_choice", description="Detect high-precision features, trigger user choice.",
-            required_state_keys=["job_id", "geometry", "request"], produces_state_keys=["pending_choices", "user_choices"],
+            name="precision_choice",
+            description="Detect high-precision features, trigger user choice.",
+            required_state_keys=["job_id", "geometry", "request"],
+            produces_state_keys=["pending_choices", "user_choices"],
             tags=["worker", "hitl"],
         )
 
@@ -92,7 +103,8 @@ class ProcessPlanningAgent(BaseAgent):
 
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
-            name="process_planning", description="Generate process route.",
+            name="process_planning",
+            description="Generate process route.",
             required_state_keys=["job_id", "request", "geometry", "user_choices"],
             produces_state_keys=["process_route"],
             tags=["worker", "planning"],
@@ -111,7 +123,8 @@ class ResourceSelectionAgent(BaseAgent):
 
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
-            name="resource_selection", description="Query machine/tool databases and match resources per operation.",
+            name="resource_selection",
+            description="Query machine/tool databases and match resources per operation.",
             required_state_keys=["job_id", "request", "process_route", "geometry"],
             produces_state_keys=["capability", "resource_selection"],
             tags=["worker", "resource"],
@@ -130,8 +143,16 @@ class VerificationAgent(BaseAgent):
 
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
-            name="verification", description="Verify plan completeness.",
-            required_state_keys=["job_id", "request", "process_route", "geometry", "capability", "resource_selection"],
+            name="verification",
+            description="Verify plan completeness.",
+            required_state_keys=[
+                "job_id",
+                "request",
+                "process_route",
+                "geometry",
+                "capability",
+                "resource_selection",
+            ],
             produces_state_keys=["verification", "status", "route_hashes"],
             tags=["worker", "verification"],
         )
@@ -149,7 +170,8 @@ class RepairAgent(BaseAgent):
 
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
-            name="repair", description="Repair process route based on verification feedback.",
+            name="repair",
+            description="Repair process route based on verification feedback.",
             required_state_keys=["job_id", "process_route", "verification", "geometry", "request"],
             produces_state_keys=["process_route", "repair_count"],
             tags=["worker", "repair"],
@@ -160,7 +182,12 @@ class RepairAgent(BaseAgent):
 
 
 ALL_AGENTS = [
-    TaskPlanningAgent, FeatureAnalysisAgent,
-    HeatTreatmentPlanningAgent, PrecisionChoiceAgent, ProcessPlanningAgent,
-    ResourceSelectionAgent, VerificationAgent, RepairAgent,
+    TaskPlanningAgent,
+    FeatureAnalysisAgent,
+    HeatTreatmentPlanningAgent,
+    PrecisionChoiceAgent,
+    ProcessPlanningAgent,
+    ResourceSelectionAgent,
+    VerificationAgent,
+    RepairAgent,
 ]

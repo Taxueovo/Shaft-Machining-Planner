@@ -39,9 +39,7 @@ def _get_client() -> Any:
         try:
             from openai import OpenAI
         except ImportError:
-            raise RuntimeError(
-                "openai 包未安装。请运行: pip install openai>=1.0"
-            )
+            raise RuntimeError("openai 包未安装。请运行: pip install openai>=1.0")
         _client = OpenAI(
             base_url=EMBEDDING_BASE_URL,
             api_key=EMBEDDING_API_KEY,
@@ -57,6 +55,7 @@ def embedding_available() -> bool:
         return False
     try:
         import openai  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -104,9 +103,7 @@ def _embed_batch(
     last_error = None
     for attempt in range(MAX_RETRIES + 1):
         try:
-            logger.info(
-                "Embedding request: model=%s, texts=%d", effective_model, len(texts)
-            )
+            logger.info("Embedding request: model=%s, texts=%d", effective_model, len(texts))
             request_kwargs: dict[str, Any] = {
                 "model": effective_model,
                 "input": texts,
@@ -133,9 +130,7 @@ def _embed_batch(
                 )
                 time.sleep(wait)
 
-    raise RuntimeError(
-        f"Embedding 请求在 {MAX_RETRIES + 1} 次尝试后仍失败: {last_error}"
-    )
+    raise RuntimeError(f"Embedding 请求在 {MAX_RETRIES + 1} 次尝试后仍失败: {last_error}")
 
 
 def _is_credential_error(exc: Exception) -> bool:
@@ -145,22 +140,3 @@ def _is_credential_error(exc: Exception) -> bool:
         keyword in text
         for keyword in ("authentication", "401", "invalid api key", "apikey", "unauthorized")
     )
-
-
-def embed_query(text: str, *, model: Optional[str] = None) -> list[float]:
-    """单条查询文本向量化。
-
-    Parameters
-    ----------
-    text : str
-        查询文本。
-    model : str, optional
-        Embedding 模型名称。
-
-    Returns
-    -------
-    list of float
-        查询向量。
-    """
-    vectors = embed([text], model=model)
-    return vectors[0]

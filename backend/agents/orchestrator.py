@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Optional
+from typing import Any
 
 from .base import AgentResult
 from .registry import AgentRegistry
@@ -16,15 +16,13 @@ logger = logging.getLogger(__name__)
 class Orchestrator:
     """Enhanced scheduler - supports dynamic routing, error recovery and agent orchestration."""
 
-    def __init__(self, registry: AgentRegistry, guardrails: Guardrails, prompt_manager: PromptManager) -> None:
+    def __init__(
+        self, registry: AgentRegistry, guardrails: Guardrails, prompt_manager: PromptManager
+    ) -> None:
         self.registry = registry
         self.guardrails = guardrails
         self.prompt_manager = prompt_manager
-        self._error_handlers: dict[str, Callable[[Exception, dict[str, Any]], AgentResult]] = {}
         self._fallback_chain: dict[str, list[str]] = {}
-
-    def register_error_handler(self, agent_name: str, handler: Callable[[Exception, dict[str, Any]], AgentResult]) -> None:
-        self._error_handlers[agent_name] = handler
 
     def register_fallback(self, agent_name: str, fallback_chain: list[str]) -> None:
         self._fallback_chain[agent_name] = fallback_chain
@@ -47,17 +45,6 @@ class Orchestrator:
             except Exception:
                 continue
         return result
-
-    def dynamic_dispatch(self, state: dict[str, Any], completed_agents: set[str] | None = None) -> Optional[str]:
-        completed = completed_agents or set()
-        available = self.registry.find_for_state(state)
-        candidates = [a for a in available if a.name not in completed]
-        if not candidates:
-            return None
-        high_priority = [a for a in candidates if "priority:high" in a.capabilities().tags]
-        if high_priority:
-            return high_priority[0].name
-        return candidates[0].name
 
     def get_status(self) -> dict[str, Any]:
         return {

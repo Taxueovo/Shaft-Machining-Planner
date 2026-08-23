@@ -70,7 +70,9 @@ class HeatTreatmentProvider:
         heat_treatment = "quench_temper" if requested == "quench_and_temper" else requested
         material = str(request.get("material", ""))
         material_props = get_material_properties(material)
-        high_precision = any(feature.get("high_precision") for feature in geometry.get("features", []))
+        high_precision = any(
+            feature.get("high_precision") for feature in geometry.get("features", [])
+        )
 
         inputs = {
             "material": material,
@@ -90,42 +92,75 @@ class HeatTreatmentProvider:
 
         if heat_treatment == "none":
             if high_precision:
-                warnings.append("High-precision feature has no heat treatment requirement; confirm drawing and service condition.")
+                warnings.append(
+                    "High-precision feature has no heat treatment requirement; confirm drawing and service condition."
+                )
             return self._result(
-                heat_treatment="none", process_name=None, description=None,
-                pre_treatment=None, requires_datum_recovery=False,
-                requires_hard_finish=False, inputs=inputs, knowledge=knowledge,
-                constraints=constraints, warnings=warnings,
+                heat_treatment="none",
+                process_name=None,
+                description=None,
+                pre_treatment=None,
+                requires_datum_recovery=False,
+                requires_hard_finish=False,
+                inputs=inputs,
+                knowledge=knowledge,
+                constraints=constraints,
+                warnings=warnings,
             )
 
         profile = self._PROFILES.get(heat_treatment)
         if profile is None:
-            warnings.append(f"Unsupported heat treatment type: {requested}. Engineer review is required.")
+            warnings.append(
+                f"Unsupported heat treatment type: {requested}. Engineer review is required."
+            )
             return self._result(
-                heat_treatment=heat_treatment, process_name=HEAT_NAME.get(heat_treatment, requested),
-                description="Heat treatment details require engineer definition.", pre_treatment=None,
-                requires_datum_recovery=True, requires_hard_finish=high_precision,
-                inputs=inputs, knowledge=knowledge, constraints=constraints, warnings=warnings,
+                heat_treatment=heat_treatment,
+                process_name=HEAT_NAME.get(heat_treatment, requested),
+                description="Heat treatment details require engineer definition.",
+                pre_treatment=None,
+                requires_datum_recovery=True,
+                requires_hard_finish=high_precision,
+                inputs=inputs,
+                knowledge=knowledge,
+                constraints=constraints,
+                warnings=warnings,
             )
 
         pre_treatment = self._resolve_pre_treatment(global_req)
         if pre_treatment:
             constraints.append("Pre-treatment must finish before final heat treatment.")
         if profile["requires_datum_recovery"]:
-            constraints.append("Re-establish finishing datum after heat treatment before precision finishing.")
+            constraints.append(
+                "Re-establish finishing datum after heat treatment before precision finishing."
+            )
         if profile["requires_hard_finish"] and high_precision:
-            constraints.append("Keep grinding/hard finishing allowance before heat treatment for high-precision surfaces.")
+            constraints.append(
+                "Keep grinding/hard finishing allowance before heat treatment for high-precision surfaces."
+            )
         if heat_treatment == "quench_temper" and global_req.get("target_hardness_hrc") is None:
-            warnings.append("Target hardness is not specified; use drawing or material specification before release.")
+            warnings.append(
+                "Target hardness is not specified; use drawing or material specification before release."
+            )
         if heat_treatment == "carburize_quench":
             if global_req.get("target_hardness_hrc") is None:
-                warnings.append("Surface hardness is not specified; use drawing or heat-treatment specification before release.")
+                warnings.append(
+                    "Surface hardness is not specified; use drawing or heat-treatment specification before release."
+                )
             if global_req.get("case_depth_mm") is None:
-                warnings.append("Effective case depth is not specified; engineer confirmation is required.")
+                warnings.append(
+                    "Effective case depth is not specified; engineer confirmation is required."
+                )
         if heat_treatment == "nitriding" and global_req.get("target_hardness_hrc") is None:
-            warnings.append("Nitriding target surface hardness is not specified; use drawing or nitriding specification (HV) before release.")
-        if heat_treatment == "induction_hardening" and global_req.get("target_hardness_hrc") is None:
-            warnings.append("Induction hardening target hardness is not specified; use drawing or specification before release.")
+            warnings.append(
+                "Nitriding target surface hardness is not specified; use drawing or nitriding specification (HV) before release."
+            )
+        if (
+            heat_treatment == "induction_hardening"
+            and global_req.get("target_hardness_hrc") is None
+        ):
+            warnings.append(
+                "Induction hardening target hardness is not specified; use drawing or specification before release."
+            )
         recommended = material_props.get("recommended_heat_treatment", "none")
         if recommended not in ("none", heat_treatment):
             warnings.append(
@@ -140,7 +175,10 @@ class HeatTreatmentProvider:
             pre_treatment=pre_treatment,
             requires_datum_recovery=profile["requires_datum_recovery"],
             requires_hard_finish=profile["requires_hard_finish"] and high_precision,
-            inputs=inputs, knowledge=knowledge, constraints=constraints, warnings=warnings,
+            inputs=inputs,
+            knowledge=knowledge,
+            constraints=constraints,
+            warnings=warnings,
         )
 
     def _resolve_pre_treatment(self, global_req: dict[str, Any]) -> dict[str, str] | None:
@@ -153,10 +191,17 @@ class HeatTreatmentProvider:
 
     @staticmethod
     def _result(
-        *, heat_treatment: str, process_name: str | None, description: str | None,
-        pre_treatment: dict[str, str] | None, requires_datum_recovery: bool,
-        requires_hard_finish: bool, inputs: dict[str, Any], knowledge: dict[str, Any],
-        constraints: list[str], warnings: list[str],
+        *,
+        heat_treatment: str,
+        process_name: str | None,
+        description: str | None,
+        pre_treatment: dict[str, str] | None,
+        requires_datum_recovery: bool,
+        requires_hard_finish: bool,
+        inputs: dict[str, Any],
+        knowledge: dict[str, Any],
+        constraints: list[str],
+        warnings: list[str],
     ) -> dict[str, Any]:
         decision = {
             "heat_treatment": heat_treatment,

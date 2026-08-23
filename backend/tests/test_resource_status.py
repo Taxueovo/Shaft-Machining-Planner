@@ -1,6 +1,5 @@
 """Resource status distinction tests (DEF-VAL-05)."""
 
-
 from models.process import ResourceStatus
 
 
@@ -32,7 +31,9 @@ class TestResourceStatusDistinction:
             if status not in (ResourceStatus.satisfied.value, ResourceStatus.not_applicable.value):
                 partial += 1
         # Only not_covered counts toward partial
-        assert partial == 1, f"not_applicable should not count toward partial, but partial={partial}"
+        assert partial == 1, (
+            f"not_applicable should not count toward partial, but partial={partial}"
+        )
 
     def test_not_covered_counts_as_partial(self):
         partial = 0
