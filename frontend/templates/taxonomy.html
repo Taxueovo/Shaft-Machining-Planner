@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shaft Machining Planner - PE Agent - Shaft Library</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
   <style>
     .taxonomy-layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; min-height: 600px; }
     .tree-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 20px; overflow-y: auto; max-height: 700px; }
@@ -86,7 +86,7 @@
         <p>We don't have a case that matches your requirements yet. You can:</p>
         <div style="display:flex;gap:12px">
           <a href="/custom" class="button primary">Create Custom Process Plan</a>
-          <button class="button secondary" onclick="selectParent()">Browse Parent Category</button>
+          <button class="button secondary" data-click="selectParent">Browse Parent Category</button>
         </div>
       </div>
     </div>
@@ -168,7 +168,7 @@
         <div class="tree-item ${isActive ? 'active' : ''}" data-id="${node.id}">
           ${hasChildren ? `<span class="tree-toggle ${isExpanded ? 'expanded' : ''}" data-id="${node.id}"></span>` : '<span style="width:16px"></span>'}
           <span class="icon">${getNodeIcon(node.id)}</span>
-          <span onclick="selectNode('${node.id}')">${esc(node.name)}</span>
+          <span data-click="selectNode" data-click-arg="${esc(node.id)}">${esc(node.name)}</span>
         </div>
         ${isExpanded ? renderNode(node.id) : ''}
       `;
@@ -234,7 +234,7 @@
       if (i === path.length - 1) {
         return `<span class="current">${esc(n.name)}</span>`;
       }
-      return `<a href="#" onclick="selectNode('${n.id}');return false">${esc(n.name)}</a><span class="separator">/</span>`;
+      return `<a href="#" data-click="selectNode" data-click-arg="${esc(n.id)}">${esc(n.name)}</a><span class="separator">/</span>`;
     }).join('');
   }
 
@@ -274,7 +274,7 @@
     }
 
     grid.innerHTML = cases.map(c => `
-      <div class="case-card" onclick="location.href='/cases/${encodeURIComponent(c.case_id)}'">
+      <div class="case-card" data-href="/cases/${encodeURIComponent(c.case_id)}">
         <div class="case-header">
           <h3>${esc(c.part_name)}</h3>
           <span class="tag">${esc(c.case_id)}</span>
@@ -339,6 +339,7 @@ document.getElementById("shutdown-btn").addEventListener("click", async () => {
   setTimeout(() => { document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#475467"><div style="text-align:center"><h1 style="margin:0 0 12px">System Shutdown</h1><p>This page can be closed.</p></div></div>'; }, 800);
 });
 </script>
-<script src="/static/heartbeat.js?v={{ range(100000, 999999) | random }}"></script>
+<script src="/static/app.js?v={{ static_version }}"></script>
+<script src="/static/heartbeat.js?v={{ static_version }}"></script>
 </body>
 </html>

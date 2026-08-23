@@ -55,9 +55,11 @@ class Workflow(
         self.orchestrator.register_fallback("process_planning", [])
 
         def _validate_geometry_rule(state: dict[str, Any]) -> Optional[str]:
+            # geometry is created later in the pipeline (feature_analysis), so absence is
+            # expected at early nodes; only validate a geometry that is already present.
             geom = state.get("geometry")
             if not geom:
-                return "Missing geometry model"
+                return None
             errors = Guardrails.validate_geometry(geom)
             return errors[0] if errors else None
 
@@ -65,10 +67,16 @@ class Workflow(
 
         def _make_agent_node(agent_name: str):
             def node(state: WorkflowState) -> dict[str, Any]:
+                # Guardrail layer: fail fast on state-integrity violations instead of
+                # silently planning with a malformed request/geometry.
+                errors = self.guardrails.check_all(dict(state))
+                if errors:
+                    raise RuntimeError(f"Guardrail violation: {'; '.join(errors)}")
                 result = self.orchestrator.execute_with_recovery(agent_name, state)
                 if not result.success:
                     raise RuntimeError(result.error or f"{agent_name} execution failed")
                 return result.state_updates
+
             node.__name__ = agent_name
             return node
 
@@ -95,7 +103,8 @@ class Workflow(
         # process_planning with the failure reasons for replanning
         builder.add_edge("resource_selection", "verification")
         builder.add_conditional_edges(
-            "verification", self._route_after_verification,
+            "verification",
+            self._route_after_verification,
             {"pass": END, "repair": "repair", "failed": END},
         )
         builder.add_edge("repair", "process_planning")
@@ -108,7 +117,7 @@ class Workflow(
                 "You are a motor shaft process planning expert. The rule engine has generated a basic process route. "
                 "You need to propose constrained corrections.\n\n"
                 "Requirements:\n"
-                "1. Output JSON: {\"patches\": [...]}\n"
+                '1. Output JSON: {"patches": [...]}\n'
                 "2. Each patch: action (insert/update/remove), target_operation_no, operation details\n"
                 "3. Mandatory operations cannot be deleted: Blanking, Face Turning, Center Drilling, Rough Turning, Semi-finish Turning, Finish Turning, Final Inspection\n"
                 "4. stage values: blank/datum/rough/semi_finish/feature_before_heat/"
@@ -127,7 +136,7 @@ class Workflow(
                 "Batch: {batch_quantity}\n\nPrecision choices: {choices}\n\n"
                 "Base route:\n{base_route_desc}\n{retry_context}\n\n"
                 "Reference knowledge:\n{rag_context}\n\n"
-                "Return correction patches JSON. If no correction needed, return {{\"patches\": []}}."
+                'Return correction patches JSON. If no correction needed, return {{"patches": []}}.'
             ),
             version="3.0",
         )
@@ -165,7 +174,7 @@ class Workflow(
             system=(
                 "You are a motor shaft process repair expert. Fix the process route based on verification feedback.\n\n"
                 "Requirements:\n"
-                "1. Output JSON: {\"process_route\": [...]}\n"
+                '1. Output JSON: {"process_route": [...]}\n'
                 "2. Keep correct operations, only fix errors\n"
                 "3. Ensure all features are covered\n"
                 "4. Ensure operation numbers are continuous\n"
@@ -178,7 +187,7 @@ class Workflow(
                 "Issues:\n{issues_desc}\n\nChecks:\n{checks_desc}\n\n"
                 "Repair count: {retry_count}\n\n"
                 "Reference knowledge:\n{rag_context}\n\n"
-                "Return repaired route JSON: {{\"process_route\": [...]}}\n"
+                'Return repaired route JSON: {{"process_route": [...]}}\n'
                 "Each op: operation_no, name, stage, description, process_category, feature_id, conditional"
             ),
             version="1.1",

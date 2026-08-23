@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shaft Machining Planner - PE Agent - Custom Process Planning</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
   <style>
     .case-banner { background: var(--primary-soft); border: 1px solid #b8ccff; border-radius: var(--radius-sm); padding: 16px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; }
     .case-banner .info { display: flex; align-items: center; gap: 12px; }
@@ -72,7 +72,7 @@
     </div>
     <div class="actions">
       <a id="case-banner-link" href="#" class="button ghost">View Case</a>
-      <button class="button secondary" onclick="clearCase()">Clear</button>
+      <button class="button secondary" data-click="clearCase">Clear</button>
     </div>
   </div>
 
@@ -157,7 +157,7 @@
     <div class="submit-row">
       <div></div>
       <div style="display:flex;gap:10px">
-        <button type="button" id="save-case-btn" class="button secondary" onclick="openSaveCaseDialog()">Save as Case</button>
+        <button type="button" id="save-case-btn" class="button secondary" data-click="openSaveCaseDialog">Save as Case</button>
         <button id="submit-button" class="button primary" type="submit" {% if not backend_ok %}disabled{% endif %}>Start Process Planning</button>
       </div>
     </div>
@@ -169,7 +169,7 @@
   <div class="dialog">
     <div class="dialog-header">
       <h3>Save as Case</h3>
-      <button class="dialog-close" onclick="closeSaveCaseDialog()">&times;</button>
+      <button class="dialog-close" data-click="closeSaveCaseDialog">&times;</button>
     </div>
     <div class="dialog-body">
       <label>Case Name <input id="case-name-input" type="text" placeholder="e.g., Motor Shaft A"></label>
@@ -183,8 +183,8 @@
       <div id="save-case-error" class="alert danger hidden"></div>
     </div>
     <div class="dialog-footer">
-      <button class="button ghost" onclick="closeSaveCaseDialog()">Cancel</button>
-      <button class="button primary" onclick="saveCase()">Save Case</button>
+      <button class="button ghost" data-click="closeSaveCaseDialog">Cancel</button>
+      <button class="button primary" data-click="saveCase">Save Case</button>
     </div>
   </div>
 </div>
@@ -312,7 +312,8 @@
   // Pass case ID to form.js
   window.CASE_ID_FROM_URL = new URLSearchParams(window.location.search).get('case') || null;
 </script>
-<script src="{{ url_for('static', path='/form.js') }}?v={{ range(100000, 999999) | random }}"></script>
-<script src="{{ url_for('static', path='/heartbeat.js') }}?v={{ range(100000, 999999) | random }}"></script>
+<script src="{{ url_for('static', path='/app.js') }}?v={{ static_version }}"></script>
+<script src="{{ url_for('static', path='/form.js') }}?v={{ static_version }}"></script>
+<script src="{{ url_for('static', path='/heartbeat.js') }}?v={{ static_version }}"></script>
 </body>
 </html>

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shaft Machining Planner - PE Agent - Shaft Process Planning</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
   <style>
     .hero { text-align: center; padding: 40px 20px; margin-bottom: 30px; }
     .hero h1 { font-size: 32px; margin-bottom: 12px; }
@@ -73,11 +73,8 @@
       }, 800);
     });
   }
-
-  // Init
-  loadData();
 })();
 </script>
-<script src="/static/heartbeat.js?v={{ range(100000, 999999) | random }}"></script>
+<script src="/static/heartbeat.js?v={{ static_version }}"></script>
 </body>
 </html>

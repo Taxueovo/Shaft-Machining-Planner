@@ -6,14 +6,19 @@ from pydantic import ValidationError
 from models.workflow import PlanningRequest
 from models.input import ShaftSegment, FeatureInput, GlobalRequirements
 from models.process import (
-    ProcessOperation, ProcessStage, ResourceStatus, ValidationIssue,
-    FeatureProcessStrategy, LLMRouteOutput,
+    ProcessOperation,
+    ProcessStage,
+    ResourceStatus,
+    ValidationIssue,
+    FeatureProcessStrategy,
+    LLMRouteOutput,
 )
 
 
 # ============================================================
 # ShaftSegment
 # ============================================================
+
 
 class TestShaftSegment:
     def test_valid_segment(self):
@@ -37,21 +42,27 @@ class TestShaftSegment:
 # FeatureInput
 # ============================================================
 
+
 class TestFeatureInput:
     def test_keyway_requires_width(self):
         with pytest.raises(ValidationError):
             FeatureInput(
-                feature_id="F1", feature_type="keyway",
-                positioning_mode="global_absolute", global_position_mm=50,
+                feature_id="F1",
+                feature_type="keyway",
+                positioning_mode="global_absolute",
+                global_position_mm=50,
                 # missing keyway_width_mm
             )
 
     def test_blind_hole_requires_depth(self):
         with pytest.raises(ValidationError):
             FeatureInput(
-                feature_id="F1", feature_type="hole",
-                positioning_mode="global_absolute", global_position_mm=50,
-                hole_diameter_mm=5, hole_type="blind",
+                feature_id="F1",
+                feature_type="hole",
+                positioning_mode="global_absolute",
+                global_position_mm=50,
+                hole_diameter_mm=5,
+                hole_type="blind",
                 hole_direction="radial",
                 # missing hole_depth_mm
             )
@@ -59,17 +70,24 @@ class TestFeatureInput:
     def test_segment_relative_requires_index(self):
         with pytest.raises(ValidationError):
             FeatureInput(
-                feature_id="F1", feature_type="keyway",
+                feature_id="F1",
+                feature_type="keyway",
                 positioning_mode="segment_relative",
-                keyway_width_mm=10, keyway_depth_mm=5, feature_length_mm=50,
+                keyway_width_mm=10,
+                keyway_depth_mm=5,
+                feature_length_mm=50,
                 # missing segment_index and segment_offset_mm
             )
 
     def test_valid_keyway(self):
         f = FeatureInput(
-            feature_id="F1", feature_type="keyway",
-            positioning_mode="global_absolute", global_position_mm=50,
-            keyway_width_mm=10, keyway_depth_mm=5, feature_length_mm=50,
+            feature_id="F1",
+            feature_type="keyway",
+            positioning_mode="global_absolute",
+            global_position_mm=50,
+            keyway_width_mm=10,
+            keyway_depth_mm=5,
+            feature_length_mm=50,
         )
         assert f.feature_type == "keyway"
 
@@ -78,11 +96,14 @@ class TestFeatureInput:
 # New shaft features (cam / worm / crank_pin) and nitriding / induction hardening heat treatments
 # ============================================================
 
+
 class TestNewFeatureTypes:
     def _base(self, feature_type, **extra):
         return {
-            "feature_id": "F1", "feature_type": feature_type,
-            "positioning_mode": "global_absolute", "global_position_mm": 50,
+            "feature_id": "F1",
+            "feature_type": feature_type,
+            "positioning_mode": "global_absolute",
+            "global_position_mm": 50,
             **extra,
         }
 
@@ -93,10 +114,16 @@ class TestNewFeatureTypes:
         assert f.feature_type == "cam"
 
     def test_cam_optional_fields(self):
-        f = FeatureInput(**self._base(
-            "cam", feature_length_mm=30.0, cam_type="grinding",
-            cam_lobe_count=4, cam_base_circle_diameter_mm=40.0, cam_lobe_lift_mm=8.0,
-        ))
+        f = FeatureInput(
+            **self._base(
+                "cam",
+                feature_length_mm=30.0,
+                cam_type="grinding",
+                cam_lobe_count=4,
+                cam_base_circle_diameter_mm=40.0,
+                cam_lobe_lift_mm=8.0,
+            )
+        )
         assert f.cam_lobe_count == 4
         assert f.cam_lobe_lift_mm == 8.0
 
@@ -107,10 +134,16 @@ class TestNewFeatureTypes:
         assert f.feature_type == "worm"
 
     def test_worm_optional_fields(self):
-        f = FeatureInput(**self._base(
-            "worm", feature_length_mm=40.0, worm_module=2.0, worm_starts=1,
-            worm_pressure_angle_deg=20.0, worm_outer_diameter_mm=35.0,
-        ))
+        f = FeatureInput(
+            **self._base(
+                "worm",
+                feature_length_mm=40.0,
+                worm_module=2.0,
+                worm_starts=1,
+                worm_pressure_angle_deg=20.0,
+                worm_outer_diameter_mm=35.0,
+            )
+        )
         assert f.worm_module == 2.0
         assert f.worm_starts == 1
 
@@ -121,10 +154,15 @@ class TestNewFeatureTypes:
         assert f.feature_type == "crank_pin"
 
     def test_crank_pin_optional_fields(self):
-        f = FeatureInput(**self._base(
-            "crank_pin", feature_length_mm=25.0, crank_pin_diameter_mm=30.0,
-            crank_pin_width_mm=25.0, crank_offset_mm=10.0,
-        ))
+        f = FeatureInput(
+            **self._base(
+                "crank_pin",
+                feature_length_mm=25.0,
+                crank_pin_diameter_mm=30.0,
+                crank_pin_width_mm=25.0,
+                crank_offset_mm=10.0,
+            )
+        )
         assert f.crank_pin_diameter_mm == 30.0
         assert f.crank_offset_mm == 10.0
 
@@ -147,6 +185,7 @@ class TestHeatTreatmentValues:
 # PlanningRequest
 # ============================================================
 
+
 class TestPlanningRequest:
     def _make_request(self, **kwargs):
         defaults = {
@@ -165,10 +204,12 @@ class TestPlanningRequest:
 
     def test_duplicate_segment_ids_rejected(self):
         with pytest.raises(ValidationError, match="Segment IDs must be unique"):
-            self._make_request(segments=[
-                {"segment_id": "S1", "diameter_mm": 30, "length_mm": 50},
-                {"segment_id": "S1", "diameter_mm": 25, "length_mm": 50},
-            ])
+            self._make_request(
+                segments=[
+                    {"segment_id": "S1", "diameter_mm": 30, "length_mm": 50},
+                    {"segment_id": "S1", "diameter_mm": 25, "length_mm": 50},
+                ]
+            )
 
     def test_blank_smaller_than_max_diameter_rejected(self):
         with pytest.raises(ValidationError, match="Blank diameter"):
@@ -179,41 +220,58 @@ class TestPlanningRequest:
 
     def test_duplicate_feature_ids_rejected(self):
         with pytest.raises(ValidationError, match="Feature IDs must be unique"):
-            self._make_request(features=[
-                FeatureInput(
-                    feature_id="F1", feature_type="keyway",
-                    positioning_mode="global_absolute", global_position_mm=50,
-                    keyway_width_mm=10, keyway_depth_mm=5, feature_length_mm=50,
-                ),
-                FeatureInput(
-                    feature_id="F1", feature_type="hole",
-                    positioning_mode="global_absolute", global_position_mm=60,
-                    hole_diameter_mm=5, hole_type="through", hole_direction="radial",
-                ),
-            ])
+            self._make_request(
+                features=[
+                    FeatureInput(
+                        feature_id="F1",
+                        feature_type="keyway",
+                        positioning_mode="global_absolute",
+                        global_position_mm=50,
+                        keyway_width_mm=10,
+                        keyway_depth_mm=5,
+                        feature_length_mm=50,
+                    ),
+                    FeatureInput(
+                        feature_id="F1",
+                        feature_type="hole",
+                        positioning_mode="global_absolute",
+                        global_position_mm=60,
+                        hole_diameter_mm=5,
+                        hole_type="through",
+                        hole_direction="radial",
+                    ),
+                ]
+            )
 
 
 # ============================================================
 # ProcessOperation & Enums
 # ============================================================
 
+
 class TestProcessOperation:
     def test_valid_operation(self):
         op = ProcessOperation(
-            operation_no=10, name="Blanking", stage=ProcessStage.blank,
+            operation_no=10,
+            name="Blanking",
+            stage=ProcessStage.blank,
         )
         assert op.stage == ProcessStage.blank
 
     def test_invalid_stage_rejected(self):
         with pytest.raises(ValidationError):
             ProcessOperation(
-                operation_no=10, name="Test", stage="invalid_stage",
+                operation_no=10,
+                name="Test",
+                stage="invalid_stage",
             )
 
     def test_operation_no_must_be_positive(self):
         with pytest.raises(ValidationError):
             ProcessOperation(
-                operation_no=0, name="Test", stage=ProcessStage.blank,
+                operation_no=0,
+                name="Test",
+                stage=ProcessStage.blank,
             )
 
 
@@ -226,7 +284,8 @@ class TestResourceStatus:
 class TestValidationIssue:
     def test_create_issue(self):
         issue = ValidationIssue(
-            error_code="TEST", message="Test error",
+            error_code="TEST",
+            message="Test error",
         )
         assert issue.severity == "error"
 
@@ -238,7 +297,9 @@ class TestFeatureProcessStrategy:
 
 class TestLLMRouteOutput:
     def test_valid_route(self):
-        output = LLMRouteOutput(process_route=[
-            ProcessOperation(operation_no=10, name="Blanking", stage=ProcessStage.blank),
-        ])
+        output = LLMRouteOutput(
+            process_route=[
+                ProcessOperation(operation_no=10, name="Blanking", stage=ProcessStage.blank),
+            ]
+        )
         assert len(output.process_route) == 1

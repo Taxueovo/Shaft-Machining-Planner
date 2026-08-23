@@ -33,8 +33,32 @@ jobs:
         run: |
           ruff check backend frontend scripts start_shaftplanner.py
 
+      - name: Check formatting with ruff
+        run: |
+          ruff format --check backend frontend scripts start_shaftplanner.py
+
       - name: Scan for committed secrets
         run: python scripts/release_audit.py && python scripts/scan_secrets.py
 
       - name: Run backend tests
         run: pytest backend/tests -v
+
+  rag-smoke:
+    name: RAG smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install RAG runtime deps (no torch)
+        run: |
+          pip install "chromadb==1.5.9" "rank-bm25>=0.2,<1" "jieba>=0.42,<1" "pytest>=8,<10"
+
+      - name: Run RAG smoke tests
+        run: pytest backend/tests/test_rag_smoke.py -v
