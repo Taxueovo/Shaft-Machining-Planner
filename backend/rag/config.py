@@ -41,9 +41,9 @@ CASE_EXTENSIONS: set[str] = {".json"}
 
 # ── 规范库分块参数 ──
 
-SPEC_CHUNK_SIZE: int = 1200       # 每个 chunk 最大字符数
-SPEC_CHUNK_OVERLAP: int = 150     # 相邻 chunk 重叠字符数
-SPEC_MIN_CHUNK_SIZE: int = 80     # 低于此大小的 chunk 合并到上一个
+SPEC_CHUNK_SIZE: int = 1200  # 每个 chunk 最大字符数
+SPEC_CHUNK_OVERLAP: int = 150  # 相邻 chunk 重叠字符数
+SPEC_MIN_CHUNK_SIZE: int = 80  # 低于此大小的 chunk 合并到上一个
 
 # ── 案例库分块参数 ──
 
@@ -51,16 +51,14 @@ CASE_CHUNK_AS_WHOLE: bool = True  # 每个案例作为一个完整 Chunk（保�
 
 # ── 混合检索参数 ──
 
-HYBRID_TOP_K_RECALL: int = 10     # 每路（BM25/Vector）召回候选数
-HYBRID_TOP_K_FINAL: int = 5       # 最终返回结果数
-RRF_K: int = 60                   # RRF 平滑参数（越大越平滑，默认 60）
+HYBRID_TOP_K_RECALL: int = 10  # 每路（BM25/Vector）召回候选数
+HYBRID_TOP_K_FINAL: int = 5  # 最终返回结果数
+RRF_K: int = 60  # RRF 平滑参数（越大越平滑，默认 60）
 
 # ── Reranker 配置 ──
 
 RERANKER_ENABLED: bool = True
-RERANKER_MODEL: str = os.getenv(
-    "RERANKER_MODEL", "BAAI/bge-reranker-v2-m3"
-)
+RERANKER_MODEL: str = os.getenv("RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
 # 云端精排（DashScope 兼容接口）。设置模型名即启用，走 HTTP 不下载；
 # 为空则使用本地 CrossEncoder（RERANKER_MODEL）。
 RERANKER_CLOUD_MODEL: str = os.getenv("RERANKER_CLOUD_MODEL", "")

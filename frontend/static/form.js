@@ -1,4 +1,9 @@
 (() => {
+  // Escape a value for safe interpolation into an HTML attribute value ("..." context).
+  // Used wherever saved case data is interpolated into markup; prevents stored XSS.
+  const escAttr = v => String(v ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+
   // Shutdown button
   const shutdownBtn = document.getElementById("shutdown-btn");
   if (shutdownBtn) {
@@ -47,7 +52,7 @@
         if (cat.materials.length > 0) {
           html += `<optgroup label="${cat.label}">`;
           cat.materials.forEach(m => {
-            html += `<option value="${m.value}" data-desc="${m.description}">${m.label}</option>`;
+            html += `<option value="${escAttr(m.value)}" data-desc="${escAttr(m.description)}">${escAttr(m.label)}</option>`;
           });
           html += '</optgroup>';
         }
@@ -116,14 +121,14 @@
     segmentNo++;
     const row = document.createElement("tr");
     row.innerHTML = `
-      <td><input class="seg-id" value="${v.segment_id || `S${String(segmentNo).padStart(2,"0")}`}" required></td>
-      <td><input class="seg-dia" type="number" min="0.001" step="0.001" value="${v.diameter_mm ?? ""}" required></td>
-      <td><input class="seg-length" type="number" min="0.001" step="0.001" value="${v.length_mm ?? ""}" required></td>
-      <td><input class="seg-upper" type="number" step="0.001" value="${v.diameter_upper_deviation_mm ?? ""}"></td>
-      <td><input class="seg-lower" type="number" step="0.001" value="${v.diameter_lower_deviation_mm ?? ""}"></td>
-      <td><input class="seg-ra" type="number" min="0.001" step="any" value="${v.roughness_ra ?? ""}"></td>
-      <td><input class="seg-area" type="number" min="0.001" step="any" value="${v.surface_area_mm2 ?? ""}" title="Cylindrical surface area"></td>
-      <td><input class="seg-type" value="${v.segment_type ?? ""}" title="Segment classification (e.g. Rotor_Core_Fit)"></td>
+      <td><input class="seg-id" value="${escAttr(v.segment_id) || `S${String(segmentNo).padStart(2,"0")}`}" required></td>
+      <td><input class="seg-dia" type="number" min="0.001" step="0.001" value="${escAttr(v.diameter_mm)}" required></td>
+      <td><input class="seg-length" type="number" min="0.001" step="0.001" value="${escAttr(v.length_mm)}" required></td>
+      <td><input class="seg-upper" type="number" step="0.001" value="${escAttr(v.diameter_upper_deviation_mm)}"></td>
+      <td><input class="seg-lower" type="number" step="0.001" value="${escAttr(v.diameter_lower_deviation_mm)}"></td>
+      <td><input class="seg-ra" type="number" min="0.001" step="any" value="${escAttr(v.roughness_ra)}"></td>
+      <td><input class="seg-area" type="number" min="0.001" step="any" value="${escAttr(v.surface_area_mm2)}" title="Cylindrical surface area"></td>
+      <td><input class="seg-type" value="${escAttr(v.segment_type)}" title="Segment classification (e.g. Rotor_Core_Fit)"></td>
       <td><button type="button" class="button danger">Delete</button></td>`;
     segmentsBody.appendChild(row);
     row.querySelector(".seg-length").addEventListener("input", updateTotal);
@@ -270,8 +275,14 @@
   function bindSpecific(card) {
     const type = card.querySelector(".hole-type");
     if (type) {
-      const update = () => card.querySelector(".hole-depth-wrap")
-        .classList.toggle("hidden", type.value !== "blind");
+      const update = () => {
+        const blind = type.value === "blind";
+        card.querySelector(".hole-depth-wrap").classList.toggle("hidden", !blind);
+        // Blind holes require a depth; the native "required" check gives inline guidance
+        // instead of a raw backend 422.
+        const depth = card.querySelector(".hole-depth");
+        if (depth) depth.required = blind;
+      };
       type.addEventListener("change", update); update();
     }
   }
@@ -282,7 +293,7 @@
     card.className = "feature-card";
     card.innerHTML = `
       <div class="feature-title">
-        <h3>Feature <input class="feature-id" value="${v.feature_id || `F${String(featureNo).padStart(2,"0")}`}" style="width:110px;display:inline-block"></h3>
+        <h3>Feature <input class="feature-id" value="${escAttr(v.feature_id) || `F${String(featureNo).padStart(2,"0")}`}" style="width:110px;display:inline-block"></h3>
         <button type="button" class="button danger">Delete</button>
       </div>
       <div class="grid four">
@@ -462,7 +473,9 @@
         data.hole_diameter_mm = Number(card.querySelector(".hole-dia").value);
         data.hole_type = card.querySelector(".hole-type").value;
         data.hole_direction = card.querySelector(".hole-direction").value;
-        data.hole_depth_mm = data.hole_type === "blind" ? Number(card.querySelector(".hole-depth").value) : null;
+        const depthInput = card.querySelector(".hole-depth");
+        const depthVal = depthInput ? depthInput.value : "";
+        data.hole_depth_mm = data.hole_type === "blind" ? (depthVal ? Number(depthVal) : null) : null;
         const hc = Number(card.querySelector(".hole-count").value);
         data.hole_count = hc > 1 ? hc : null;
         data.hole_angle_deg = numOrNull(card.querySelector(".hole-angle").value);
@@ -1177,6 +1190,10 @@
     const warningsBox = document.getElementById("route-preview-warnings");
     const dot = document.getElementById("preview-dot");
     if (!content) return;
+    // Do not plan/network while the preview panel is collapsed: expand triggers a
+    // debounced preview via the toggle handler, so nothing is missed.
+    const panel = document.getElementById("preview-panel");
+    if (panel && panel.classList.contains("hidden")) return;
 
     const payload = collectPreviewPayload();
     if (!payload) {
@@ -1292,11 +1309,6 @@
   form.addEventListener("input", debouncePreview);
   form.addEventListener("change", debouncePreview);
 
-  // Also trigger preview after adding/removing segments or features
-  const origAddSegment = addSegment;
-  const origAddFeature = addFeature;
-  // We can't easily wrap these, so rely on the input/change events from the new fields
-
-  // Initial preview after load
-  setTimeout(requestPreview, 800);
+  // addSegment/addFeature already schedule a debounced preview themselves; no
+  // separate initial-timer needed (avoiding a duplicate preview request on load).
 })();

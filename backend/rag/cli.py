@@ -25,13 +25,23 @@ import time
 from pathlib import Path
 
 # Silence verbose logging from chromadb and its dependencies
-for _lib in ("chromadb", "chromadb.telemetry", "opentelemetry",
-             "urllib3", "kubernetes", "grpc", "huggingface_hub"):
+for _lib in (
+    "chromadb",
+    "chromadb.telemetry",
+    "opentelemetry",
+    "urllib3",
+    "kubernetes",
+    "grpc",
+    "huggingface_hub",
+):
     logging.getLogger(_lib).setLevel(logging.WARNING)
 
 from .config import (
-    SPECS_DIR, CASES_DIR, CHROMA_DIR,
-    COLLECTION_SPECS, COLLECTION_CASES,
+    SPECS_DIR,
+    CASES_DIR,
+    CHROMA_DIR,
+    COLLECTION_SPECS,
+    COLLECTION_CASES,
     EMBEDDING_MODEL,
 )
 from .indexer import IndexBuilder
@@ -47,6 +57,7 @@ try:
     from rich.live import Live  # noqa: F401  # availability probe
     from rich.spinner import Spinner  # noqa: F401  # availability probe
     from rich import box
+
     HAS_RICH = True
 except ImportError:
     HAS_RICH = False
@@ -61,8 +72,7 @@ def _scan_spec_files() -> list[Path]:
     if not SPECS_DIR.exists():
         return []
     return sorted(
-        f for f in SPECS_DIR.iterdir()
-        if f.is_file() and f.suffix.lower() in SPEC_EXTENSIONS
+        f for f in SPECS_DIR.iterdir() if f.is_file() and f.suffix.lower() in SPEC_EXTENSIONS
     )
 
 
@@ -70,15 +80,16 @@ def _scan_case_files() -> list[Path]:
     if not CASES_DIR.exists():
         return []
     return sorted(
-        f for f in CASES_DIR.iterdir()
-        if f.is_file() and f.suffix.lower() in CASE_EXTENSIONS
-        and not f.name.startswith(".")
+        f
+        for f in CASES_DIR.iterdir()
+        if f.is_file() and f.suffix.lower() in CASE_EXTENSIONS and not f.name.startswith(".")
     )
 
 
 # ═══════════════════════════════════════════════════════════════
 # Rich interactive UI
 # ═══════════════════════════════════════════════════════════════
+
 
 class RAGCli:
     """RAG management console - interactive, menu-driven."""
@@ -104,9 +115,9 @@ class RAGCli:
         if self.console:
             self.console.rule(f"[bold cyan]{title}")
         else:
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"  {title}")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
 
     def _ok(self, msg: str):
         self._print(f"  [green]✓[/] {msg}" if HAS_RICH else f"  ✓ {msg}")
@@ -136,14 +147,18 @@ class RAGCli:
             info_table.add_column("Key", style="dim")
             info_table.add_column("Value")
             info_table.add_row("Embedding model", EMBEDDING_MODEL)
-            info_table.add_row("Embedding available",
-                               "[green]✓ Configured" if status.embedding_available else "[red]✗ Not configured")
+            info_table.add_row(
+                "Embedding available",
+                "[green]✓ Configured" if status.embedding_available else "[red]✗ Not configured",
+            )
             info_table.add_row("ChromaDB path", str(CHROMA_DIR))
             self._print(info_table)
             self._print()
 
             # Specs (process handbook)
-            spec_table = Table(title="📖 Specs (Process Handbook)", box=box.SIMPLE_HEAVY, padding=(0, 2))
+            spec_table = Table(
+                title="📖 Specs (Process Handbook)", box=box.SIMPLE_HEAVY, padding=(0, 2)
+            )
             spec_table.add_column("Metric", style="dim")
             spec_table.add_column("Value", style="bold")
             spec_table.add_row("Source files", str(len(spec_files)))
@@ -188,8 +203,12 @@ class RAGCli:
             # Plain-text fallback
             print(f"\n  Embedding model: {EMBEDDING_MODEL}")
             print(f"  Embedding available: {'✓' if status.embedding_available else '✗'}")
-            print(f"\n  📖 Specs: {status.specs.document_count} chunks | {len(spec_files)} source files")
-            print(f"  📋 Cases: {status.cases.document_count} chunks | {len(case_files)} source files")
+            print(
+                f"\n  📖 Specs: {status.specs.document_count} chunks | {len(spec_files)} source files"
+            )
+            print(
+                f"  📋 Cases: {status.cases.document_count} chunks | {len(case_files)} source files"
+            )
 
     # ── 2. Scan source files ──
 
@@ -207,8 +226,11 @@ class RAGCli:
             if files:
                 for f in files:
                     size_kb = f.stat().st_size / 1024
-                    self._print(f"    [green]📄 {f.name}[/] [dim]({size_kb:.1f} KB)[/]" if HAS_RICH
-                                else f"    📄 {f.name} ({size_kb:.1f} KB)")
+                    self._print(
+                        f"    [green]📄 {f.name}[/] [dim]({size_kb:.1f} KB)[/]"
+                        if HAS_RICH
+                        else f"    📄 {f.name} ({size_kb:.1f} KB)"
+                    )
             else:
                 self._warn(f"  (empty - drop in {'/'.join(extensions)} files and build)")
         print()
@@ -306,7 +328,9 @@ class RAGCli:
             return
 
         self._info("Enter a natural-language query (type 'q' to return to the menu)")
-        self._info(f"Current index: specs {status.specs.document_count} | cases {status.cases.document_count}")
+        self._info(
+            f"Current index: specs {status.specs.document_count} | cases {status.cases.document_count}"
+        )
         print()
 
         while True:
@@ -318,7 +342,7 @@ class RAGCli:
 
             if not query:
                 continue
-            if query.lower() == 'q':
+            if query.lower() == "q":
                 break
 
             try:
@@ -341,10 +365,12 @@ class RAGCli:
                     if r.channel == Channel.SPECS:
                         meta_text = r.metadata.get("hierarchy_path", "")
                     else:
-                        meta_text = f"{r.metadata.get('part_name', '')} ({r.metadata.get('case_id', '')})"
+                        meta_text = (
+                            f"{r.metadata.get('part_name', '')} ({r.metadata.get('case_id', '')})"
+                        )
 
                     self._print(
-                        f"  [bold]{i+1}.[/] {channel_icon} "
+                        f"  [bold]{i + 1}.[/] {channel_icon} "
                         f"[bold cyan]{channel_name}[/] "
                         f"[yellow]score {r.score}[/]"
                     )
@@ -354,7 +380,7 @@ class RAGCli:
                     self._print(f"    [dim]{preview}...[/]")
                     self._print()
                 else:
-                    print(f"  {i+1}. [{channel_name}] score {r.score}")
+                    print(f"  {i + 1}. [{channel_name}] score {r.score}")
                     print(f"    {r.content[:200]}...")
                     print()
 
@@ -376,7 +402,7 @@ class RAGCli:
         print()
 
         confirm = input("  Confirm clear? Type 'yes' to continue: ").strip()
-        if confirm.lower() != 'yes':
+        if confirm.lower() != "yes":
             self._info("Cancelled")
             return
 
@@ -403,11 +429,17 @@ class RAGCli:
             if col_status["document_count"] == 0:
                 continue
 
-            self._print(f"\n  [bold]{icon} {label} ({col_status['document_count']} chunks)[/]" if HAS_RICH
-                        else f"\n  {icon} {label} ({col_status['document_count']} chunks)")
+            self._print(
+                f"\n  [bold]{icon} {label} ({col_status['document_count']} chunks)[/]"
+                if HAS_RICH
+                else f"\n  {icon} {label} ({col_status['document_count']} chunks)"
+            )
 
-            col = (self.builder.store.specs_collection if col_name == COLLECTION_SPECS
-                   else self.builder.store.cases_collection)
+            col = (
+                self.builder.store.specs_collection
+                if col_name == COLLECTION_SPECS
+                else self.builder.store.cases_collection
+            )
 
             try:
                 data = col.get(limit=5, include=["documents", "metadatas"])
@@ -419,19 +451,23 @@ class RAGCli:
                 zip(data.get("ids", []), data.get("documents", []), data.get("metadatas", []))
             ):
                 if HAS_RICH:
-                    self._print(f"\n  [bold dim]#{i+1} {cid}[/]")
+                    self._print(f"\n  [bold dim]#{i + 1} {cid}[/]")
                     if col_name == COLLECTION_SPECS:
                         path = meta.get("hierarchy_path", "") if meta else ""
                         if path:
                             self._print(f"  [cyan]Hierarchy:[/] {path}")
                     else:
-                        case_label = f"{meta.get('part_name', '')} ({meta.get('case_id', '')})" if meta else ""
+                        case_label = (
+                            f"{meta.get('part_name', '')} ({meta.get('case_id', '')})"
+                            if meta
+                            else ""
+                        )
                         if case_label:
                             self._print(f"  [cyan]Case:[/] {case_label}")
                     preview = doc[:300].replace("\n", " ").strip() if doc else ""
                     self._print(f"  [dim]{preview}...[/]")
                 else:
-                    print(f"\n  #{i+1} {cid}")
+                    print(f"\n  #{i + 1} {cid}")
                     print(f"  {doc[:300] if doc else ''}...")
             print()
 
@@ -525,6 +561,7 @@ class RAGCli:
 # Entry point
 # ═══════════════════════════════════════════════════════════════
 
+
 def main():
     """CLI entry point - supports interactive mode and command-line arguments."""
     if "--help" in sys.argv or "-h" in sys.argv:
@@ -567,7 +604,7 @@ def main():
             response = cli.retriever.retrieve(query)
             for i, r in enumerate(response.results):
                 channel = "📖Specs" if r.channel == Channel.SPECS else "📋Cases"
-                print(f"\n{i+1}. [{channel}] score {r.score}")
+                print(f"\n{i + 1}. [{channel}] score {r.score}")
                 print(f"   {r.content[:300]}...")
             if not response.results:
                 print("No results found.")

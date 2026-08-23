@@ -14,16 +14,9 @@ class Guardrails:
     def add_rule(self, rule: Callable[[dict[str, Any]], Optional[str]]) -> None:
         self._rules.append(rule)
 
-    def validate_state(self, state: dict[str, Any], required_keys: list[str], context: str = "") -> list[str]:
-        errors = []
-        for key in required_keys:
-            if key not in state:
-                errors.append(f"[{context}] Missing required state key: {key}")
-            elif state[key] is None:
-                errors.append(f"[{context}] State key {key} is None")
-        return errors
-
-    def validate_output(self, output: dict[str, Any], expected_keys: list[str], context: str = "") -> list[str]:
+    def validate_output(
+        self, output: dict[str, Any], expected_keys: list[str], context: str = ""
+    ) -> list[str]:
         errors = []
         for key in expected_keys:
             if key not in output:

@@ -22,10 +22,22 @@ class ShaftSegment(BaseModel):
 class FeatureInput(BaseModel):
     feature_id: str = Field(min_length=1, max_length=30)
     feature_type: Literal[
-        "keyway", "hole", "flat", "thread", "knurl",
-        "bearing_seat", "spline", "taper", "groove",
-        "seal_area", "gear_teeth", "flange", "bore",
-        "cam", "worm", "crank_pin",
+        "keyway",
+        "hole",
+        "flat",
+        "thread",
+        "knurl",
+        "bearing_seat",
+        "spline",
+        "taper",
+        "groove",
+        "seal_area",
+        "gear_teeth",
+        "flange",
+        "bore",
+        "cam",
+        "worm",
+        "crank_pin",
     ]
     positioning_mode: Literal["segment_relative", "global_absolute"]
     segment_index: Optional[int] = Field(default=None, ge=1)
@@ -225,7 +237,9 @@ class GlobalRequirements(BaseModel):
     target_hardness_hrc: Optional[float] = Field(default=None, gt=0, le=75)
     case_depth_mm: Optional[float] = Field(default=None, gt=0, le=20)
     blank_condition: Literal["bar", "forged", "normalized", "annealed", "unknown"] = "unknown"
-    pre_heat_treatment: Literal["auto", "none", "normalizing", "annealing", "stress_relief"] = "auto"
+    pre_heat_treatment: Literal["auto", "none", "normalizing", "annealing", "stress_relief"] = (
+        "auto"
+    )
     surface_treatment: Literal[
         "none",
         "blackening",

@@ -50,11 +50,15 @@ def _init() -> bool:
 
 def _check_available():
     if not _init():
-        raise HTTPException(status_code=503, detail="RAG service unavailable; check chromadb installation and embedding configuration.")
+        raise HTTPException(
+            status_code=503,
+            detail="RAG service unavailable; check chromadb installation and embedding configuration.",
+        )
 
 
 def _scan_spec_files() -> list[dict]:
     from .config import SPECS_DIR, SPEC_EXTENSIONS
+
     if not SPECS_DIR.exists():
         return []
     return [
@@ -66,6 +70,7 @@ def _scan_spec_files() -> list[dict]:
 
 def _scan_case_files() -> list[dict]:
     from .config import CASES_DIR, CASE_EXTENSIONS
+
     if not CASES_DIR.exists():
         return []
     return [
@@ -78,6 +83,7 @@ def _scan_case_files() -> list[dict]:
 # ═══════════════════════════════════════════════════════════════
 # Status
 # ═══════════════════════════════════════════════════════════════
+
 
 @rag_router.get("/status")
 def rag_status() -> dict[str, Any]:
@@ -120,6 +126,7 @@ def rag_status() -> dict[str, Any]:
 # Index management
 # ═══════════════════════════════════════════════════════════════
 
+
 @rag_router.post("/build")
 def build_index(
     channel: Optional[str] = Query(default="all", description="all | specs | cases"),
@@ -128,6 +135,7 @@ def build_index(
     _check_available()
 
     import time
+
     t0 = time.time()
 
     if channel == "specs":
@@ -163,6 +171,7 @@ def clear_index(
 # ═══════════════════════════════════════════════════════════════
 # Retrieval
 # ═══════════════════════════════════════════════════════════════
+
 
 @rag_router.get("/search")
 def search(
@@ -203,6 +212,7 @@ def search(
 # Chunk details
 # ═══════════════════════════════════════════════════════════════
 
+
 @rag_router.get("/chunks")
 def list_chunks(
     channel: Optional[str] = Query(default="all", description="all | specs | cases"),
@@ -228,13 +238,12 @@ def list_chunks(
             continue
 
         col = _store.specs_collection if col_name == COLLECTION_SPECS else _store.cases_collection
-        data = col.get(limit=min(limit, info["document_count"]),
-                       include=["documents", "metadatas"])
+        data = col.get(limit=min(limit, info["document_count"]), include=["documents", "metadatas"])
 
         items = []
-        for cid, doc, meta in zip(data.get("ids", []),
-                                   data.get("documents", []),
-                                   data.get("metadatas", [])):
+        for cid, doc, meta in zip(
+            data.get("ids", []), data.get("documents", []), data.get("metadatas", [])
+        ):
             item = {
                 "chunk_id": cid,
                 # Send full content; the frontend collapses the display
