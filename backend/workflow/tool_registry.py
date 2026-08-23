@@ -17,8 +17,15 @@ class ToolRegistry:
         self._tools: dict[str, dict[str, Any]] = {}
         self._register_defaults()
 
-    def register(self, name: str, description: str, parameters: dict[str, Any], handler: Any) -> None:
-        self._tools[name] = {"name": name, "description": description, "parameters": parameters, "handler": handler}
+    def register(
+        self, name: str, description: str, parameters: dict[str, Any], handler: Any
+    ) -> None:
+        self._tools[name] = {
+            "name": name,
+            "description": description,
+            "parameters": parameters,
+            "handler": handler,
+        }
 
     def list_tools(self) -> list[dict[str, Any]]:
         return [{k: v for k, v in tool.items() if k != "handler"} for tool in self._tools.values()]
@@ -35,7 +42,10 @@ class ToolRegistry:
             parameters={
                 "type": "object",
                 "properties": {
-                    "required_length_mm": {"type": "number", "description": "Part total length (mm)"},
+                    "required_length_mm": {
+                        "type": "number",
+                        "description": "Part total length (mm)",
+                    },
                     "required_diameter_mm": {"type": "number", "description": "Bar diameter (mm)"},
                     "top_n": {"type": "integer", "description": "Max candidates", "default": 5},
                 },
@@ -91,20 +101,30 @@ class ToolRegistry:
             handler=self._get_feature_processes,
         )
 
-    def _query_turning_machines(self, required_length_mm: float, required_diameter_mm: float, top_n: int = 5) -> dict[str, Any]:
+    def _query_turning_machines(
+        self, required_length_mm: float, required_diameter_mm: float, top_n: int = 5
+    ) -> dict[str, Any]:
         return self.machine_repo.search_turning(required_length_mm, required_diameter_mm, top_n)
 
     def _query_cutting_tools(self, material: str, process: str, top_n: int = 5) -> dict[str, Any]:
         return self.tool_repo.search(material, process, top_n)
 
     @staticmethod
-    def _build_process_route(request: dict[str, Any], geometry: dict[str, Any], choices: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    def _build_process_route(
+        request: dict[str, Any], geometry: dict[str, Any], choices: dict[str, str] | None = None
+    ) -> list[dict[str, Any]]:
         return build_route(request, geometry, choices or {})
 
     @staticmethod
-    def _check_precision(tolerance_upper_mm: Optional[float] = None, tolerance_lower_mm: Optional[float] = None, roughness_ra: Optional[float] = None) -> dict[str, Any]:
+    def _check_precision(
+        tolerance_upper_mm: Optional[float] = None,
+        tolerance_lower_mm: Optional[float] = None,
+        roughness_ra: Optional[float] = None,
+    ) -> dict[str, Any]:
         return {
-            "high_precision": is_high_precision(tolerance_upper_mm, tolerance_lower_mm, roughness_ra),
+            "high_precision": is_high_precision(
+                tolerance_upper_mm, tolerance_lower_mm, roughness_ra
+            ),
             "criteria": "Tolerance absolute value <= 0.02 mm or roughness Ra <= 0.8",
         }
 

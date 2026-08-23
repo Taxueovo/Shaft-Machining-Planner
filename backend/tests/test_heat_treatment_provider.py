@@ -64,15 +64,22 @@ def test_nitriding_profile_and_warning():
 
     assert decision["process_name"] == "Nitriding"
     assert decision["requires_datum_recovery"] is True
-    assert any("Nitriding target surface hardness" in warning for warning in decision["trace"]["warnings"])
+    assert any(
+        "Nitriding target surface hardness" in warning for warning in decision["trace"]["warnings"]
+    )
 
 
 def test_induction_hardening_profile_and_warning():
-    decision = HeatTreatmentProvider().recommend(_request(heat_treatment="induction_hardening"), _geometry())
+    decision = HeatTreatmentProvider().recommend(
+        _request(heat_treatment="induction_hardening"), _geometry()
+    )
 
     assert decision["process_name"] == "Induction Hardening"
     assert decision["requires_datum_recovery"] is True
-    assert any("Induction hardening target hardness" in warning for warning in decision["trace"]["warnings"])
+    assert any(
+        "Induction hardening target hardness" in warning
+        for warning in decision["trace"]["warnings"]
+    )
 
 
 def test_nitriding_route_uses_grind_only_finish():

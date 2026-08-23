@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 # PlanningRequest
 # ============================================================
 
+
 class PlanningRequest(BaseModel):
     """Process planning request."""
 
@@ -53,14 +54,14 @@ class PlanningRequest(BaseModel):
                 raise ValueError("Inner diameter must be less than outer diameter.")
 
         material_props = get_material_properties(self.material)
-        has_high_precision = any(
-            is_feature_high_precision(f)
-            for f in self.features
-        )
+        has_high_precision = any(is_feature_high_precision(f) for f in self.features)
         if has_high_precision and self.global_requirements.heat_treatment == "none":
             recommended_heat = material_props.get("recommended_heat_treatment", "quench_temper")
             self.global_requirements.heat_treatment = recommended_heat
-            logger.info("High-precision feature detected, auto-setting heat treatment to %s.", recommended_heat)
+            logger.info(
+                "High-precision feature detected, auto-setting heat treatment to %s.",
+                recommended_heat,
+            )
         return self
 
 
@@ -72,7 +73,8 @@ MAX_REPLAN_RETRIES = 3
 
 
 def _merge_traces(
-    existing: list[dict[str, Any]], new: list[dict[str, Any]],
+    existing: list[dict[str, Any]],
+    new: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     seen = {(e.get("node"), e.get("start_time")) for e in existing}
     merged = list(existing)
@@ -93,8 +95,6 @@ class WorkflowState(TypedDict, total=False):
     geometry: dict[str, Any]
     heat_treatment_decision: dict[str, Any]
     capability: dict[str, Any]
-    machine_check: dict[str, Any]
-    tool_check: dict[str, Any]
     pending_choices: list[dict[str, Any]]
     user_choices: dict[str, str]
     process_route: list[dict[str, Any]]
@@ -113,16 +113,23 @@ class ExecutionTrace:
     @staticmethod
     def start(node_name: str, state_keys: list[str]) -> dict[str, Any]:
         return {
-            "node": node_name, "input_keys": state_keys,
+            "node": node_name,
+            "input_keys": state_keys,
             "start_time": datetime.now(timezone.utc).isoformat(),
-            "end_time": None, "duration_ms": None, "status": "running",
-            "tool_calls": [], "output_keys": [], "error": None,
+            "end_time": None,
+            "duration_ms": None,
+            "status": "running",
+            "tool_calls": [],
+            "output_keys": [],
+            "error": None,
         }
 
     @staticmethod
     def finish(
-        entry: dict[str, Any], output_keys: list[str],
-        tool_calls: list[dict[str, Any]] | None = None, error: str | None = None,
+        entry: dict[str, Any],
+        output_keys: list[str],
+        tool_calls: list[dict[str, Any]] | None = None,
+        error: str | None = None,
     ) -> dict[str, Any]:
         end = datetime.now(timezone.utc)
         start = datetime.fromisoformat(entry["start_time"])
@@ -137,17 +144,25 @@ class ExecutionTrace:
 
     @staticmethod
     def record_tool(
-        tool_calls: list[dict[str, Any]], name: str, params: dict[str, Any],
-        result_summary: str, duration_ms: float,
+        tool_calls: list[dict[str, Any]],
+        name: str,
+        params: dict[str, Any],
+        result_summary: str,
+        duration_ms: float,
     ) -> None:
-        tool_calls.append({
-            "tool": name, "params": params,
-            "result_summary": result_summary, "duration_ms": round(duration_ms),
-        })
+        tool_calls.append(
+            {
+                "tool": name,
+                "params": params,
+                "result_summary": result_summary,
+                "duration_ms": round(duration_ms),
+            }
+        )
 
 
 def traced(node_name: str, input_keys: list[str] | None = None):
     """Workflow node execution tracing decorator."""
+
     def decorator(func):
         @functools.wraps(func)
         def wrapper(self, state: WorkflowState) -> dict[str, Any]:
@@ -162,5 +177,7 @@ def traced(node_name: str, input_keys: list[str] | None = None):
             except Exception as exc:
                 ExecutionTrace.finish(entry, [], error=str(exc))
                 raise
+
         return wrapper
+
     return decorator

@@ -56,8 +56,12 @@ class CaseDB:
         data = {"cases": [case.model_dump(mode="json") for case in self._cases]}
 
         with tempfile.NamedTemporaryFile(
-            "w", encoding="utf-8", dir=self._file_path.parent,
-            prefix=f".{self._file_path.name}.", suffix=".tmp", delete=False,
+            "w",
+            encoding="utf-8",
+            dir=self._file_path.parent,
+            prefix=f".{self._file_path.name}.",
+            suffix=".tmp",
+            delete=False,
         ) as temp_file:
             json.dump(data, temp_file, indent=2, ensure_ascii=False, default=str)
             temp_path = Path(temp_file.name)
@@ -90,7 +94,7 @@ class CaseDB:
         results = self._filtered(request)
 
         # Apply pagination
-        results = results[request.offset:request.offset + request.limit]
+        results = results[request.offset : request.offset + request.limit]
 
         return [c.to_metadata() for c in results]
 
@@ -112,13 +116,18 @@ class CaseDB:
 
         # Filter by tolerance
         if request.tolerance:
-            results = [c for c in results if c.tolerance and c.tolerance.lower() == request.tolerance.lower()]
+            results = [
+                c
+                for c in results
+                if c.tolerance and c.tolerance.lower() == request.tolerance.lower()
+            ]
 
         # Filter by keyword
         if request.keyword:
             keyword = request.keyword.lower()
             results = [
-                c for c in results
+                c
+                for c in results
                 if keyword in c.part_name.lower()
                 or keyword in c.case_id.lower()
                 or (c.description and keyword in c.description.lower())

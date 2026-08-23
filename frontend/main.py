@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import hashlib
 import os
+import re
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -23,21 +25,42 @@ load_dotenv()
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8001")
 LOCAL_API_TOKEN = os.getenv("LOCAL_API_TOKEN", "")
 if not LOCAL_API_TOKEN:
-    raise RuntimeError("LOCAL_API_TOKEN is required. Start the application with frontend/run_frontend.py.")
+    raise RuntimeError(
+        "LOCAL_API_TOKEN is required. Start the application with frontend/run_frontend.py."
+    )
 _ALLOWED_ORIGINS = {"http://127.0.0.1:8000", "http://localhost:8000"}
 MAX_REQUEST_BYTES = 2_000_000
 
 
-class NoCacheMiddleware(BaseHTTPMiddleware):
-    """Middleware to disable static file caching."""
+def _compute_static_version() -> str:
+    """A stable build hash for static asset URLs.
+
+    Computed once at startup from the static files' content; templates append it as
+    ``?v=<hash>`` so browsers cache assets immutably and a changed asset gets a new URL.
+    """
+    digest = hashlib.sha1()
+    try:
+        for path in sorted((FRONTEND_DIR / "static").rglob("*")):
+            if path.is_file():
+                digest.update(path.name.encode("utf-8"))
+                digest.update(b"\0")
+                digest.update(path.read_bytes())
+    except OSError:
+        pass
+    return digest.hexdigest()[:12]
+
+
+STATIC_VERSION = _compute_static_version()
+
+
+class StaticCacheMiddleware(BaseHTTPMiddleware):
+    """Serve static assets with long immutable caching (URL carries the version hash)."""
 
     async def dispatch(self, request: Request, call_next):
         request.state.csp_nonce = secrets.token_urlsafe(18)
         response = await call_next(request)
         if request.url.path.startswith("/static"):
-            response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-            response.headers["Pragma"] = "no-cache"
-            response.headers["Expires"] = "0"
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return response
 
 
@@ -57,7 +80,10 @@ class LocalOriginMiddleware(BaseHTTPMiddleware):
             if (origin and origin not in _ALLOWED_ORIGINS) or fetch_site == "cross-site":
                 return Response("Cross-site request rejected", status_code=403)
         response = await call_next(request)
-        response.headers.setdefault("Content-Security-Policy", f"default-src 'self'; script-src 'self' 'nonce-{request.state.csp_nonce}'; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            f"default-src 'self'; script-src 'self' 'nonce-{request.state.csp_nonce}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'",
+        )
         response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers.setdefault("X-Frame-Options", "DENY")
         response.headers.setdefault("X-Content-Type-Options", "nosniff")
@@ -75,9 +101,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Shaft Machining Planner Frontend", version="1.0.0", lifespan=lifespan)
-app.add_middleware(NoCacheMiddleware)
+app.add_middleware(StaticCacheMiddleware)
 app.add_middleware(LocalOriginMiddleware)
 templates = Jinja2Templates(directory=str(FRONTEND_DIR / "templates"))
+templates.env.globals["static_version"] = STATIC_VERSION
 app.mount(
     "/static",
     StaticFiles(directory=str(FRONTEND_DIR / "static")),
@@ -196,7 +223,9 @@ async def download_process_card(request: Request, job_id: str) -> Response:
     upstream = await stream_context.__aenter__()
     if upstream.status_code != 200:
         await stream_context.__aexit__(None, None, None)
-        raise HTTPException(status_code=upstream.status_code, detail="Process card is not available.")
+        raise HTTPException(
+            status_code=upstream.status_code, detail="Process card is not available."
+        )
 
     async def chunks():
         try:
@@ -205,7 +234,9 @@ async def download_process_card(request: Request, job_id: str) -> Response:
         finally:
             await stream_context.__aexit__(None, None, None)
 
-    headers = {"Content-Disposition": f'attachment; filename="process_card_{job_id}.xlsx"'}
+    # job_id is URL-derived and unvalidated; sanitize so it cannot inject a malformed header.
+    safe_job_id = re.sub(r"[^\w.-]", "", job_id)[:64]
+    headers = {"Content-Disposition": f'attachment; filename="process_card_{safe_job_id}.xlsx"'}
     if upstream.headers.get("content-length"):
         headers["Content-Length"] = upstream.headers["content-length"]
     return StreamingResponse(
@@ -249,9 +280,7 @@ async def list_tools(request: Request) -> dict[str, Any]:
 
 @app.post("/api/tools/{tool_name}")
 async def call_tool(request: Request, tool_name: str) -> dict[str, Any]:
-    return await forward(
-        request, "POST", f"/api/v1/tools/{tool_name}", await request.json()
-    )
+    return await forward(request, "POST", f"/api/v1/tools/{tool_name}", await request.json())
 
 
 @app.get("/api/agents")
@@ -407,7 +436,9 @@ async def rag_health(request: Request) -> dict[str, Any]:
 async def heartbeat(request: Request) -> dict[str, str]:
     """Forward heartbeat to backend watchdog."""
     try:
-        await request.app.state.backend.post("/api/v1/heartbeat", headers={"x-local-api-token": LOCAL_API_TOKEN})
+        await request.app.state.backend.post(
+            "/api/v1/heartbeat", headers={"x-local-api-token": LOCAL_API_TOKEN}
+        )
     except Exception:
         pass
     return {"status": "ok"}
@@ -422,7 +453,9 @@ async def shutdown(request: Request) -> dict[str, str]:
 
     # 1. Notify backend to shutdown
     try:
-        await request.app.state.backend.post("/api/v1/shutdown", headers={"x-local-api-token": LOCAL_API_TOKEN})
+        await request.app.state.backend.post(
+            "/api/v1/shutdown", headers={"x-local-api-token": LOCAL_API_TOKEN}
+        )
     except Exception:
         pass  # Backend may already be shutdown
 

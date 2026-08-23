@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 from typing import Optional
 
 # 默认离线加载本地缓存的模型，避免每次首次加载访问 HF Hub 超时（175s+）。
@@ -43,6 +44,7 @@ def cloud_rerank_available() -> bool:
         return False
     try:
         import httpx  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -74,10 +76,12 @@ def _cloud_rerank(query: str, documents: list[str]) -> list[float]:
         scores[r["index"]] = r["relevance_score"]
     return scores
 
+
 # ── 模型全局缓存（加载一次） ──
 
 _reranker_model: Optional[object] = None
 _reranker_available: Optional[bool] = None
+_model_lock = threading.Lock()
 
 
 def reranker_available() -> bool:
@@ -92,6 +96,7 @@ def reranker_available() -> bool:
 
     try:
         import sentence_transformers  # noqa: F401
+
         _reranker_available = True
     except ImportError:
         logger.warning("sentence-transformers 未安装，reranker 不可用")
@@ -100,7 +105,7 @@ def reranker_available() -> bool:
 
 
 def _get_model() -> Optional[object]:
-    """延迟加载 Cross-Encoder 模型。"""
+    """延迟加载 Cross-Encoder 模型（加锁避免并发下重复下载/加载）。"""
     global _reranker_model, _reranker_available
 
     if not reranker_available():
@@ -109,65 +114,101 @@ def _get_model() -> Optional[object]:
     if _reranker_model is not None:
         return _reranker_model
 
-    try:
-        from sentence_transformers import CrossEncoder
-        logger.info("Loading Cross-Encoder model: %s ...", RERANKER_MODEL)
+    with _model_lock:
+        if _reranker_model is not None:
+            return _reranker_model
         try:
-            # 本地已有模型时优先离线加载，避免访问 HF Hub 超时
-            _reranker_model = CrossEncoder(RERANKER_MODEL, local_files_only=True)
-        except Exception as local_exc:
-            # 本地无模型时临时关闭离线模式做在线下载
-            logger.debug("Local reranker load failed (%s), trying online load...", local_exc)
-            os.environ.pop("HF_HUB_OFFLINE", None)
-            os.environ.pop("TRANSFORMERS_OFFLINE", None)
+            from sentence_transformers import CrossEncoder
+
+            logger.info("Loading Cross-Encoder model: %s ...", RERANKER_MODEL)
             try:
-                _reranker_model = CrossEncoder(RERANKER_MODEL)
-            finally:
-                os.environ.setdefault("HF_HUB_OFFLINE", "1")
-                os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
-        logger.info("Cross-Encoder model loaded: %s", RERANKER_MODEL)
-        return _reranker_model
-    except Exception as exc:
-        logger.warning("Failed to load reranker model '%s': %s. "
-                       "Reranking disabled.", RERANKER_MODEL, exc)
-        _reranker_available = False
-        return None
+                # 本地已有模型时优先离线加载，避免访问 HF Hub 超时
+                _reranker_model = CrossEncoder(RERANKER_MODEL, local_files_only=True)
+            except Exception as local_exc:
+                # 本地无模型时临时关闭离线模式做在线下载
+                logger.debug("Local reranker load failed (%s), trying online load...", local_exc)
+                os.environ.pop("HF_HUB_OFFLINE", None)
+                os.environ.pop("TRANSFORMERS_OFFLINE", None)
+                try:
+                    _reranker_model = CrossEncoder(RERANKER_MODEL)
+                finally:
+                    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+                    os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+            logger.info("Cross-Encoder model loaded: %s", RERANKER_MODEL)
+            return _reranker_model
+        except Exception as exc:
+            logger.warning(
+                "Failed to load reranker model '%s': %s. Reranking disabled.", RERANKER_MODEL, exc
+            )
+            _reranker_available = False
+            return None
 
 
-# ── 特征关键词映射（查询中文特征词 → 候选 features 英文关键词）──
+# ── 特征关键词映射（查询特征词 → 候选 features 英文关键词）──
 # 语义精排偏重"材料和主题相似"，常漏掉查询里的判别性特征词（如"螺纹/花键/孔"），
 # 把不含该特征的近重复案例排到第一。此处做确定性特征命中检查：候选缺失查询里的
 # 关键特征词时降权，弥补语义模型的判别力不足（实测 hit@1 +0.27、MRR +0.17）。
+#
+# 键同时覆盖中文查询词（"键槽"）与工作流构造的英文特征标签（"keyway"），
+# 否则生产查询路径（英文特征名）永远触发不了该惩罚。匹配均为大小写不敏感。
 
 FEATURE_KEYWORDS: dict[str, list[str]] = {
     "键槽": ["keyway"],
+    "keyway": ["keyway"],
     "轴承位": ["bearing"],
+    "bearing_seat": ["bearing"],
+    "bearing": ["bearing"],
     "花键": ["spline"],
+    "spline": ["spline"],
     "齿形": ["gear", "worm", "helical", "pinion"],
+    "gear_teeth": ["gear", "helical", "pinion"],
+    "gear": ["gear"],
+    "worm": ["worm"],
     "螺纹": ["thread"],
+    "thread": ["thread"],
     "孔": ["hole", "bore"],
+    "hole": ["hole", "bore"],
+    "bore": ["bore"],
     "锥面": ["taper"],
+    "taper": ["taper"],
     "槽": ["groove"],
+    "groove": ["groove"],
     "密封位": ["seal"],
+    "seal_area": ["seal"],
+    "seal": ["seal"],
     "扁位": ["flat"],
+    "flat": ["flat"],
     "滚花": ["knurl"],
+    "knurl": ["knurl"],
     "法兰": ["flange"],
+    "flange": ["flange"],
     "镀铬": ["chrome", "plated"],
     "辊": ["roller", "roll"],
 }
 FEATURE_PENALTY: float = 0.3  # 每个缺失关键特征的扣分
 
 
+def _match_feature_aliases(query: str) -> set[frozenset[str]]:
+    """Return the set of matched feature keyword-sets, deduplicated across aliases."""
+    q = query.lower()
+    matched: set[frozenset[str]] = set()
+    for alias, kws in FEATURE_KEYWORDS.items():
+        if alias.lower() in q:
+            matched.add(frozenset(kws))
+    return matched
+
+
 def _apply_feature_penalty(
-    query: str, candidates: list[SearchResult],
+    query: str,
+    candidates: list[SearchResult],
 ) -> list[SearchResult]:
     """确定性特征降权：候选缺失查询里的关键特征词时扣分。
 
     只对案例库候选生效（metadata 带 features 字段）；规范候选跳过。
     无关键特征词可解析时原样返回。
     """
-    feats = [(cn, kws) for cn, kws in FEATURE_KEYWORDS.items() if cn in query]
-    if not feats:
+    matched = _match_feature_aliases(query)
+    if not matched:
         return candidates
 
     for c in candidates:
@@ -175,7 +216,7 @@ def _apply_feature_penalty(
         if not feats_str:  # 规范 chunk 无 features 字段，不参与特征降权
             continue
         feats_lower = feats_str.lower()
-        miss = sum(1 for _cn, kws in feats if not any(k in feats_lower for k in kws))
+        miss = sum(1 for kws in matched if not any(k in feats_lower for k in kws))
         if miss > 0:
             c.score = round(c.score - FEATURE_PENALTY * miss, 4)
             if c.rerank_score is not None:
@@ -185,8 +226,9 @@ def _apply_feature_penalty(
     return candidates
 
 
-def rerank(query: str, candidates: list[SearchResult],
-           top_k: Optional[int] = None) -> list[SearchResult]:
+def rerank(
+    query: str, candidates: list[SearchResult], top_k: Optional[int] = None
+) -> list[SearchResult]:
     """对候选文档用 Cross-Encoder 精排。
 
     Parameters
@@ -236,8 +278,11 @@ def rerank(query: str, candidates: list[SearchResult],
     # ── 2. 确定性特征降权（弥补语义模型的判别力不足）──
     candidates = _apply_feature_penalty(query, candidates)
 
-    logger.debug("Rerank complete: %d -> %d results",
-                 len(candidates), len(candidates[:top_k]) if top_k else len(candidates))
+    logger.debug(
+        "Rerank complete: %d -> %d results",
+        len(candidates),
+        len(candidates[:top_k]) if top_k else len(candidates),
+    )
 
     if top_k:
         return candidates[:top_k]

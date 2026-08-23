@@ -44,7 +44,9 @@ def wait_backend(timeout: int = 35) -> None:
         if backend_ready():
             return
         time.sleep(0.5)
-    raise RuntimeError("Backend startup timed out. Check the Conda dependencies and console errors.")
+    raise RuntimeError(
+        "Backend startup timed out. Check the Conda dependencies and console errors."
+    )
 
 
 def main() -> None:
@@ -72,7 +74,9 @@ def main() -> None:
                 raise RuntimeError(
                     "Backend is not running. Run python backend/run_backend.py first."
                 )
-            print("[Shaft Machining Planner] Backend not running, starting a separate backend process...")
+            print(
+                "[Shaft Machining Planner] Backend not running, starting a separate backend process..."
+            )
             backend_process = start_backend()
             wait_backend()
 
@@ -86,9 +90,13 @@ def main() -> None:
         try:
             is_loopback = host.lower() == "localhost" or ipaddress.ip_address(host).is_loopback
         except ValueError as error:
-            raise RuntimeError("FRONTEND_HOST must be localhost or a loopback IP address.") from error
+            raise RuntimeError(
+                "FRONTEND_HOST must be localhost or a loopback IP address."
+            ) from error
         if not is_loopback:
-            raise RuntimeError("FRONTEND_HOST must be a loopback address; remote hosting is intentionally disabled.")
+            raise RuntimeError(
+                "FRONTEND_HOST must be a loopback address; remote hosting is intentionally disabled."
+            )
         uvicorn.run(
             "main:app",
             app_dir=str(FRONTEND_DIR),
@@ -99,7 +107,9 @@ def main() -> None:
         )
     finally:
         if backend_process is not None and backend_process.poll() is None:
-            print("[Shaft Machining Planner] Closing the backend process started by the frontend...")
+            print(
+                "[Shaft Machining Planner] Closing the backend process started by the frontend..."
+            )
             backend_process.terminate()
             try:
                 backend_process.wait(timeout=8)

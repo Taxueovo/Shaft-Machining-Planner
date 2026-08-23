@@ -79,4 +79,6 @@ class TestGroupMatches:
         assert ToolRepository.group_matches("12-18", "20") is False
 
     def test_range_match(self):
-        assert ToolRepository.group_matches("12-18", "14-16") is False  # range vs range does not match
+        assert (
+            ToolRepository.group_matches("12-18", "14-16") is False
+        )  # range vs range does not match

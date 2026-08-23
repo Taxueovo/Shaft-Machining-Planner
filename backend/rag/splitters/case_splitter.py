@@ -51,7 +51,10 @@ def _features_to_strings(case: dict[str, Any]) -> list[str]:
 
 def _case_to_text(case: dict[str, Any]) -> str:
     """Textualize structured case data for embedding; empty fields are omitted."""
-    lines = [f"Case: {case.get('part_name', case.get('case_id', 'Unknown'))} ({case.get('case_id', 'Unknown')})", ""]
+    lines = [
+        f"Case: {case.get('part_name', case.get('case_id', 'Unknown'))} ({case.get('case_id', 'Unknown')})",
+        "",
+    ]
 
     def add(label: str, value: Any) -> None:
         if value not in (None, ""):
@@ -65,7 +68,9 @@ def _case_to_text(case: dict[str, Any]) -> str:
     add("Tolerance", case.get("tolerance", ""))
     add("Surface Roughness", case.get("surface_roughness", ""))
     if case.get("length_mm") or case.get("diameter_mm"):
-        add("Dimensions", f"length {case.get('length_mm')}mm, diameter φ{case.get('diameter_mm')}mm")
+        add(
+            "Dimensions", f"length {case.get('length_mm')}mm, diameter φ{case.get('diameter_mm')}mm"
+        )
     features_text = ", ".join(_features_to_strings(case))
     add("Features", features_text if features_text else None)
     add("Description", case.get("description", ""))
@@ -147,6 +152,7 @@ def split_case(source_path: str, content: str) -> list[CaseChunk]:
 
         chunk = CaseChunk(
             case_id=case_id,
+            source_file=source_file,
             part_name=case.get("part_name", case_id),
             material=case.get("material", "Unknown"),
             taxonomy_id=case.get("taxonomy_id"),

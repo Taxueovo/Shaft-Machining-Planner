@@ -70,11 +70,14 @@ def _wait_all(targets: list[tuple[str, str]], timeout: float = 60) -> None:
         if remaining:
             time.sleep(0.5)
     for name in remaining:
-        print(f"[Shaft Machining Planner] Warning: {name} startup timed out, check the console error output.")
+        print(
+            f"[Shaft Machining Planner] Warning: {name} startup timed out, check the console error output."
+        )
 
 
-def _start(processes: list[tuple[str, subprocess.Popen]], name: str,
-           cmd: list[str], cwd: Path, env: dict) -> None:
+def _start(
+    processes: list[tuple[str, subprocess.Popen]], name: str, cmd: list[str], cwd: Path, env: dict
+) -> None:
     print(f"[Shaft Machining Planner] Starting {name} ...")
     proc = subprocess.Popen(cmd, cwd=str(cwd), env=env)
     processes.append((name, proc))
@@ -89,9 +92,14 @@ def main() -> None:
             pass
 
     parser = argparse.ArgumentParser(description="Shaft Machining Planner one-click launcher")
-    parser.add_argument("--no-browser", action="store_true", help="Do not open the browser automatically")
-    parser.add_argument("--python", default=None,
-                        help="Python interpreter path (defaults to the current environment's sys.executable)")
+    parser.add_argument(
+        "--no-browser", action="store_true", help="Do not open the browser automatically"
+    )
+    parser.add_argument(
+        "--python",
+        default=None,
+        help="Python interpreter path (defaults to the current environment's sys.executable)",
+    )
     args = parser.parse_args()
 
     python = args.python or sys.executable
@@ -100,10 +108,14 @@ def main() -> None:
     env = dict(os.environ)
     token_was_supplied = bool(env.get("LOCAL_API_TOKEN"))
     env.setdefault("LOCAL_API_TOKEN", secrets.token_urlsafe(32))
-    no_proxy = [p for p in ("127.0.0.1", "localhost") if p not in (env.get("NO_PROXY") or "").split(",")]
+    no_proxy = [
+        p for p in ("127.0.0.1", "localhost") if p not in (env.get("NO_PROXY") or "").split(",")
+    ]
     env["NO_PROXY"] = ",".join(no_proxy + ([env["NO_PROXY"]] if env.get("NO_PROXY") else []))
     if no_proxy:
-        print(f"[Shaft Machining Planner] NO_PROXY={env['NO_PROXY']} set (so local requests are not intercepted by the proxy)")
+        print(
+            f"[Shaft Machining Planner] NO_PROXY={env['NO_PROXY']} set (so local requests are not intercepted by the proxy)"
+        )
 
     processes: list[tuple[str, subprocess.Popen]] = []
     try:
@@ -121,27 +133,37 @@ def main() -> None:
                 "Stop it and relaunch both services, or supply the same token explicitly."
             )
         if backend_was_running:
-            print(f"[Shaft Machining Planner] peagent backend already running ({PE_BACKEND_HEALTH})")
+            print(
+                f"[Shaft Machining Planner] peagent backend already running ({PE_BACKEND_HEALTH})"
+            )
         else:
-            _start(processes, "peagent backend (8001)",
-                   [python, str(PE_BACKEND_RUNNER)], ROOT / "backend", env)
+            _start(
+                processes,
+                "peagent backend (8001)",
+                [python, str(PE_BACKEND_RUNNER)],
+                ROOT / "backend",
+                env,
+            )
             targets.append(("peagent backend (8001)", PE_BACKEND_HEALTH))
 
         # Wait for the backend to be ready
         backend_ready_now = _ready(PE_BACKEND_HEALTH, 60)
         if not backend_ready_now:
-            print("[Shaft Machining Planner] Warning: peagent backend startup timed out, check the console error output.")
+            print(
+                "[Shaft Machining Planner] Warning: peagent backend startup timed out, check the console error output."
+            )
 
         # 2. peagent frontend :8000 (only started if already running or the backend is ready)
         if frontend_was_running or _ready(PE_FRONTEND_URL, 2):
             print(f"[Shaft Machining Planner] peagent frontend already running ({PE_FRONTEND_URL})")
         elif backend_ready_now or _ready(PE_BACKEND_HEALTH, 1):
             frontend_cmd = [python, str(PE_FRONTEND_RUNNER), "--frontend-only", "--no-browser"]
-            _start(processes, "peagent frontend (8000)", frontend_cmd,
-                   ROOT / "frontend", env)
+            _start(processes, "peagent frontend (8000)", frontend_cmd, ROOT / "frontend", env)
             targets.append(("peagent frontend (8000)", PE_FRONTEND_URL))
         else:
-            print("[Shaft Machining Planner] Warning: peagent backend not ready, frontend not started.")
+            print(
+                "[Shaft Machining Planner] Warning: peagent backend not ready, frontend not started."
+            )
 
         # ── Wait for the remaining services to be ready ──
         _wait_all(targets, timeout=60)
@@ -156,7 +178,9 @@ def main() -> None:
 
         if not args.no_browser:
             threading_delay = 1.5
-            timer = __import__("threading").Timer(threading_delay, lambda: webbrowser.open(PE_FRONTEND_URL))
+            timer = __import__("threading").Timer(
+                threading_delay, lambda: webbrowser.open(PE_FRONTEND_URL)
+            )
             timer.start()
 
         # Block: exit the loop when any process exits or Ctrl+C is received, then clean up
@@ -164,7 +188,9 @@ def main() -> None:
             time.sleep(1)
             exited = [name for name, p in processes if p.poll() is not None]
             if exited:
-                print(f"[Shaft Machining Planner] Process exited: {', '.join(exited)}, shutting down the remaining services...")
+                print(
+                    f"[Shaft Machining Planner] Process exited: {', '.join(exited)}, shutting down the remaining services..."
+                )
                 break
     except KeyboardInterrupt:
         print("\n[Shaft Machining Planner] Interrupt received, shutting down all services...")

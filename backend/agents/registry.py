@@ -34,13 +34,13 @@ class AgentRegistry:
 
     def list_agents(self) -> list[dict[str, Any]]:
         return [
-            {"name": agent.name, **agent.capabilities().model_dump(), "execution_count": agent._execution_count}
+            {
+                "name": agent.name,
+                **agent.capabilities().model_dump(),
+                "execution_count": agent._execution_count,
+            }
             for agent in self._agents.values()
         ]
-
-    def find_by_tag(self, tag: str) -> list[BaseAgent]:
-        names = self._tags.get(tag, [])
-        return [self._agents[n] for n in names if n in self._agents]
 
     def find_for_state(self, state: dict[str, Any]) -> list[BaseAgent]:
         available = []

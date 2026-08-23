@@ -11,7 +11,9 @@ if __name__ == "__main__":
     except ValueError as error:
         raise SystemExit("BACKEND_HOST must be localhost or a loopback IP address.") from error
     if not is_loopback:
-        raise SystemExit("BACKEND_HOST must be a loopback address; remote hosting is intentionally disabled.")
+        raise SystemExit(
+            "BACKEND_HOST must be a loopback address; remote hosting is intentionally disabled."
+        )
     os.environ.setdefault("LOCAL_API_TOKEN", secrets.token_urlsafe(32))
     uvicorn.run(
         "app:app",

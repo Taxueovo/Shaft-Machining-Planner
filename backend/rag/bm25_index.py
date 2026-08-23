@@ -20,6 +20,7 @@ from typing import Any, Optional
 try:
     import jieba
     from rank_bm25 import BM25Okapi
+
     HAS_BM25 = True
 except ImportError:
     HAS_BM25 = False
@@ -46,12 +47,10 @@ class BM25IndexManager:
 
     def __init__(self):
         if not HAS_BM25:
-            raise RuntimeError(
-                "BM25 unavailable. Install it with: pip install rank-bm25 jieba"
-            )
+            raise RuntimeError("BM25 unavailable. Install it with: pip install rank-bm25 jieba")
         self._spec_index: Optional[BM25Okapi] = None
         self._case_index: Optional[BM25Okapi] = None
-        self._spec_docs: list[dict[str, Any]] = []   # [{id, content, metadata}]
+        self._spec_docs: list[dict[str, Any]] = []  # [{id, content, metadata}]
         self._case_docs: list[dict[str, Any]] = []
         self._ready = False
 
@@ -86,8 +85,9 @@ class BM25IndexManager:
             self._case_index = None
 
         self._ready = True
-        logger.info("BM25 sync complete (specs=%d, cases=%d)",
-                    len(self._spec_docs), len(self._case_docs))
+        logger.info(
+            "BM25 sync complete (specs=%d, cases=%d)", len(self._spec_docs), len(self._case_docs)
+        )
 
     # ── Retrieval ──
 
@@ -95,18 +95,17 @@ class BM25IndexManager:
         """BM25 retrieval over the specs channel."""
         if not self._spec_index or not self._spec_docs:
             return []
-        return self._search(query, self._spec_index, self._spec_docs,
-                           Channel.SPECS, top_k)
+        return self._search(query, self._spec_index, self._spec_docs, Channel.SPECS, top_k)
 
     def search_cases(self, query: str, top_k: int = 10) -> list[SearchResult]:
         """BM25 retrieval over the cases channel."""
         if not self._case_index or not self._case_docs:
             return []
-        return self._search(query, self._case_index, self._case_docs,
-                           Channel.CASES, top_k)
+        return self._search(query, self._case_index, self._case_docs, Channel.CASES, top_k)
 
-    def search_all(self, query: str, top_k_per_channel: int = 10
-                   ) -> tuple[list[SearchResult], list[SearchResult]]:
+    def search_all(
+        self, query: str, top_k_per_channel: int = 10
+    ) -> tuple[list[SearchResult], list[SearchResult]]:
         """Dual-channel BM25 retrieval."""
         return (
             self.search_specs(query, top_k_per_channel),
@@ -115,8 +114,9 @@ class BM25IndexManager:
 
     # ── Internals ──
 
-    def _search(self, query: str, index: BM25Okapi, docs: list[dict],
-                channel: Channel, top_k: int) -> list[SearchResult]:
+    def _search(
+        self, query: str, index: BM25Okapi, docs: list[dict], channel: Channel, top_k: int
+    ) -> list[SearchResult]:
         tokens = _tokenize(query)
         scores = index.get_scores(tokens)
         # Take top_k
@@ -131,14 +131,16 @@ class BM25IndexManager:
         for idx, raw_score in top:
             doc = docs[idx]
             norm_score = round(raw_score / max_score, 4) if max_score > 0 else 0.0
-            results.append(SearchResult(
-                chunk_id=doc["id"],
-                content=doc["content"],
-                score=norm_score,
-                channel=channel,
-                recall_source="bm25",
-                metadata=doc.get("metadata", {}),
-            ))
+            results.append(
+                SearchResult(
+                    chunk_id=doc["id"],
+                    content=doc["content"],
+                    score=norm_score,
+                    channel=channel,
+                    recall_source="bm25",
+                    metadata=doc.get("metadata", {}),
+                )
+            )
         return results
 
     def clear(self) -> None:

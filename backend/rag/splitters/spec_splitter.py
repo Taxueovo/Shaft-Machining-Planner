@@ -25,9 +25,7 @@ logger = logging.getLogger(__name__)
 
 # ── 标题匹配正则 ──
 
-HEADING_PATTERN = re.compile(
-    r"^(#{1,3})\s+(.+?)(?:\s*\{[^}]*\})?\s*$", re.MULTILINE
-)
+HEADING_PATTERN = re.compile(r"^(#{1,3})\s+(.+?)(?:\s*\{[^}]*\})?\s*$", re.MULTILINE)
 
 
 def _parse_hierarchy(markdown_text: str) -> list[dict[str, Any]]:
@@ -56,9 +54,7 @@ def _parse_hierarchy(markdown_text: str) -> list[dict[str, Any]]:
         heading = match.group(2).strip()
 
         if current_section is not None:
-            current_section["content"] = "\n".join(
-                current_section.pop("content_lines")
-            )
+            current_section["content"] = "\n".join(current_section.pop("content_lines"))
 
         current_section = {
             "level": level,
@@ -92,12 +88,11 @@ def _split_long_subsection(
     sub_chunks: list[SpecChunk] = []
     buffer = ""
     overlap = ""
-    total_len = len(text)
-    max_len = max(SPEC_CHUNK_SIZE, SPEC_MIN_CHUNK_SIZE)
 
     def flush() -> None:
         nonlocal buffer, overlap
         if len(buffer.strip()) < SPEC_MIN_CHUNK_SIZE:
+            buffer = ""  # drop a too-small tail; reset state so overlap is not stale
             return
         sub_chunks.append(
             SpecChunk(
@@ -106,7 +101,7 @@ def _split_long_subsection(
                 section=section,
                 subsection=heading,
                 part=len(sub_chunks) + 1,
-                total_parts=max(1, (total_len + max_len - 1) // max_len),
+                total_parts=0,  # corrected below, once the real count is known
                 content=buffer.strip(),
             )
         )
@@ -124,6 +119,10 @@ def _split_long_subsection(
             buffer = ((overlap + "\n\n" + para) if overlap else para).strip()
             overlap = ""
     flush()
+    # Correct the (1/n) provenance now that the real part count is known.
+    for i, chunk in enumerate(sub_chunks, start=1):
+        chunk.part = i
+        chunk.total_parts = len(sub_chunks)
     return sub_chunks
 
 
@@ -196,8 +195,11 @@ def _build_chunks_from_hierarchy(
             else:
                 chunks.extend(
                     _split_long_subsection(
-                        sec["heading"], text, current_chapter,
-                        current_section, source_file,
+                        sec["heading"],
+                        text,
+                        current_chapter,
+                        current_section,
+                        source_file,
                     )
                 )
             i += 1
@@ -232,9 +234,7 @@ def _fallback_chunk_by_size(
             buffer = (buffer + "\n\n" + para).strip()
         else:
             if len(buffer) >= min_size:
-                chunks.append(
-                    SpecChunk(source_file=source_file, content=buffer)
-                )
+                chunks.append(SpecChunk(source_file=source_file, content=buffer))
                 # 保留 overlap 部分
                 overlap_text = buffer[-overlap:] if len(buffer) > overlap else ""
                 buffer = (overlap_text + "\n\n" + para).strip()
@@ -269,13 +269,9 @@ def split_spec(source_path: str, content: str) -> list[SpecChunk]:
     if has_headings:
         sections = _parse_hierarchy(content)
         chunks = _build_chunks_from_hierarchy(sections, source_file)
-        logger.info(
-            "Spec chunking (hierarchy): %s → %d chunks", source_file, len(chunks)
-        )
+        logger.info("Spec chunking (hierarchy): %s → %d chunks", source_file, len(chunks))
     else:
         chunks = _fallback_chunk_by_size(content, source_file)
-        logger.info(
-            "Spec chunking (fallback): %s → %d chunks", source_file, len(chunks)
-        )
+        logger.info("Spec chunking (fallback): %s → %d chunks", source_file, len(chunks))
 
     return chunks

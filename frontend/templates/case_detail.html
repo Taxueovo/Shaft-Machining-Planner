@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shaft Machining Planner - PE Agent - Case Detail</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
   <style>
     .case-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
     .case-header h1 { margin: 0; font-size: 24px; }
@@ -85,7 +85,7 @@
         </div>
         <div class="actions">
           <a href="/custom?case=${encodeURIComponent(c.case_id)}" class="button primary">Use This Case</a>
-          <button class="button secondary" onclick="copyCase()">Copy Case</button>
+          <button class="button secondary" data-click="copyCase">Copy Case</button>
           <a href="/taxonomy?category=${encodeURIComponent(c.taxonomy_id)}" class="button ghost">Back to Category</a>
         </div>
       </div>
@@ -179,6 +179,7 @@ document.getElementById("shutdown-btn").addEventListener("click", async () => {
   setTimeout(() => { document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#475467"><div style="text-align:center"><h1 style="margin:0 0 12px">System Shutdown</h1><p>This page can be closed.</p></div></div>'; }, 800);
 });
 </script>
-<script src="/static/heartbeat.js?v={{ range(100000, 999999) | random }}"></script>
+<script src="/static/app.js?v={{ static_version }}"></script>
+<script src="/static/heartbeat.js?v={{ static_version }}"></script>
 </body>
 </html>

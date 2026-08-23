@@ -9,12 +9,19 @@ import os
 from typing import Any, Optional
 
 from models.process import (
-    ProcessStage, ProcessOperation, ValidationIssue,
-    STAGE_DEPENDENCY_RULES, MANDATORY_OPERATION_NAMES,
+    ProcessStage,
+    ProcessOperation,
+    ValidationIssue,
+    STAGE_DEPENDENCY_RULES,
+    MANDATORY_OPERATION_NAMES,
 )
 from models.workflow import WorkflowState, traced, MAX_REPLAN_RETRIES
 from rules import (
-    FEATURE_NAME, FEATURE_REQUIRED_PROCESS, HEAT_NAME, build_route, requires_grinding,
+    FEATURE_NAME,
+    FEATURE_REQUIRED_PROCESS,
+    HEAT_NAME,
+    build_route,
+    requires_grinding,
 )
 from agents import Guardrails
 from llm_client import chat_json, llm_available
@@ -27,9 +34,14 @@ class VerificationNodesMixin:
     """Mixin for verification and repair nodes."""
 
     def _route_after_verification(self, state: WorkflowState) -> str:
-        conclusion = state.get("verification", {}).get("conclusion", "pass")
+        verification = state.get("verification", {})
+        conclusion = verification.get("conclusion", "pass")
         if conclusion in ("pass", "conditional_pass"):
             return "pass"
+        # Duplicate-route / retry-exhausted terminations are marked explicitly by the
+        # verification node; do not send the identical route back for another repair round.
+        if verification.get("repair_terminated"):
+            return "failed"
         if state.get("repair_count", 0) >= MAX_REPLAN_RETRIES:
             return "failed"
         if state.get("status") == "failed":
@@ -51,29 +63,65 @@ class VerificationNodesMixin:
         route_names = {item["name"] for item in route}
         route_stages = {item["stage"] for item in route}
         mandatory_missing = MANDATORY_OPERATION_NAMES - route_names
-        basic_check = {"name": "Mandatory Operations", "passed": not mandatory_missing,
-                       "message": "Basic route contains mandatory operations." if not mandatory_missing else "Missing: " + ", ".join(sorted(mandatory_missing))}
+        basic_check = {
+            "name": "Mandatory Operations",
+            "passed": not mandatory_missing,
+            "message": "Basic route contains mandatory operations."
+            if not mandatory_missing
+            else "Missing: " + ", ".join(sorted(mandatory_missing)),
+        }
         if mandatory_missing:
             for name in mandatory_missing:
-                validation_issues.append(ValidationIssue(error_code="MISSING_MANDATORY_OP", object_id=name, message=f"Missing mandatory operation: {name}").model_dump())
+                validation_issues.append(
+                    ValidationIssue(
+                        error_code="MISSING_MANDATORY_OP",
+                        object_id=name,
+                        message=f"Missing mandatory operation: {name}",
+                    ).model_dump()
+                )
 
         # Check 2: Semantic completeness
         semantic_issues = []
         if global_req["heat_treatment"] != "none":
             if "heat_treatment" not in route_stages:
-                semantic_issues.append("Heat treatment required but missing heat treatment operation.")
-            if heat_decision.get("requires_datum_recovery", True) and "datum_recovery" not in route_stages:
-                semantic_issues.append("Heat treatment present but missing center hole repair operation.")
+                semantic_issues.append(
+                    "Heat treatment required but missing heat treatment operation."
+                )
+            if (
+                heat_decision.get("requires_datum_recovery", True)
+                and "datum_recovery" not in route_stages
+            ):
+                semantic_issues.append(
+                    "Heat treatment present but missing center hole repair operation."
+                )
         if global_req["surface_treatment"] != "none" and "surface_treatment" not in route_stages:
-            semantic_issues.append("Surface treatment required but missing surface treatment operation.")
-        grinding_segments = [s["segment_id"] for s in geometry["segments"] if requires_grinding(s.get("diameter_upper_deviation_mm"), s.get("diameter_lower_deviation_mm"), s.get("roughness_ra"))]
+            semantic_issues.append(
+                "Surface treatment required but missing surface treatment operation."
+            )
+        grinding_segments = [
+            s["segment_id"]
+            for s in geometry["segments"]
+            if requires_grinding(
+                s.get("diameter_upper_deviation_mm"),
+                s.get("diameter_lower_deviation_mm"),
+                s.get("roughness_ra"),
+            )
+        ]
         if grinding_segments and "precision_finish" not in route_stages:
-            semantic_issues.append(f"Segments {', '.join(grinding_segments)} need grinding but missing finish grind operation.")
+            semantic_issues.append(
+                f"Segments {', '.join(grinding_segments)} need grinding but missing finish grind operation."
+            )
         if heat_decision.get("pre_treatment") and "pre_heat_treatment" not in route_stages:
             semantic_issues.append("Heat treatment decision requires a pre-treatment operation.")
-        semantic_check = {"name": "Semantic Completeness", "passed": not semantic_issues, "message": "Passed." if not semantic_issues else "; ".join(semantic_issues)}
+        semantic_check = {
+            "name": "Semantic Completeness",
+            "passed": not semantic_issues,
+            "message": "Passed." if not semantic_issues else "; ".join(semantic_issues),
+        }
         for msg in semantic_issues:
-            validation_issues.append(ValidationIssue(error_code="SEMANTIC_INCOMPLETE", message=msg).model_dump())
+            validation_issues.append(
+                ValidationIssue(error_code="SEMANTIC_INCOMPLETE", message=msg).model_dump()
+            )
 
         # Check 3: Feature coverage
         feature_coverage_issues = []
@@ -83,12 +131,26 @@ class VerificationNodesMixin:
             matching_ops = [op for op in route if op.get("feature_id") == fid]
             if not matching_ops:
                 feature_coverage_issues.append(f"Feature {fid}({ftype}) not covered.")
-                validation_issues.append(ValidationIssue(error_code="FEATURE_NOT_COVERED", object_id=fid, message="Feature not covered.").model_dump())
+                validation_issues.append(
+                    ValidationIssue(
+                        error_code="FEATURE_NOT_COVERED",
+                        object_id=fid,
+                        message="Feature not covered.",
+                    ).model_dump()
+                )
             elif required_processes:
                 op_categories = {op.get("process_category") for op in matching_ops}
                 if not (required_processes & op_categories):
-                    feature_coverage_issues.append(f"Feature {fid}({ftype}) needs {required_processes}, got {op_categories}.")
-        feature_check = {"name": "Feature Coverage", "passed": not feature_coverage_issues, "message": "All features covered." if not feature_coverage_issues else "; ".join(feature_coverage_issues)}
+                    feature_coverage_issues.append(
+                        f"Feature {fid}({ftype}) needs {required_processes}, got {op_categories}."
+                    )
+        feature_check = {
+            "name": "Feature Coverage",
+            "passed": not feature_coverage_issues,
+            "message": "All features covered."
+            if not feature_coverage_issues
+            else "; ".join(feature_coverage_issues),
+        }
 
         # Check 4: Critical turning resources
         cap = state["capability"]
@@ -99,43 +161,105 @@ class VerificationNodesMixin:
             resource_message = "No local turning machine matches the part size; external capacity / engineer confirmation required."
         else:
             resource_message = "Turning machine and/or tool material not covered for this part."
-        resource_check = {"name": "Critical Turning Resources", "passed": cap.get("critical_ok"), "message": resource_message}
+        resource_check = {
+            "name": "Critical Turning Resources",
+            "passed": cap.get("critical_ok"),
+            "message": resource_message,
+        }
 
         # Check 5: Topology sort
         topo_check = self._topological_verify(route)
-        topo_result = {"name": "Topology Sort", "passed": topo_check["passed"], "message": topo_check["message"]}
+        topo_result = {
+            "name": "Topology Sort",
+            "passed": topo_check["passed"],
+            "message": topo_check["message"],
+        }
         if not topo_check["passed"]:
-            validation_issues.append(ValidationIssue(error_code="TOPOLOGY_CONFLICT", message=topo_check["message"]).model_dump())
+            validation_issues.append(
+                ValidationIssue(
+                    error_code="TOPOLOGY_CONFLICT", message=topo_check["message"]
+                ).model_dump()
+            )
 
         # Check 6: Route structure
         route_errors = Guardrails.validate_route(route)
-        route_check = {"name": "Route Structure", "passed": not route_errors, "message": "Passed." if not route_errors else "; ".join(route_errors)}
+        route_check = {
+            "name": "Route Structure",
+            "passed": not route_errors,
+            "message": "Passed." if not route_errors else "; ".join(route_errors),
+        }
         for err in route_errors:
-            validation_issues.append(ValidationIssue(error_code="ROUTE_STRUCTURE", message=err).model_dump())
+            validation_issues.append(
+                ValidationIssue(error_code="ROUTE_STRUCTURE", message=err).model_dump()
+            )
 
-        checks = [basic_check, semantic_check, feature_check, resource_check, topo_result, route_check]
+        checks = [
+            basic_check,
+            semantic_check,
+            feature_check,
+            resource_check,
+            topo_result,
+            route_check,
+        ]
         hard_fail = any(not c["passed"] for c in checks)
-        partial = state["resource_selection"]["partial_verification_count"] > 0 or bool(state["capability"]["notes"])
+        partial = state["resource_selection"]["partial_verification_count"] > 0 or bool(
+            state["capability"]["notes"]
+        )
 
-        route_hash = hashlib.md5(json.dumps(route, sort_keys=True, default=str).encode()).hexdigest()[:16]
+        route_hash = hashlib.md5(
+            json.dumps(route, sort_keys=True, default=str).encode()
+        ).hexdigest()[:16]
         previous_hashes = state.get("route_hashes", [])
         is_duplicate = route_hash in previous_hashes
         repair_count = state.get("repair_count", 0)
 
+        terminating = False
         if hard_fail:
             if is_duplicate:
-                conclusion, message, final_status = "failed", "Verification failed and route identical to previous attempt, repair terminated.", "failed"
+                conclusion, message, final_status = (
+                    "failed",
+                    "Verification failed and route identical to previous attempt, repair terminated.",
+                    "failed",
+                )
             elif repair_count < MAX_REPLAN_RETRIES:
-                conclusion, message, final_status = "failed", f"Verification failed, auto-repairing ({repair_count + 1}/{MAX_REPLAN_RETRIES}).", "running"
+                conclusion, message, final_status = (
+                    "failed",
+                    f"Verification failed, auto-repairing ({repair_count + 1}/{MAX_REPLAN_RETRIES}).",
+                    "running",
+                )
             else:
-                conclusion, message, final_status = "failed", "Verification failed, max repair attempts reached.", "failed"
-            self.store.update(state["job_id"], status="running", current_step="finalizing" if (is_duplicate or repair_count >= MAX_REPLAN_RETRIES) else "verification", message=message)
+                conclusion, message, final_status = (
+                    "failed",
+                    "Verification failed, max repair attempts reached.",
+                    "failed",
+                )
+            terminating = is_duplicate or repair_count >= MAX_REPLAN_RETRIES
+            self.store.update(
+                state["job_id"],
+                status="failed" if terminating else "running",
+                current_step="finalizing" if terminating else "verification",
+                message=message,
+            )
         elif partial:
-            conclusion, message, final_status = "conditional_pass", "Conditional pass; resources not covered need engineer confirmation.", "completed"
-            self.store.update(state["job_id"], status="running", current_step="finalizing", message="Verification complete, finalizing.")
+            conclusion, message, final_status = (
+                "conditional_pass",
+                "Conditional pass; resources not covered need engineer confirmation.",
+                "completed",
+            )
+            self.store.update(
+                state["job_id"],
+                status="running",
+                current_step="finalizing",
+                message="Verification complete, finalizing.",
+            )
         else:
             conclusion, message, final_status = "pass", "Verification passed.", "completed"
-            self.store.update(state["job_id"], status="running", current_step="finalizing", message="Verification complete, finalizing.")
+            self.store.update(
+                state["job_id"],
+                status="running",
+                current_step="finalizing",
+                message="Verification complete, finalizing.",
+            )
 
         warnings = (
             state["geometry"]["warnings"]
@@ -148,32 +272,45 @@ class VerificationNodesMixin:
         # by default, saving about 9s per clean job.
         # To restore the old behavior (review even on pass), set
         # SKIP_AI_REVIEW_ON_CLEAN_PASS=false in .env.
-        skip_ai_on_clean_pass = (
-            os.getenv("SKIP_AI_REVIEW_ON_CLEAN_PASS", "true").strip().lower()
-            in ("1", "true", "yes", "on")
-        )
+        skip_ai_on_clean_pass = os.getenv(
+            "SKIP_AI_REVIEW_ON_CLEAN_PASS", "true"
+        ).strip().lower() in ("1", "true", "yes", "on")
         if skip_ai_on_clean_pass and conclusion == "pass":
-            logger.info("Verification passed cleanly; skipping LLM AI review "
-                        "(SKIP_AI_REVIEW_ON_CLEAN_PASS=true).")
+            logger.info(
+                "Verification passed cleanly; skipping LLM AI review "
+                "(SKIP_AI_REVIEW_ON_CLEAN_PASS=true)."
+            )
         elif llm_available():
             try:
-                self.store.update(state["job_id"], current_step="verification",
-                                  message="Reviewing route with AI...")
-                uncovered = [iss["object_id"] for iss in validation_issues if iss.get("error_code") == "FEATURE_NOT_COVERED" and iss.get("object_id")]
+                self.store.update(
+                    state["job_id"],
+                    current_step="verification",
+                    message="Reviewing route with AI...",
+                )
+                uncovered = [
+                    iss["object_id"]
+                    for iss in validation_issues
+                    if iss.get("error_code") == "FEATURE_NOT_COVERED" and iss.get("object_id")
+                ]
                 llm_analysis = self._llm_verification_analysis(state, checks, conclusion, uncovered)
             except Exception as exc:
                 logger.warning("LLM verification analysis failed, skipping: %s", exc)
 
         return {
             "verification": {
-                "conclusion": conclusion, "message": message, "checks": checks,
-                "warnings": warnings, "validation_issues": validation_issues,
+                "conclusion": conclusion,
+                "message": message,
+                "checks": checks,
+                "warnings": warnings,
+                "validation_issues": validation_issues,
                 "llm_analysis": llm_analysis,
                 "heat_treatment_type": global_req["heat_treatment"],
                 "heat_treatment_decision": heat_decision,
                 "surface_treatment_type": global_req["surface_treatment"],
+                "repair_terminated": bool(terminating),
             },
-            "status": final_status, "route_hashes": [route_hash],
+            "status": final_status,
+            "route_hashes": [route_hash],
         }
 
     @staticmethod
@@ -182,7 +319,10 @@ class VerificationNodesMixin:
             try:
                 ProcessStage(op.get("stage", "inspection"))
             except ValueError:
-                return {"passed": False, "message": f"Operation {op.get('operation_no')} stage '{op.get('stage')}' is not a valid enum value."}
+                return {
+                    "passed": False,
+                    "message": f"Operation {op.get('operation_no')} stage '{op.get('stage')}' is not a valid enum value.",
+                }
 
         all_known_stages = {s.value for s in ProcessStage}
         stage_graph: dict[str, set[str]] = {s: set() for s in all_known_stages}
@@ -246,8 +386,13 @@ class VerificationNodesMixin:
                         queue.append(other)
 
         if len(sorted_nodes) != len(route):
-            cycle_nodes = [op["operation_no"] for op in route if op["operation_no"] not in sorted_nodes]
-            return {"passed": False, "message": f"Circular dependency detected in operations: {cycle_nodes}."}
+            cycle_nodes = [
+                op["operation_no"] for op in route if op["operation_no"] not in sorted_nodes
+            ]
+            return {
+                "passed": False,
+                "message": f"Circular dependency detected in operations: {cycle_nodes}.",
+            }
 
         input_nos = [op["operation_no"] for op in route]
         position = {no: i for i, no in enumerate(input_nos)}
@@ -258,35 +403,63 @@ class VerificationNodesMixin:
                     node_op = next((op for op in route if op["operation_no"] == node), None)
                     dep_op = next((op for op in route if op["operation_no"] == dep), None)
                     if node_op and dep_op:
-                        conflicts.append(f"Op {node}({node_op['name']}/{node_op['stage']}) depends on {dep}({dep_op['name']}/{dep_op['stage']}), but order is wrong")
+                        conflicts.append(
+                            f"Op {node}({node_op['name']}/{node_op['stage']}) depends on {dep}({dep_op['name']}/{dep_op['stage']}), but order is wrong"
+                        )
 
         if conflicts:
             return {"passed": False, "message": "Stage inversion: " + "; ".join(conflicts[:5])}
 
-        return {"passed": True, "message": f"Topology sort passed, {len(route)} operations, no circular dependency or stage inversion."}
+        return {
+            "passed": True,
+            "message": f"Topology sort passed, {len(route)} operations, no circular dependency or stage inversion.",
+        }
 
-    def _llm_verification_analysis(self, state: WorkflowState, checks: list[dict[str, Any]], conclusion: str, missing: list[str]) -> dict[str, Any]:
+    def _llm_verification_analysis(
+        self,
+        state: WorkflowState,
+        checks: list[dict[str, Any]],
+        conclusion: str,
+        missing: list[str],
+    ) -> dict[str, Any]:
         route = state["process_route"]
         route_desc = "\n".join(
-            f"  {op['operation_no']}. {op['name']} ({op.get('stage', '-')})" + (" [Conditional]" if op.get("conditional") else "")
+            f"  {op['operation_no']}. {op['name']} ({op.get('stage', '-')})"
+            + (" [Conditional]" if op.get("conditional") else "")
             for op in route
         )
-        check_desc = "\n".join(f"  - {c['name']}: {'Pass' if c['passed'] else 'Fail'} {c['message']}" for c in checks)
-        feature_desc = "\n".join(
-            f"  - {f['feature_id']}: {FEATURE_NAME.get(f['feature_type'], f['feature_type'])}" + (" [high-precision]" if f.get("high_precision") else "")
-            for f in state["geometry"].get("features", [])
-        ) or "  None"
-
-        rag_context = build_rag_context(
-            state["request"], state["geometry"], state.get("user_choices", {}),
-            state.get("heat_treatment_decision", {}), top_k=3, max_chars=3000,
+        check_desc = "\n".join(
+            f"  - {c['name']}: {'Pass' if c['passed'] else 'Fail'} {c['message']}" for c in checks
+        )
+        feature_desc = (
+            "\n".join(
+                f"  - {f['feature_id']}: {FEATURE_NAME.get(f['feature_type'], f['feature_type'])}"
+                + (" [high-precision]" if f.get("high_precision") else "")
+                for f in state["geometry"].get("features", [])
+            )
+            or "  None"
         )
 
-        messages = self.prompt_manager.render_messages("verification_analysis", {
-            "route_desc": route_desc, "conclusion": conclusion, "check_desc": check_desc,
-            "feature_desc": feature_desc, "missing_desc": ", ".join(missing) if missing else "None",
-            "rag_context": rag_context,
-        })
+        rag_context = build_rag_context(
+            state["request"],
+            state["geometry"],
+            state.get("user_choices", {}),
+            state.get("heat_treatment_decision", {}),
+            top_k=3,
+            max_chars=3000,
+        )
+
+        messages = self.prompt_manager.render_messages(
+            "verification_analysis",
+            {
+                "route_desc": route_desc,
+                "conclusion": conclusion,
+                "check_desc": check_desc,
+                "feature_desc": feature_desc,
+                "missing_desc": ", ".join(missing) if missing else "None",
+                "rag_context": rag_context,
+            },
+        )
         return chat_json(messages, temperature=0.3)
 
     @traced("repair", ["process_route", "verification", "geometry"])
@@ -294,7 +467,12 @@ class VerificationNodesMixin:
         repair_count = state.get("repair_count", 0)
         self.progress(state, 90, "repair", f"Repairing process route ({repair_count + 1} attempt).")
 
-        verification, current_route, geometry, request = state["verification"], state["process_route"], state["geometry"], state["request"]
+        verification, current_route, geometry, request = (
+            state["verification"],
+            state["process_route"],
+            state["geometry"],
+            state["request"],
+        )
         route_request = {**request, "heat_treatment_plan": state.get("heat_treatment_decision", {})}
         repaired_route = self._rule_based_repair(
             current_route, geometry, route_request, state.get("user_choices", {}), verification
@@ -302,16 +480,25 @@ class VerificationNodesMixin:
 
         if llm_available():
             try:
-                self.store.update(state["job_id"], current_step="repair",
-                                  message="Fixing route issues with AI...")
+                self.store.update(
+                    state["job_id"], current_step="repair", message="Fixing route issues with AI..."
+                )
                 heat_decision = state.get("heat_treatment_decision", {})
                 rag_context = build_rag_context(
-                    request, geometry, state.get("user_choices", {}), heat_decision,
-                    top_k=3, max_chars=3000,
+                    request,
+                    geometry,
+                    state.get("user_choices", {}),
+                    heat_decision,
+                    top_k=3,
+                    max_chars=3000,
                 )
                 llm_repaired = self._llm_repair(
-                    repaired_route, geometry, request, verification,
-                    repair_count, rag_context,
+                    repaired_route,
+                    geometry,
+                    request,
+                    verification,
+                    repair_count,
+                    rag_context,
                 )
                 if llm_repaired:
                     repaired_route = llm_repaired
@@ -352,55 +539,169 @@ class VerificationNodesMixin:
 
             if "Heat Treatment" in message and "missing heat treatment operation" in message:
                 if "heat_treatment" not in route_stages:
-                    insert_idx = next((i + 1 for i, op in enumerate(repaired) if op["stage"] == "semi_finish"), len(repaired))
+                    insert_idx = next(
+                        (i + 1 for i, op in enumerate(repaired) if op["stage"] == "semi_finish"),
+                        len(repaired),
+                    )
                     heat_type = verification.get("heat_treatment_type", "none")
                     decision = verification.get("heat_treatment_decision", {})
-                    repaired.insert(insert_idx, {"operation_no": 0, "name": "Heat Treatment", "stage": "heat_treatment", "description": decision.get("description") or HEAT_NAME.get(heat_type, "Heat Treatment"), "process_category": "Heat Treatment", "feature_id": None, "conditional": False})
+                    repaired.insert(
+                        insert_idx,
+                        {
+                            "operation_no": 0,
+                            "name": "Heat Treatment",
+                            "stage": "heat_treatment",
+                            "description": decision.get("description")
+                            or HEAT_NAME.get(heat_type, "Heat Treatment"),
+                            "process_category": "Heat Treatment",
+                            "feature_id": None,
+                            "conditional": False,
+                        },
+                    )
 
             elif "Repair Center Holes" in message:
                 if "datum_recovery" not in route_stages:
-                    insert_idx = next((i + 1 for i, op in enumerate(repaired) if op["stage"] == "heat_treatment"), len(repaired))
-                    repaired.insert(insert_idx, {"operation_no": 0, "name": "Repair Center Holes", "stage": "datum_recovery", "description": "Recover finishing datum after heat treatment.", "process_category": None, "feature_id": None, "conditional": False})
+                    insert_idx = next(
+                        (i + 1 for i, op in enumerate(repaired) if op["stage"] == "heat_treatment"),
+                        len(repaired),
+                    )
+                    repaired.insert(
+                        insert_idx,
+                        {
+                            "operation_no": 0,
+                            "name": "Repair Center Holes",
+                            "stage": "datum_recovery",
+                            "description": "Recover finishing datum after heat treatment.",
+                            "process_category": None,
+                            "feature_id": None,
+                            "conditional": False,
+                        },
+                    )
 
             elif "pre-treatment operation" in message:
                 if "pre_heat_treatment" not in route_stages:
-                    insert_idx = next((i + 1 for i, op in enumerate(repaired) if op["stage"] == "semi_finish"), len(repaired))
+                    insert_idx = next(
+                        (i + 1 for i, op in enumerate(repaired) if op["stage"] == "semi_finish"),
+                        len(repaired),
+                    )
                     decision = verification.get("heat_treatment_decision", {})
                     pre_treatment = decision.get("pre_treatment", {})
-                    repaired.insert(insert_idx, {"operation_no": 0, "name": pre_treatment.get("name", "Heat-treatment Pre-treatment"), "stage": "pre_heat_treatment", "description": pre_treatment.get("description", "Apply required heat-treatment pre-treatment."), "process_category": "Heat Treatment", "feature_id": None, "conditional": True})
+                    repaired.insert(
+                        insert_idx,
+                        {
+                            "operation_no": 0,
+                            "name": pre_treatment.get("name", "Heat-treatment Pre-treatment"),
+                            "stage": "pre_heat_treatment",
+                            "description": pre_treatment.get(
+                                "description", "Apply required heat-treatment pre-treatment."
+                            ),
+                            "process_category": "Heat Treatment",
+                            "feature_id": None,
+                            "conditional": True,
+                        },
+                    )
 
             elif "Surface Treatment" in message:
                 if "surface_treatment" not in route_stages:
-                    insert_idx = next((i + 1 for i, op in enumerate(repaired) if op["stage"] in ("feature_before_inspection", "finish")), len(repaired))
-                    repaired.insert(insert_idx, {"operation_no": 0, "name": "Surface Treatment", "stage": "surface_treatment", "description": "Apply surface treatment.", "process_category": None, "feature_id": None, "conditional": True})
+                    insert_idx = next(
+                        (
+                            i + 1
+                            for i, op in enumerate(repaired)
+                            if op["stage"] in ("feature_before_inspection", "finish")
+                        ),
+                        len(repaired),
+                    )
+                    repaired.insert(
+                        insert_idx,
+                        {
+                            "operation_no": 0,
+                            "name": "Surface Treatment",
+                            "stage": "surface_treatment",
+                            "description": "Apply surface treatment.",
+                            "process_category": None,
+                            "feature_id": None,
+                            "conditional": True,
+                        },
+                    )
 
             elif "grinding" in message and "finish grind" in message:
                 if "precision_finish" not in route_stages:
-                    insert_idx = next((i + 1 for i, op in enumerate(repaired) if op["stage"] == "finish"), len(repaired))
-                    grinding_segments = [s["segment_id"] for s in geometry.get("segments", []) if requires_grinding(s.get("diameter_upper_deviation_mm"), s.get("diameter_lower_deviation_mm"), s.get("roughness_ra"))]
-                    repaired.insert(insert_idx, {"operation_no": 0, "name": "Finish Grind OD", "stage": "precision_finish", "description": f"High-precision segment grinding: {', '.join(grinding_segments) or 'high-precision segments'}", "process_category": None, "feature_id": None, "conditional": True})
+                    insert_idx = next(
+                        (i + 1 for i, op in enumerate(repaired) if op["stage"] == "finish"),
+                        len(repaired),
+                    )
+                    grinding_segments = [
+                        s["segment_id"]
+                        for s in geometry.get("segments", [])
+                        if requires_grinding(
+                            s.get("diameter_upper_deviation_mm"),
+                            s.get("diameter_lower_deviation_mm"),
+                            s.get("roughness_ra"),
+                        )
+                    ]
+                    repaired.insert(
+                        insert_idx,
+                        {
+                            "operation_no": 0,
+                            "name": "Finish Grind OD",
+                            "stage": "precision_finish",
+                            "description": f"High-precision segment grinding: {', '.join(grinding_segments) or 'high-precision segments'}",
+                            "process_category": None,
+                            "feature_id": None,
+                            "conditional": True,
+                        },
+                    )
 
         for i, op in enumerate(repaired, start=1):
             op["operation_no"] = i
         return repaired
 
-    def _llm_repair(self, route: list[dict[str, Any]], geometry: dict[str, Any], request: dict[str, Any], verification: dict[str, Any], retry_count: int, rag_context: str = "") -> Optional[list[dict[str, Any]]]:
+    def _llm_repair(
+        self,
+        route: list[dict[str, Any]],
+        geometry: dict[str, Any],
+        request: dict[str, Any],
+        verification: dict[str, Any],
+        retry_count: int,
+        rag_context: str = "",
+    ) -> Optional[list[dict[str, Any]]]:
         route_desc = "\n".join(
-            f"  {op['operation_no']}. {op['name']} ({op['stage']})" + (" [Conditional]" if op.get("conditional") else "") + (f" [Feature: {op['feature_id']}]" if op.get("feature_id") else "")
+            f"  {op['operation_no']}. {op['name']} ({op['stage']})"
+            + (" [Conditional]" if op.get("conditional") else "")
+            + (f" [Feature: {op['feature_id']}]" if op.get("feature_id") else "")
             for op in route
         )
-        feature_desc = "\n".join(
-            f"  - {f['feature_id']}: {FEATURE_NAME.get(f['feature_type'], f['feature_type'])}, pos {f['global_position_mm']}mm" + (" [high-precision]" if f.get("high_precision") else "")
-            for f in geometry.get("features", [])
-        ) or "  None"
-        issues_desc = "\n".join(f"  - [{iss.get('error_code', '')}] {iss.get('message', '')}" for iss in verification.get("validation_issues", [])) or "  None"
-        checks_desc = "\n".join(f"  - {c['name']}: {'Pass' if c['passed'] else 'Fail'} {c['message']}" for c in verification.get("checks", []))
+        feature_desc = (
+            "\n".join(
+                f"  - {f['feature_id']}: {FEATURE_NAME.get(f['feature_type'], f['feature_type'])}, pos {f['global_position_mm']}mm"
+                + (" [high-precision]" if f.get("high_precision") else "")
+                for f in geometry.get("features", [])
+            )
+            or "  None"
+        )
+        issues_desc = (
+            "\n".join(
+                f"  - [{iss.get('error_code', '')}] {iss.get('message', '')}"
+                for iss in verification.get("validation_issues", [])
+            )
+            or "  None"
+        )
+        checks_desc = "\n".join(
+            f"  - {c['name']}: {'Pass' if c['passed'] else 'Fail'} {c['message']}"
+            for c in verification.get("checks", [])
+        )
 
-        messages = self.prompt_manager.render_messages("repair", {
-            "route_desc": route_desc, "feature_desc": feature_desc,
-            "issues_desc": issues_desc, "checks_desc": checks_desc, "retry_count": retry_count,
-            "rag_context": rag_context,
-        })
+        messages = self.prompt_manager.render_messages(
+            "repair",
+            {
+                "route_desc": route_desc,
+                "feature_desc": feature_desc,
+                "issues_desc": issues_desc,
+                "checks_desc": checks_desc,
+                "retry_count": retry_count,
+                "rag_context": rag_context,
+            },
+        )
 
         result = chat_json(messages, temperature=0.2)
         if not isinstance(result, dict):

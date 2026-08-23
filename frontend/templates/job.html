@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shaft Machining Planner - PE Agent · {{ job_id }}</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
 </head>
 <body>
 <header class="topbar">
@@ -30,12 +30,11 @@
   <section id="error-panel" class="panel hidden"><div id="error-message" class="alert danger"></div></section>
   <div id="result-container" class="stack hidden"></div>
 </main>
-<script nonce="{{ request.state.csp_nonce }}">window.SHAFTPLANNER_JOB_ID={{ job_id | tojson }};</script>
+<script nonce="{{ request.state.csp_nonce }}">window.SHAFTPLANNER_JOB_ID={{ job_id | tojson }};window.STATIC_VERSION="{{ static_version }}";</script>
 <script nonce="{{ request.state.csp_nonce }}" type="importmap">
 { "imports": { "three": "/static/three.module.min.js" } }
 </script>
-<script type="module" src="{{ url_for('static', path='/shaft3d.js') }}?v={{ range(100000, 999999) | random }}"></script>
-<script src="{{ url_for('static', path='/job.js') }}?v={{ range(100000, 999999) | random }}"></script>
-<script src="{{ url_for('static', path='/heartbeat.js') }}?v={{ range(100000, 999999) | random }}"></script>
+<script src="{{ url_for('static', path='/job.js') }}?v={{ static_version }}"></script>
+<script src="{{ url_for('static', path='/heartbeat.js') }}?v={{ static_version }}"></script>
 </body>
 </html>

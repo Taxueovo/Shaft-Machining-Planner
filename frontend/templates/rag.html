@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>RAG Management - Shaft Machining Planner</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ range(100000, 999999) | random }}">
+  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
   <style>
     .rag-layout { display: grid; grid-template-columns: 380px 1fr; gap: 24px; align-items: start; }
     .status-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 16px 0; }
@@ -82,13 +82,13 @@
       <div class="action-panel">
         <h3>🔨 Index Management</h3>
         <div class="action-row">
-          <button class="button primary" onclick="buildIndex('all')" id="btn-build-all">🚀 Build All</button>
-          <button class="button secondary" onclick="buildIndex('specs')" id="btn-build-specs">📖 Build Specs</button>
-          <button class="button secondary" onclick="buildIndex('cases')" id="btn-build-cases">📋 Build Cases</button>
+          <button class="button primary" data-click="buildIndex" data-click-arg="all" id="btn-build-all">🚀 Build All</button>
+          <button class="button secondary" data-click="buildIndex" data-click-arg="specs" id="btn-build-specs">📖 Build Specs</button>
+          <button class="button secondary" data-click="buildIndex" data-click-arg="cases" id="btn-build-cases">📋 Build Cases</button>
         </div>
         <div class="action-row">
-          <button class="button ghost danger" onclick="clearIndex('all')">🧹 Clear All</button>
-          <button class="button ghost" onclick="loadStatus()">🔄 Refresh Status</button>
+          <button class="button ghost danger" data-click="clearIndex" data-click-arg="all">🧹 Clear All</button>
+          <button class="button ghost" data-click="loadStatus">🔄 Refresh Status</button>
         </div>
       </div>
 
@@ -97,8 +97,8 @@
         <h3>🔍 Test Search</h3>
         <div class="search-box">
           <input type="text" id="search-input" placeholder="e.g. motor shaft rough turning 40Cr..."
-                 onkeydown="if(event.key==='Enter')doSearch()">
-          <button class="button primary" onclick="doSearch()">Search</button>
+                 data-enter-action="doSearch">
+          <button class="button primary" data-click="doSearch">Search</button>
         </div>
         <div id="search-results" style="margin-top:12px"></div>
       </div>
@@ -109,9 +109,9 @@
       <div class="action-panel">
         <h3>📋 Indexed Chunks</h3>
         <div class="action-row">
-          <button class="button ghost" onclick="loadChunks('all')" id="btn-chunks-all">All</button>
-          <button class="button ghost" onclick="loadChunks('specs')" id="btn-chunks-specs">📖 Specs</button>
-          <button class="button ghost" onclick="loadChunks('cases')" id="btn-chunks-cases">📋 Cases</button>
+          <button class="button ghost" data-click="loadChunks" data-click-arg="all" id="btn-chunks-all">All</button>
+          <button class="button ghost" data-click="loadChunks" data-click-arg="specs" id="btn-chunks-specs">📖 Specs</button>
+          <button class="button ghost" data-click="loadChunks" data-click-arg="cases" id="btn-chunks-cases">📋 Cases</button>
         </div>
         <div id="chunks-content">
           <p class="empty">Click a button above to browse indexed chunks.</p>
@@ -123,7 +123,8 @@
   </div>
 </main>
 
-<script src="{{ url_for('static', path='/rag.js') }}?v={{ range(100000, 999999) | random }}"></script>
-<script src="{{ url_for('static', path='/heartbeat.js') }}?v={{ range(100000, 999999) | random }}"></script>
+<script src="{{ url_for('static', path='/app.js') }}?v={{ static_version }}"></script>
+<script src="{{ url_for('static', path='/rag.js') }}?v={{ static_version }}"></script>
+<script src="{{ url_for('static', path='/heartbeat.js') }}?v={{ static_version }}"></script>
 </body>
 </html>

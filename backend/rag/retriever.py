@@ -13,7 +13,9 @@ Graceful degradation:
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Optional
+from weakref import WeakSet
 
 from .config import HYBRID_TOP_K_RECALL, HYBRID_TOP_K_FINAL, RRF_K
 from .schemas import SearchResult, RetrievalResponse, Channel
@@ -21,10 +23,26 @@ from .vector_store import VectorStoreManager
 
 logger = logging.getLogger(__name__)
 
+# Live HybridRetriever instances; kept so an index rebuild can invalidate their
+# cached BM25 indexes instead of leaving them stale until process restart.
+_live_retrievers: WeakSet = WeakSet()
+
+
+def invalidate_all_bm25() -> int:
+    """Drop the cached BM25 index on every live retriever (next search resyncs from the store)."""
+    count = 0
+    for retriever in list(_live_retrievers):
+        retriever.invalidate_bm25()
+        count += 1
+    if count:
+        logger.info("Invalidated cached BM25 on %d live retriever(s)", count)
+    return count
+
 
 # ═══════════════════════════════════════════════════════════════
 # RRF fusion
 # ═══════════════════════════════════════════════════════════════
+
 
 def _rrf_fusion(
     *result_lists: list[SearchResult],
@@ -77,14 +95,18 @@ def _rrf_fusion(
         r.score = round(rrf_score, 6)  # override with the RRF score
         merged.append(r)
 
-    logger.debug("RRF fusion: %d lists → %d unique results",
-                 sum(len(lst) for lst in result_lists), len(merged))
+    logger.debug(
+        "RRF fusion: %d lists → %d unique results",
+        sum(len(lst) for lst in result_lists),
+        len(merged),
+    )
     return merged
 
 
 # ═══════════════════════════════════════════════════════════════
 # Hybrid retriever
 # ═══════════════════════════════════════════════════════════════
+
 
 class HybridRetriever:
     """Hybrid retriever - BM25 + Vector -> RRF -> Cross-Encoder.
@@ -94,16 +116,23 @@ class HybridRetriever:
 
     def __init__(self, store: Optional[VectorStoreManager] = None):
         self.store = store or VectorStoreManager()
-        self._bm25 = None       # lazy loading
-        self._reranker = None   # lazy loading
+        self._bm25 = None  # lazy loading
+        self._reranker = None  # lazy loading
         self._bm25_available: Optional[bool] = None
         self._reranker_available: Optional[bool] = None
+        self._bm25_lock = threading.Lock()
+        _live_retrievers.add(self)
+
+    def invalidate_bm25(self) -> None:
+        """Drop the cached BM25 index so the next search resyncs from the vector store."""
+        self._bm25 = None
 
     @property
     def bm25_available(self) -> bool:
         if self._bm25_available is None:
             try:
                 from .bm25_index import BM25IndexManager
+
                 _ = BM25IndexManager()
                 self._bm25_available = True
             except Exception:
@@ -115,17 +144,23 @@ class HybridRetriever:
         if self._reranker_available is None:
             try:
                 from .reranker import reranker_available
+
                 self._reranker_available = reranker_available()
             except Exception:
                 self._reranker_available = False
         return self._reranker_available
 
     def _ensure_bm25(self):
-        if self._bm25 is None and self.bm25_available:
-            from .bm25_index import BM25IndexManager
-            self._bm25 = BM25IndexManager()
-            self._bm25.sync_from_vector_store(self.store)
-            logger.info("BM25 index synced for HybridRetriever")
+        if self._bm25 is not None or not self.bm25_available:
+            return
+        # Double-checked locking: two concurrent requests must not both build the index.
+        with self._bm25_lock:
+            if self._bm25 is None:
+                from .bm25_index import BM25IndexManager
+
+                self._bm25 = BM25IndexManager()
+                self._bm25.sync_from_vector_store(self.store)
+                logger.info("BM25 index synced for HybridRetriever")
 
     # ── Main retrieval interface ──
 
@@ -156,9 +191,19 @@ class HybridRetriever:
         -------
         RetrievalResponse
         """
+        # Empty / whitespace-only queries have no meaningful vector or BM25 semantics.
+        if not query or not query.strip():
+            logger.info("Hybrid retrieve: empty query -> empty result")
+            return RetrievalResponse(query=query, results=[], spec_count=0, case_count=0, total=0)
+
         # ── Phase 1: Recall ──
-        # Vector recall
-        vec_specs, vec_cases = self.store.search_all(query, top_k_per_channel)
+        # Vector recall (degrading to BM25-only if the embedding service is down)
+        vec_specs: list[SearchResult] = []
+        vec_cases: list[SearchResult] = []
+        try:
+            vec_specs, vec_cases = self.store.search_all(query, top_k_per_channel)
+        except Exception as exc:
+            logger.warning("Vector recall failed (%s); falling back to BM25-only", exc)
 
         # BM25 recall
         bm25_specs: list[SearchResult] = []
@@ -176,6 +221,7 @@ class HybridRetriever:
         candidates = spec_merged + case_merged
         if use_rerank and self.reranker_available and candidates:
             from .reranker import rerank
+
             candidates = rerank(query, candidates, top_k=top_k_final)
         else:
             # No reranker - sort by RRF score and take top_k
@@ -187,9 +233,11 @@ class HybridRetriever:
         case_count = sum(1 for r in candidates if r.channel == Channel.CASES)
 
         logger.info(
-            "Hybrid retrieve: query='%s' → %d results (specs=%d, cases=%d) "
-            "[bm25=%s, rerank=%s]",
-            query[:60], len(candidates), spec_count, case_count,
+            "Hybrid retrieve: query='%s' → %d results (specs=%d, cases=%d) [bm25=%s, rerank=%s]",
+            query[:60],
+            len(candidates),
+            spec_count,
+            case_count,
             use_bm25 and self.bm25_available,
             use_rerank and self.reranker_available,
         )
@@ -254,24 +302,23 @@ class HybridRetriever:
             if result.channel == Channel.SPECS:
                 hierarchy = meta.get("hierarchy_path", "")
                 source_tag = f" [recall: {result.recall_source}]" if result.recall_source else ""
-                header = (
-                    f"\n--- 📖 {hierarchy} "
-                    f"(score: {result.score:.4f}{source_tag}) ---\n"
-                )
+                header = f"\n--- 📖 {hierarchy} (score: {result.score:.4f}{source_tag}) ---\n"
             else:
                 case_label = f"{meta.get('part_name', '')} ({meta.get('case_id', '')})"
                 source_tag = f" [recall: {result.recall_source}]" if result.recall_source else ""
-                header = (
-                    f"\n--- 📋 {case_label} "
-                    f"(score: {result.score:.4f}{source_tag}) ---\n"
-                )
+                header = f"\n--- 📋 {case_label} (score: {result.score:.4f}{source_tag}) ---\n"
 
             addition = len(header) + len(result.content)
             if char_count + addition > max_total_chars and parts:
                 break
-
-            parts.append(header + result.content)
-            char_count += addition
+            if char_count + addition > max_total_chars:
+                # First result alone exceeds the budget: allow it but truncate the body.
+                remaining = max(0, max_total_chars - len(header))
+                parts.append(header + result.content[:remaining])
+                char_count += len(header) + remaining
+            else:
+                parts.append(header + result.content)
+                char_count += addition
 
         logger.info("LLM context built: %d results, %d chars", len(parts), char_count)
         return "\n".join(parts)
@@ -292,13 +339,17 @@ def _get_retriever() -> HybridRetriever:
 def retrieve(query: str, top_k: int = 5) -> RetrievalResponse:
     """Convenience function for hybrid retrieval."""
     return _get_retriever().retrieve(
-        query, top_k_per_channel=HYBRID_TOP_K_RECALL, top_k_final=top_k,
+        query,
+        top_k_per_channel=HYBRID_TOP_K_RECALL,
+        top_k_final=top_k,
     )
 
 
 def retrieve_for_llm(query: str, top_k: int = 3, max_chars: int = 3000) -> str:
     """Retrieve and format as LLM context."""
     return _get_retriever().retrieve_for_llm_context(
-        query, top_k_per_channel=HYBRID_TOP_K_RECALL,
-        top_k_final=top_k, max_total_chars=max_chars,
+        query,
+        top_k_per_channel=HYBRID_TOP_K_RECALL,
+        top_k_final=top_k,
+        max_total_chars=max_chars,
     )

@@ -30,7 +30,9 @@ class CaseMetadata(BaseModel):
     material: str = Field(description="Material grade")
     heat_treatment: Optional[str] = Field(default=None, description="Heat treatment")
     tolerance: Optional[str] = Field(default=None, description="Tolerance grade (e.g. IT6)")
-    surface_roughness: Optional[str] = Field(default=None, description="Surface roughness (e.g. Ra0.8)")
+    surface_roughness: Optional[str] = Field(
+        default=None, description="Surface roughness (e.g. Ra0.8)"
+    )
     length_mm: Optional[float] = Field(default=None, description="Part length in mm")
     diameter_mm: Optional[float] = Field(default=None, description="Part diameter in mm")
     main_features: list[str] = Field(default_factory=list, description="Main features")

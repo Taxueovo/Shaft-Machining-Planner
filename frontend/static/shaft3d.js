@@ -138,13 +138,25 @@ function renderShaft3D(containerId, geometry) {
   controls.dampingFactor = 0.08;
   controls.target.set(0, 0, 0);
 
-  // ── Render loop ──
-  function animate() {
-    requestAnimationFrame(animate);
+  // ── Render loop (paused while the tab is hidden to stop burning GPU) ──
+  var rafId = null;
+  var running = true;
+  function loop() {
+    if (!running) return;
+    rafId = requestAnimationFrame(loop);
     controls.update();
     renderer.render(scene, camera);
   }
-  animate();
+  loop();
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      running = false;
+      if (rafId) cancelAnimationFrame(rafId);
+    } else if (!running) {
+      running = true;
+      loop();
+    }
+  });
 
   // ── Responsive ──
   window.addEventListener("resize", function () {

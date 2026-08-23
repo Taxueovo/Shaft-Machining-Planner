@@ -33,13 +33,20 @@ HEARTBEAT_TIMEOUT = int(os.getenv("HEARTBEAT_TIMEOUT", "30"))
 # In-memory, in-process, cleared on restart; during demos re-submitting the same shaft
 # returns results immediately.
 # Disable/tune via .env: JOB_CACHE_ENABLED=false / JOB_CACHE_TTL_SECONDS / JOB_CACHE_MAX_ENTRIES.
-JOB_CACHE_ENABLED = (
-    os.getenv("JOB_CACHE_ENABLED", "true").strip().lower()
-    in ("1", "true", "yes", "on")
+JOB_CACHE_ENABLED = os.getenv("JOB_CACHE_ENABLED", "true").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
 )
 JOB_CACHE_TTL_SECONDS = int(os.getenv("JOB_CACHE_TTL_SECONDS", "3600"))
 JOB_CACHE_MAX_ENTRIES = int(os.getenv("JOB_CACHE_MAX_ENTRIES", "50"))
-RAG_STORE_EXPORTS = os.getenv("RAG_STORE_EXPORTS", "false").strip().lower() in ("1", "true", "yes", "on")
+RAG_STORE_EXPORTS = os.getenv("RAG_STORE_EXPORTS", "false").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "on",
+)
 
 # Concurrency lock for exporting the process card -> syncing to the RAG case library
 _RAG_CASE_LOCK = threading.Lock()
@@ -59,8 +66,9 @@ class JobCache:
     final workflow result, so multiple jobs never share the same object and pollute each other.
     """
 
-    def __init__(self, max_entries: int = JOB_CACHE_MAX_ENTRIES,
-                 ttl_seconds: float = JOB_CACHE_TTL_SECONDS) -> None:
+    def __init__(
+        self, max_entries: int = JOB_CACHE_MAX_ENTRIES, ttl_seconds: float = JOB_CACHE_TTL_SECONDS
+    ) -> None:
         self._max_entries = max_entries
         self._ttl = ttl_seconds
         self._data: dict[str, dict[str, Any]] = {}
@@ -147,15 +155,20 @@ class PlanningService:
         if self.job_cache.enabled:
             cached = self.job_cache.get(cache_key)
             if cached is not None:
-                logger.info("[%s] Job cache HIT (%s), reusing previous result.",
-                            job_id, cache_key[:8])
+                logger.info(
+                    "[%s] Job cache HIT (%s), reusing previous result.", job_id, cache_key[:8]
+                )
                 self.store.create(job_id, payload)
                 self.store.update(
                     job_id,
-                    status="completed", progress=100, current_step="completed",
-                    pending_choices=[], message="Cache hit: input identical to the previous run, reusing the previous process result. "
-                                                 "(To force recomputation, set JOB_CACHE_ENABLED=false in .env)",
-                    result=cached, _cache_key=cache_key,
+                    status="completed",
+                    progress=100,
+                    current_step="completed",
+                    pending_choices=[],
+                    message="Cache hit: input identical to the previous run, reusing the previous process result. "
+                    "(To force recomputation, set JOB_CACHE_ENABLED=false in .env)",
+                    result=cached,
+                    _cache_key=cache_key,
                 )
                 return job_id
 
@@ -163,17 +176,60 @@ class PlanningService:
         try:
             self.executor.submit(self._initial, job_id, payload, cache_key)
         except Exception as error:
-            self.store.update(job_id, status="failed", progress=100, current_step="failed", message=f"Task submission failed: {error}")
+            self.store.update(
+                job_id,
+                status="failed",
+                progress=100,
+                current_step="failed",
+                message=f"Task submission failed: {error}",
+            )
         return job_id
 
     def _initial(self, job_id: str, payload: dict[str, Any], cache_key: str | None = None) -> None:
-        self._invoke(job_id, {"job_id": job_id, "request": payload, "user_choices": {}, "route_hashes": [], "repair_count": 0, "status": "running"}, cache_key=cache_key)
+        self._invoke(
+            job_id,
+            {
+                "job_id": job_id,
+                "request": payload,
+                "user_choices": {},
+                "route_hashes": [],
+                "repair_count": 0,
+                "status": "running",
+            },
+            cache_key=cache_key,
+        )
+
+    def _has_checkpoint(self, job_id: str) -> bool:
+        """Whether the workflow checkpointer still holds a checkpoint for this thread.
+
+        The checkpointer is in-memory, so a server restart drops it even though the
+        SQLite job store survives. Without this guard, resume() would silently restart
+        the workflow from scratch, re-interrupt at precision_choice, and leave the job
+        stuck in "running".
+        """
+        try:
+            checkpointer = self.workflow.graph.checkpointer
+            return checkpointer.get_tuple({"configurable": {"thread_id": job_id}}) is not None
+        except Exception:
+            # If we cannot inspect the checkpointer, do not block a legitimate resume.
+            return True
 
     def resume(self, job_id: str, choices: ChoicesRequest) -> None:
         current = self.store.get(job_id)
         if current["status"] != "waiting_user_choice":
             raise ValueError("Task is not in waiting for user choice state.")
-        self.store.update(job_id, status="running", message="Choices received, continuing.", pending_choices=[])
+        if not self._has_checkpoint(job_id):
+            message = (
+                "The server restarted while this job was waiting for your choice and its "
+                "in-memory state was lost. Please create a new job."
+            )
+            self.store.update(
+                job_id, status="failed", progress=100, current_step="failed", message=message
+            )
+            raise ValueError(message)
+        self.store.update(
+            job_id, status="running", message="Choices received, continuing.", pending_choices=[]
+        )
         self.executor.submit(self._invoke, job_id, Command(resume=choices.model_dump(mode="json")))
 
     def customize_route(self, job_id: str, operations: list[Any]) -> list[dict[str, Any]]:
@@ -200,9 +256,11 @@ class PlanningService:
         # JobStore only has a merge-style update; None means "not customized", and all readers fall back to the original route
         self.store.update(job_id, custom_route=None)
 
-    def _invoke(self, job_id: str, graph_input: dict[str, Any] | Command,
-                cache_key: str | None = None) -> None:
+    def _invoke(
+        self, job_id: str, graph_input: dict[str, Any] | Command, cache_key: str | None = None
+    ) -> None:
         from langgraph.errors import GraphInterrupt
+
         config = {"configurable": {"thread_id": job_id}}
         try:
             result = self.workflow.graph.invoke(graph_input, config=config)
@@ -211,29 +269,57 @@ class PlanningService:
                 return
             final_status = result.get("status", "completed")
             if final_status == "resource_mismatch":
-                message, current_step = "Critical turning resources not satisfied, process terminated.", "resource_mismatch"
+                message, current_step = (
+                    "Critical turning resources not satisfied, process terminated.",
+                    "resource_mismatch",
+                )
             elif final_status == "failed":
-                message, current_step = result.get("verification", {}).get("message") or "Task execution failed.", "failed"
+                message, current_step = (
+                    result.get("verification", {}).get("message") or "Task execution failed.",
+                    "failed",
+                )
             else:
-                message, current_step = result.get("verification", {}).get("message") or "Task completed.", "completed"
-            update_values: dict[str, Any] = {"result": result, "status": final_status, "message": message, "current_step": current_step, "pending_choices": []}
+                message, current_step = (
+                    result.get("verification", {}).get("message") or "Task completed.",
+                    "completed",
+                )
+            update_values: dict[str, Any] = {
+                "result": result,
+                "status": final_status,
+                "message": message,
+                "current_step": current_step,
+                "pending_choices": [],
+            }
             if final_status in {"resource_mismatch", "failed", "completed"}:
                 update_values["progress"] = 100
                 # A1 cache write-back: only written on the clean initial request path; HITL resume/failure is not written.
                 # Later identical requests reuse the result directly, skipping the whole workflow.
-                if cache_key and self.job_cache.enabled \
-                        and final_status in {"completed", "resource_mismatch"}:
+                if (
+                    cache_key
+                    and self.job_cache.enabled
+                    and final_status in {"completed", "resource_mismatch"}
+                ):
                     self.job_cache.put(cache_key, result)
-                    logger.info("[%s] Job cache store (%s) — %d entries.",
-                                job_id, cache_key[:8], len(self.job_cache))
+                    logger.info(
+                        "[%s] Job cache store (%s) — %d entries.",
+                        job_id,
+                        cache_key[:8],
+                        len(self.job_cache),
+                    )
             self.store.update(job_id, **update_values)
         except GraphInterrupt:
             logger.info("[%s] HITL interrupt: waiting for user precision choice.", job_id)
             return
         except Exception as error:
-            self.store.update(job_id, status="failed", progress=100, current_step="failed",
-                              message="Backend execution failed.", error=f"{type(error).__name__}: {error}",
-                              result={"traceback": traceback.format_exc()})
+            self.store.update(
+                job_id,
+                status="failed",
+                progress=100,
+                current_step="failed",
+                message="Backend execution failed.",
+                error=f"{type(error).__name__}: {error}",
+                result={"traceback": traceback.format_exc()},
+            )
 
     def export_process_card_excel(self, job_id: str) -> Path:
         """Generate the process card Excel file, save it to the project output/ directory, and return the file path."""
@@ -256,7 +342,9 @@ class PlanningService:
         resources = result.get("resource_selection", {})
         req_global = request_data.get("global_requirements", {})
         heat_decision = result.get("heat_treatment_decision", {})
-        heat_label = heat_decision.get("process_name") or HEAT_NAME.get(req_global.get("heat_treatment", "none"), "None")
+        heat_label = heat_decision.get("process_name") or HEAT_NAME.get(
+            req_global.get("heat_treatment", "none"), "None"
+        )
         heat_requirements = []
         if req_global.get("target_hardness_hrc") is not None:
             heat_requirements.append(f"{req_global['target_hardness_hrc']} HRC")
@@ -321,12 +409,25 @@ class PlanningService:
             ("Job ID", job_id),
             ("Material", request_data.get("material", "-")),
             ("Blank Type", request_data.get("blank_type", "solid")),
-            ("Blank Diameter", f"φ{request_data.get('blank_diameter_mm', geometry.get('blank_diameter_mm', '-'))} mm"),
+            (
+                "Blank Diameter",
+                f"φ{request_data.get('blank_diameter_mm', geometry.get('blank_diameter_mm', '-'))} mm",
+            ),
             ("Total Length", f"{geometry.get('total_length_mm', '-')} mm"),
             ("Max Finished Dia", f"φ{geometry.get('max_finished_diameter_mm', '-')} mm"),
             ("Heat Treatment", heat_label),
-            ("Heat-treatment Requirements", ", ".join(heat_requirements) if heat_requirements else "Drawing/specification confirmation required" if heat_label != "None" else "-"),
-            ("Surface Treatment", SURFACE_NAME.get(req_global.get("surface_treatment", "none"), "None")),
+            (
+                "Heat-treatment Requirements",
+                ", ".join(heat_requirements)
+                if heat_requirements
+                else "Drawing/specification confirmation required"
+                if heat_label != "None"
+                else "-",
+            ),
+            (
+                "Surface Treatment",
+                SURFACE_NAME.get(req_global.get("surface_treatment", "none"), "None"),
+            ),
             ("Batch Quantity", req_global.get("batch_quantity", 1)),
         ]
         for param, val in info:
@@ -345,18 +446,36 @@ class PlanningService:
         ws.merge_cells(f"A{r}:H{r}")
         ws.cell(row=r, column=1, value="Stepped Shaft Segments").font = section_font
         r += 1
-        wr(r, ["Seg ID", "Diameter (mm)", "Length (mm)", "Start Pos (mm)", "End Pos (mm)",
-               "Upper Dev (mm)", "Lower Dev (mm)", "Ra (μm)"])
+        wr(
+            r,
+            [
+                "Seg ID",
+                "Diameter (mm)",
+                "Length (mm)",
+                "Start Pos (mm)",
+                "End Pos (mm)",
+                "Upper Dev (mm)",
+                "Lower Dev (mm)",
+                "Ra (μm)",
+            ],
+        )
         hdr_row(r, 8)
         r += 1
         seg_start = r
         for seg in segments:
-            wr(r, [
-                seg.get("segment_id", ""), seg.get("diameter_mm", ""), seg.get("length_mm", ""),
-                seg.get("global_start_mm", ""), seg.get("global_end_mm", ""),
-                seg.get("diameter_upper_deviation_mm", ""), seg.get("diameter_lower_deviation_mm", ""),
-                seg.get("roughness_ra", ""),
-            ])
+            wr(
+                r,
+                [
+                    seg.get("segment_id", ""),
+                    seg.get("diameter_mm", ""),
+                    seg.get("length_mm", ""),
+                    seg.get("global_start_mm", ""),
+                    seg.get("global_end_mm", ""),
+                    seg.get("diameter_upper_deviation_mm", ""),
+                    seg.get("diameter_lower_deviation_mm", ""),
+                    seg.get("roughness_ra", ""),
+                ],
+            )
             r += 1
         body_rng(seg_start, r - 1, 8)
 
@@ -368,41 +487,79 @@ class PlanningService:
         ws.merge_cells(f"A{r}:H{r}")
         ws.cell(row=r, column=1, value="Conditional Features").font = section_font
         r += 1
-        wr(r, ["Feature ID", "Type", "Segment", "Position (mm)", "Tolerance (mm)", "Ra (μm)", "Precision", "Parameters"])
+        wr(
+            r,
+            [
+                "Feature ID",
+                "Type",
+                "Segment",
+                "Position (mm)",
+                "Tolerance (mm)",
+                "Ra (μm)",
+                "Precision",
+                "Parameters",
+            ],
+        )
         hdr_row(r, 8)
         r += 1
         feat_start = r
         for feat in features:
             ft = feat.get("feature_type", "")
-            tol_str = f"{feat.get('tolerance_lower_mm', '-')} / {feat.get('tolerance_upper_mm', '-')}"
+            tol_str = (
+                f"{feat.get('tolerance_lower_mm', '-')} / {feat.get('tolerance_upper_mm', '-')}"
+            )
             params = []
             if ft == "keyway":
-                params.append(f"W:{feat.get('keyway_width_mm','-')} D:{feat.get('keyway_depth_mm','-')} L:{feat.get('feature_length_mm','-')}")
+                params.append(
+                    f"W:{feat.get('keyway_width_mm', '-')} D:{feat.get('keyway_depth_mm', '-')} L:{feat.get('feature_length_mm', '-')}"
+                )
             elif ft == "hole":
-                params.append(f"φ{feat.get('hole_diameter_mm','-')} {feat.get('hole_type','through')} {feat.get('hole_direction','radial')}")
+                params.append(
+                    f"φ{feat.get('hole_diameter_mm', '-')} {feat.get('hole_type', 'through')} {feat.get('hole_direction', 'radial')}"
+                )
             elif ft == "thread":
-                params.append(f"{feat.get('thread_specification','-')} {feat.get('thread_handedness','right')}")
+                params.append(
+                    f"{feat.get('thread_specification', '-')} {feat.get('thread_handedness', 'right')}"
+                )
             elif ft == "bearing_seat":
-                params.append(f"φ{feat.get('bearing_seat_diameter_mm','-')} {feat.get('bearing_seat_tolerance','IT6')}")
+                params.append(
+                    f"φ{feat.get('bearing_seat_diameter_mm', '-')} {feat.get('bearing_seat_tolerance', 'IT6')}"
+                )
             elif ft == "spline":
-                params.append(f"{feat.get('spline_type','-')} Z:{feat.get('spline_teeth','-')} m:{feat.get('spline_module','-')}")
+                params.append(
+                    f"{feat.get('spline_type', '-')} Z:{feat.get('spline_teeth', '-')} m:{feat.get('spline_module', '-')}"
+                )
             elif ft == "taper":
-                params.append(f"1:{feat.get('taper_ratio','-')} D:{feat.get('taper_large_diameter_mm','-')} L:{feat.get('taper_length_mm','-')}")
+                params.append(
+                    f"1:{feat.get('taper_ratio', '-')} D:{feat.get('taper_large_diameter_mm', '-')} L:{feat.get('taper_length_mm', '-')}"
+                )
             elif ft == "groove":
-                params.append(f"{feat.get('groove_type','-')} W:{feat.get('groove_width_mm','-')} D:{feat.get('groove_depth_mm','-')}")
+                params.append(
+                    f"{feat.get('groove_type', '-')} W:{feat.get('groove_width_mm', '-')} D:{feat.get('groove_depth_mm', '-')}"
+                )
             elif ft == "seal_area":
-                params.append(f"{feat.get('seal_type','-')} φ{feat.get('seal_diameter_mm','-')}")
+                params.append(f"{feat.get('seal_type', '-')} φ{feat.get('seal_diameter_mm', '-')}")
             elif ft == "gear_teeth":
-                params.append(f"m:{feat.get('gear_module','-')} Z:{feat.get('gear_teeth','-')} α:{feat.get('gear_pressure_angle','-')}°")
+                params.append(
+                    f"m:{feat.get('gear_module', '-')} Z:{feat.get('gear_teeth', '-')} α:{feat.get('gear_pressure_angle', '-')}°"
+                )
             elif ft == "flange":
-                params.append(f"φ{feat.get('flange_diameter_mm','-')} T:{feat.get('flange_thickness_mm','-')} Holes:{feat.get('flange_holes',0)}")
-            wr(r, [
-                feat.get("feature_id", ""), FEATURE_NAME.get(ft, ft),
-                feat.get("resolved_segment_id", ""), feat.get("global_position_mm", ""),
-                tol_str, feat.get("roughness_ra", ""),
-                "High" if feat.get("high_precision") else "Normal",
-                "; ".join(params) if params else "-",
-            ])
+                params.append(
+                    f"φ{feat.get('flange_diameter_mm', '-')} T:{feat.get('flange_thickness_mm', '-')} Holes:{feat.get('flange_holes', 0)}"
+                )
+            wr(
+                r,
+                [
+                    feat.get("feature_id", ""),
+                    FEATURE_NAME.get(ft, ft),
+                    feat.get("resolved_segment_id", ""),
+                    feat.get("global_position_mm", ""),
+                    tol_str,
+                    feat.get("roughness_ra", ""),
+                    "High" if feat.get("high_precision") else "Normal",
+                    "; ".join(params) if params else "-",
+                ],
+            )
             r += 1
         body_rng(feat_start, r - 1, 8, left_col=8)
 
@@ -441,16 +598,30 @@ class PlanningService:
                 machine_cell = "-"
 
             tool_recos = res.get("tool_recommendations", []) or []
-            tool_cell = ", ".join(
-                t.get("cutting_tool_grade", "") for t in tool_recos if t.get("cutting_tool_grade")
-            ) or "-"
+            tool_cell = (
+                ", ".join(
+                    t.get("cutting_tool_grade", "")
+                    for t in tool_recos
+                    if t.get("cutting_tool_grade")
+                )
+                or "-"
+            )
 
             status_cell = res.get("verification_status", "") or ""
 
-            wr(r, [
-                op_no, op.get("name", ""), op.get("stage", ""), op.get("description", ""),
-                machine_cell, tool_cell, status_cell, res.get("note", ""),
-            ])
+            wr(
+                r,
+                [
+                    op_no,
+                    op.get("name", ""),
+                    op.get("stage", ""),
+                    op.get("description", ""),
+                    machine_cell,
+                    tool_cell,
+                    status_cell,
+                    res.get("note", ""),
+                ],
+            )
             r += 1
         body_rng(route_start, r - 1, 8, left_col=4)
 
@@ -471,8 +642,13 @@ class PlanningService:
         if RAG_STORE_EXPORTS:
             self.executor.submit(
                 self._store_exported_card_to_rag_safely,
-                job_id, result, request_data, geometry, route,
-                heat_label, op_resources_map,
+                job_id,
+                result,
+                request_data,
+                geometry,
+                route,
+                heat_label,
+                op_resources_map,
             )
 
         return file_path
@@ -513,18 +689,22 @@ class PlanningService:
                 # Consistent with the process card export: the actual fields are machine_recommendations / tool_recommendations
                 machine_recos = res.get("machine_recommendations", []) or []
                 tool_recos = res.get("tool_recommendations", []) or []
-                process_plan.append({
-                    "step_no": idx + 1,
-                    "name": op.get("name", ""),
-                    "stage": op.get("stage", ""),
-                    "description": op.get("description", ""),
-                    "machine": ", ".join(
-                        m.get("designation", "") for m in machine_recos if m.get("designation")
-                    ),
-                    "tool": ", ".join(
-                        t.get("cutting_tool_grade", "") for t in tool_recos if t.get("cutting_tool_grade")
-                    ),
-                })
+                process_plan.append(
+                    {
+                        "step_no": idx + 1,
+                        "name": op.get("name", ""),
+                        "stage": op.get("stage", ""),
+                        "description": op.get("description", ""),
+                        "machine": ", ".join(
+                            m.get("designation", "") for m in machine_recos if m.get("designation")
+                        ),
+                        "tool": ", ".join(
+                            t.get("cutting_tool_grade", "")
+                            for t in tool_recos
+                            if t.get("cutting_tool_grade")
+                        ),
+                    }
+                )
 
             req_global = request_data.get("global_requirements", {})
             case = {
@@ -552,9 +732,7 @@ class PlanningService:
 
             # ---- 2. Write the case source file (deduplicated by case_id) ----
             project_root = _Path(__file__).resolve().parent.parent
-            cases_file = (
-                project_root / "backend" / "rag" / "data" / "cases" / "exported_cases.json"
-            )
+            cases_file = project_root / "backend" / "rag" / "data" / "cases" / "exported_cases.json"
             cases_file.parent.mkdir(parents=True, exist_ok=True)
 
             data: dict[str, Any] = {"cases": []}
@@ -564,15 +742,21 @@ class PlanningService:
                     if isinstance(_loaded, dict) and isinstance(_loaded.get("cases"), list):
                         data = _loaded
                 except Exception as exc:
-                    raise ValueError("RAG export case file is corrupted; refusing to overwrite it") from exc
+                    raise ValueError(
+                        "RAG export case file is corrupted; refusing to overwrite it"
+                    ) from exc
 
             case_id = case["case_id"]
             data["cases"] = [c for c in data["cases"] if c.get("case_id") != case_id]
             data["cases"].append(case)
             serialized = _json.dumps(data, ensure_ascii=False, indent=2)
             with tempfile.NamedTemporaryFile(
-                "w", encoding="utf-8", dir=cases_file.parent,
-                prefix=f".{cases_file.name}.", suffix=".tmp", delete=False,
+                "w",
+                encoding="utf-8",
+                dir=cases_file.parent,
+                prefix=f".{cases_file.name}.",
+                suffix=".tmp",
+                delete=False,
             ) as temp_file:
                 temp_file.write(serialized)
                 temp_path = _Path(temp_file.name)
@@ -583,7 +767,8 @@ class PlanningService:
             count = IndexBuilder().build_case_index()
             logger.info(
                 "RAG case index rebuilt: %d chunks after exporting process card %s",
-                count, job_id,
+                count,
+                job_id,
             )
 
     def result(self, job_id: str) -> dict[str, Any]:
@@ -594,9 +779,17 @@ class PlanningService:
             raise ValueError("Task result is being written, please retry later.")
         result = job["result"]
         return {
-            "job_id": job_id, "status": job["status"], "message": job["message"], "error": job["error"],
-            "plan": result.get("plan"), "geometry": result.get("geometry"), "capability": result.get("capability"),
-            "process_route": result.get("process_route", []), "custom_route": job.get("custom_route"),
+            "job_id": job_id,
+            "status": job["status"],
+            "message": job["message"],
+            "error": job["error"],
+            "plan": result.get("plan"),
+            "geometry": result.get("geometry"),
+            "capability": result.get("capability"),
+            "process_route": result.get("process_route", []),
+            "custom_route": job.get("custom_route"),
             "resource_selection": result.get("resource_selection"),
-            "verification": result.get("verification"), "execution_trace": result.get("execution_trace", []), "result": result,
+            "verification": result.get("verification"),
+            "execution_trace": result.get("execution_trace", []),
+            "result": result,
         }

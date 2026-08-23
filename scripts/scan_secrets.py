@@ -7,7 +7,18 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parent.parent
-IGNORED = {".git", ".pytest_cache", "__pycache__", "node_modules", "output", "chroma"}
+IGNORED = {
+    ".git",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "node_modules",
+    "output",
+    "chroma",
+    ".venv",
+    "venv",
+    ".coverage",
+}
 PATTERNS = {
     "private key": re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     "GitHub token": re.compile(r"\bgh[oprsu]_[A-Za-z0-9]{30,}\b"),

@@ -9,23 +9,50 @@ import hashlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-IGNORED_DIRS = {".git", ".pytest_cache", ".ruff_cache", "__pycache__", "output", "node_modules"}
+IGNORED_DIRS = {
+    ".git",
+    ".pytest_cache",
+    ".ruff_cache",
+    "__pycache__",
+    "output",
+    "node_modules",
+    ".venv",
+    "venv",
+    ".coverage",
+}
 FORBIDDEN_PARTS = {
-    "data/cases.json", "data/jobs.sqlite3", "backend/rag/data/cases",
-    "backend/rag/data/chroma", "backend/rag/data/specs",
+    "data/cases.json",
+    "data/jobs.sqlite3",
+    "backend/rag/data/cases",
+    "backend/rag/data/chroma",
+    "backend/rag/data/specs",
 }
 SECRET_PATTERNS = [
     re.compile(r"AKIA[0-9A-Z]{16}"),
     re.compile(r"gh[pousr]_[A-Za-z0-9_]{30,}"),
     re.compile(r"sk-[A-Za-z0-9_-]{20,}"),
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
-    re.compile(r"(?:api[_-]?key|password|secret|token)\s*[:=]\s*['\"][A-Za-z0-9_./+=-]{16,}['\"]", re.I),
+    re.compile(
+        r"(?:api[_-]?key|password|secret|token)\s*[:=]\s*['\"][A-Za-z0-9_./+=-]{16,}['\"]", re.I
+    ),
 ]
 LOCAL_PATHS = [
     re.compile("".join(("/", "Users", "/", "[^/]+", "/"))),
     re.compile("".join((r"[A-Za-z]:", r"\\", "Users", r"\\", r"[^\\]+", r"\\"))),
 ]
-TEXT_SUFFIXES = {".css", ".html", ".ini", ".js", ".json", ".md", ".py", ".toml", ".txt", ".yaml", ".yml"}
+TEXT_SUFFIXES = {
+    ".css",
+    ".html",
+    ".ini",
+    ".js",
+    ".json",
+    ".md",
+    ".py",
+    ".toml",
+    ".txt",
+    ".yaml",
+    ".yml",
+}
 PUBLIC_DATA_HASHES = {
     "machines.xlsx": "c12b50b5c8b2e9f2ae5b3498197e0c0e49a0679ff02cf548fd2c8cf50e948aba",
     "tools.xlsx": "b8693ebba7d27a866c5392b8faa1d16825fa25ebd6338a59679bd3436400d2dd",
@@ -67,7 +94,9 @@ def main() -> int:
         relative = path.relative_to(ROOT).as_posix()
         if path.stat().st_size > 25 * 1024 * 1024:
             findings.append(f"file exceeds 25 MiB: {relative}")
-        if (relative != ".env.example" and (relative == ".env" or relative.startswith(".env."))) or any(relative == part or relative.startswith(f"{part}/") for part in FORBIDDEN_PARTS):
+        if (
+            relative != ".env.example" and (relative == ".env" or relative.startswith(".env."))
+        ) or any(relative == part or relative.startswith(f"{part}/") for part in FORBIDDEN_PARTS):
             findings.append(f"forbidden release file: {relative}")
         if path.suffix.lower() in TEXT_SUFFIXES:
             text = path.read_text("utf-8", errors="replace")
@@ -83,7 +112,13 @@ def main() -> int:
                 findings.append(f"public workbook checksum changed without review: {workbook.name}")
         except (OSError, ValueError, zipfile.BadZipFile) as error:
             findings.append(str(error))
-    for required in ("LICENSE", "README.md", ".github/SECURITY.md", ".env.example", "PUBLICATION.md"):
+    for required in (
+        "LICENSE",
+        "README.md",
+        ".github/SECURITY.md",
+        ".env.example",
+        "PUBLICATION.md",
+    ):
         if not (ROOT / required).is_file():
             findings.append(f"missing release file: {required}")
     if findings:

@@ -1,6 +1,5 @@
 """Process route rule engine tests (subset of DEF-TEST-01)."""
 
-
 from rules import build_route
 from models.process import ProcessStage
 
@@ -13,7 +12,11 @@ def _make_request(**kwargs):
             {"segment_id": "S1", "diameter_mm": 30, "length_mm": 100},
         ],
         "features": [],
-        "global_requirements": {"heat_treatment": "none", "surface_treatment": "none", "batch_quantity": 1},
+        "global_requirements": {
+            "heat_treatment": "none",
+            "surface_treatment": "none",
+            "batch_quantity": 1,
+        },
     }
     defaults.update(kwargs)
     return defaults
@@ -53,9 +56,13 @@ class TestBasicRoute:
         assert "Heat Treatment" not in names
 
     def test_with_heat_treatment(self):
-        req = _make_request(global_requirements={
-            "heat_treatment": "normalizing", "surface_treatment": "none", "batch_quantity": 1,
-        })
+        req = _make_request(
+            global_requirements={
+                "heat_treatment": "normalizing",
+                "surface_treatment": "none",
+                "batch_quantity": 1,
+            }
+        )
         geom = _make_geometry(req)
         route = build_route(req, geom, {})
         names = [op["name"] for op in route]
@@ -66,9 +73,13 @@ class TestBasicRoute:
         assert ProcessStage.datum_recovery.value in stages
 
     def test_quench_temper_does_not_assume_normalizing(self):
-        req = _make_request(global_requirements={
-            "heat_treatment": "quench_temper", "surface_treatment": "none", "batch_quantity": 1,
-        })
+        req = _make_request(
+            global_requirements={
+                "heat_treatment": "quench_temper",
+                "surface_treatment": "none",
+                "batch_quantity": 1,
+            }
+        )
         geom = _make_geometry(req)
         route = build_route(req, geom, {})
         names = [op["name"] for op in route]
@@ -76,9 +87,13 @@ class TestBasicRoute:
         assert "Heat Treatment" in names
 
     def test_surface_treatment(self):
-        req = _make_request(global_requirements={
-            "heat_treatment": "none", "surface_treatment": "blackening", "batch_quantity": 1,
-        })
+        req = _make_request(
+            global_requirements={
+                "heat_treatment": "none",
+                "surface_treatment": "blackening",
+                "batch_quantity": 1,
+            }
+        )
         geom = _make_geometry(req)
         route = build_route(req, geom, {})
         stages = [op["stage"] for op in route]
@@ -90,7 +105,9 @@ class TestBasicRoute:
         route = build_route(req, geom, {})
         # Operation numbers increment from 1
         nos = [op["operation_no"] for op in route]
-        assert nos == list(range(1, len(route) + 1)), f"Operation numbers are not consecutive integers starting from 1: {nos}"
+        assert nos == list(range(1, len(route) + 1)), (
+            f"Operation numbers are not consecutive integers starting from 1: {nos}"
+        )
 
 
 class TestHighPrecisionFeatures:
@@ -116,7 +133,9 @@ class TestHighPrecisionFeatures:
         feature = self._make_hp_feature(timing="before_heat_treatment")
         req = _make_request(
             global_requirements={
-                "heat_treatment": "normalizing", "surface_treatment": "none", "batch_quantity": 1,
+                "heat_treatment": "normalizing",
+                "surface_treatment": "none",
+                "batch_quantity": 1,
             },
             features=[feature],
         )
@@ -125,8 +144,7 @@ class TestHighPrecisionFeatures:
         route = build_route(req, geom, {"F1": "before_heat_treatment"})
         # Should not contain operations in the feature_after_heat stage
         post_heat_feature_ops = [
-            op for op in route
-            if op["stage"] == ProcessStage.feature_after_heat.value
+            op for op in route if op["stage"] == ProcessStage.feature_after_heat.value
         ]
         assert len(post_heat_feature_ops) == 0, (
             f"before_heat_treatment was chosen but post-heat-treatment finishing appeared: {post_heat_feature_ops}"
@@ -137,7 +155,9 @@ class TestHighPrecisionFeatures:
         feature = self._make_hp_feature(timing="before_and_after_heat_treatment")
         req = _make_request(
             global_requirements={
-                "heat_treatment": "normalizing", "surface_treatment": "none", "batch_quantity": 1,
+                "heat_treatment": "normalizing",
+                "surface_treatment": "none",
+                "batch_quantity": 1,
             },
             features=[feature],
         )
@@ -160,14 +180,17 @@ class TestHighPrecisionFeatures:
         route = build_route(req, geom, {})
         # Should not contain feature_before_heat operations (high precision without heat treatment should be scheduled later)
         pre_heat_feature_ops = [
-            op for op in route
+            op
+            for op in route
             if op.get("feature_id") == "F1"
             and op["stage"] == ProcessStage.feature_before_heat.value
         ]
         assert len(pre_heat_feature_ops) == 0
         post_finish_feature_ops = [
-            op for op in route
-            if op.get("feature_id") == "F1" and op["stage"] == ProcessStage.feature_before_inspection.value
+            op
+            for op in route
+            if op.get("feature_id") == "F1"
+            and op["stage"] == ProcessStage.feature_before_inspection.value
         ]
         assert [op["name"] for op in post_finish_feature_ops] == ["Precision mill keyway"]
 
@@ -175,8 +198,10 @@ class TestHighPrecisionFeatures:
 class TestFeatureScheduling:
     def _make_feature(self, feature_type, **fields):
         feature = {
-            "feature_id": "F1", "feature_type": feature_type,
-            "global_position_mm": 30, "high_precision": False,
+            "feature_id": "F1",
+            "feature_type": feature_type,
+            "global_position_mm": 30,
+            "high_precision": False,
             "processing_timing": "undecided",
         }
         feature.update(fields)
@@ -185,7 +210,11 @@ class TestFeatureScheduling:
     def _route_for(self, feature, heat="none"):
         req = _make_request(
             features=[feature],
-            global_requirements={"heat_treatment": heat, "surface_treatment": "none", "batch_quantity": 1},
+            global_requirements={
+                "heat_treatment": heat,
+                "surface_treatment": "none",
+                "batch_quantity": 1,
+            },
         )
         geom = _make_geometry(req)
         geom["features"] = [feature]
@@ -211,7 +240,9 @@ class TestFeatureScheduling:
 
     def test_precision_bearing_seat_uses_turning_then_grinding(self):
         feature = self._make_feature(
-            "bearing_seat", high_precision=True, bearing_seat_tolerance="IT6",
+            "bearing_seat",
+            high_precision=True,
+            bearing_seat_tolerance="IT6",
         )
         route = self._route_for(feature, heat="quench_temper")
         feature_ops = [op for op in route if op.get("feature_id") == "F1"]
@@ -229,26 +260,53 @@ class TestFeatureScheduling:
             ("Drill flange bolt holes", "Drilling"),
         ]
 
+    def test_undecided_hp_nonsplit_feature_scheduled_once(self):
+        """High-precision non-splittable feature with undecided timing + heat must NOT be double-scheduled.
+
+        The inference step (soft-state block) schedules the feature before heat treatment, so the
+        post-finish block must not schedule it again (regression for the double-scheduling bug).
+        """
+        feature = self._make_feature("flange", high_precision=True)
+        route = self._route_for(feature, heat="quench_temper")
+        feature_ops = [op for op in route if op.get("feature_id") == "F1"]
+        assert len(feature_ops) == 1, (
+            f"Expected exactly one F1 operation, got {len(feature_ops)}: "
+            f"{[(op['name'], op['stage']) for op in feature_ops]}"
+        )
+        assert feature_ops[0]["stage"] == ProcessStage.feature_before_heat.value
+
 
 class TestGrinding:
     def test_grinding_added_for_tight_tolerance(self):
         """Segments with Ra<=0.4 or tolerance <=0.01mm should have a finish grinding operation."""
-        req = _make_request(segments=[{
-            "segment_id": "S1", "diameter_mm": 30, "length_mm": 100,
-            "diameter_upper_deviation_mm": 0.005,
-            "diameter_lower_deviation_mm": -0.005,
-        }])
+        req = _make_request(
+            segments=[
+                {
+                    "segment_id": "S1",
+                    "diameter_mm": 30,
+                    "length_mm": 100,
+                    "diameter_upper_deviation_mm": 0.005,
+                    "diameter_lower_deviation_mm": -0.005,
+                }
+            ]
+        )
         geom = _make_geometry(req)
         route = build_route(req, geom, {})
         stages = [op["stage"] for op in route]
         assert ProcessStage.precision_finish.value in stages
 
     def test_no_grinding_for_normal_tolerance(self):
-        req = _make_request(segments=[{
-            "segment_id": "S1", "diameter_mm": 30, "length_mm": 100,
-            "diameter_upper_deviation_mm": 0.05,
-            "diameter_lower_deviation_mm": -0.05,
-        }])
+        req = _make_request(
+            segments=[
+                {
+                    "segment_id": "S1",
+                    "diameter_mm": 30,
+                    "length_mm": 100,
+                    "diameter_upper_deviation_mm": 0.05,
+                    "diameter_lower_deviation_mm": -0.05,
+                }
+            ]
+        )
         geom = _make_geometry(req)
         route = build_route(req, geom, {})
         stages = [op["stage"] for op in route]
@@ -262,10 +320,15 @@ class TestStageAndCoverageConsistency:
         """Every operation stage must be a valid ProcessStage member (deburr was once omitted, causing Topology Sort failure)."""
         valid = {s.value for s in ProcessStage}
         feature = {
-            "feature_id": "F1", "feature_type": "gear_teeth",
-            "positioning_mode": "global_absolute", "global_position_mm": 50,
-            "high_precision": False, "gear_module": 3.5, "gear_teeth": 87,
-            "gear_face_width_mm": 40.0, "gear_pressure_angle": 20.0,
+            "feature_id": "F1",
+            "feature_type": "gear_teeth",
+            "positioning_mode": "global_absolute",
+            "global_position_mm": 50,
+            "high_precision": False,
+            "gear_module": 3.5,
+            "gear_teeth": 87,
+            "gear_face_width_mm": 40.0,
+            "gear_pressure_angle": 20.0,
         }
         req = _make_request(features=[feature])
         geom = _make_geometry(req)
@@ -284,20 +347,27 @@ class TestStageAndCoverageConsistency:
         """The hollow blank's main bore is covered by blank-stage rough/finish boring: Rough/Finish Boring
         must carry the bore's feature_id, otherwise Feature Coverage would falsely report the main bore as uncovered."""
         bore = {
-            "feature_id": "F3", "feature_type": "bore",
-            "positioning_mode": "global_absolute", "global_position_mm": 0,
-            "high_precision": False, "bore_diameter_mm": 25.0,
-            "bore_length_mm": 100.0, "bore_through": True,
+            "feature_id": "F3",
+            "feature_type": "bore",
+            "positioning_mode": "global_absolute",
+            "global_position_mm": 0,
+            "high_precision": False,
+            "bore_diameter_mm": 25.0,
+            "bore_length_mm": 100.0,
+            "bore_through": True,
         }
         req = _make_request(
-            blank_type="hollow", blank_inner_diameter_mm=25.0,
+            blank_type="hollow",
+            blank_inner_diameter_mm=25.0,
             features=[bore],
         )
         geom = _make_geometry(req)
         geom["features"] = [bore]
         route = build_route(req, geom, {})
         boring_ops = [op for op in route if op["name"] in ("Rough Boring", "Finish Boring")]
-        assert len(boring_ops) == 2, f"Expected Rough+Finish Boring, got {[op['name'] for op in boring_ops]}"
+        assert len(boring_ops) == 2, (
+            f"Expected Rough+Finish Boring, got {[op['name'] for op in boring_ops]}"
+        )
         for op in boring_ops:
             assert op.get("feature_id") == "F3", (
                 f"{op['name']} should carry main bore feature_id F3, got {op.get('feature_id')}"
@@ -311,15 +381,23 @@ class TestCarburizedGearShaftRoute:
 
     def _carburized_request(self):
         gear = {
-            "feature_id": "F1", "feature_type": "gear_teeth",
-            "positioning_mode": "global_absolute", "global_position_mm": 50,
-            "high_precision": False, "gear_module": 3.5, "gear_teeth": 87,
-            "gear_face_width_mm": 40.0, "gear_pressure_angle": 20.0,
+            "feature_id": "F1",
+            "feature_type": "gear_teeth",
+            "positioning_mode": "global_absolute",
+            "global_position_mm": 50,
+            "high_precision": False,
+            "gear_module": 3.5,
+            "gear_teeth": 87,
+            "gear_face_width_mm": 40.0,
+            "gear_pressure_angle": 20.0,
         }
         req = _make_request(
             global_requirements={
-                "heat_treatment": "carburize_quench", "surface_treatment": "none",
-                "target_hardness_hrc": 60, "case_depth_mm": 1.2, "batch_quantity": 1,
+                "heat_treatment": "carburize_quench",
+                "surface_treatment": "none",
+                "target_hardness_hrc": 60,
+                "case_depth_mm": 1.2,
+                "batch_quantity": 1,
             },
             features=[gear],
         )
@@ -332,10 +410,19 @@ class TestCarburizedGearShaftRoute:
         route = build_route(req, geom, {})
         names = [op["name"] for op in route]
         expected_chain = [
-            "Hob gear", "Gear Chamfer", "Pre-Clean", "Heat Treatment",
-            "Clean Quench Oil", "Temper", "Shot Blast", "Heat-treatment Inspection",
-            "Center-hole Chamfer Grinding", "External Cylindrical Grinding",
-            "Shot Peening", "Precision grind gear teeth", "Laser Marking",
+            "Hob gear",
+            "Gear Chamfer",
+            "Pre-Clean",
+            "Heat Treatment",
+            "Clean Quench Oil",
+            "Temper",
+            "Shot Blast",
+            "Heat-treatment Inspection",
+            "Center-hole Chamfer Grinding",
+            "External Cylindrical Grinding",
+            "Shot Peening",
+            "Precision grind gear teeth",
+            "Laser Marking",
             "Magnetic Particle Inspection",
         ]
         idx = -1
@@ -377,16 +464,23 @@ class TestCamshaftRoute:
 
     def _cam_request(self, heat="quench_temper"):
         cam = {
-            "feature_id": "F1", "feature_type": "cam",
-            "positioning_mode": "global_absolute", "global_position_mm": 50,
-            "high_precision": True, "feature_length_mm": 30.0,
-            "cam_type": "grinding", "cam_lobe_count": 4,
-            "cam_base_circle_diameter_mm": 40.0, "cam_lobe_lift_mm": 8.0,
+            "feature_id": "F1",
+            "feature_type": "cam",
+            "positioning_mode": "global_absolute",
+            "global_position_mm": 50,
+            "high_precision": True,
+            "feature_length_mm": 30.0,
+            "cam_type": "grinding",
+            "cam_lobe_count": 4,
+            "cam_base_circle_diameter_mm": 40.0,
+            "cam_lobe_lift_mm": 8.0,
         }
         req = _make_request(
             global_requirements={
-                "heat_treatment": heat, "surface_treatment": "none",
-                "target_hardness_hrc": 55, "batch_quantity": 1,
+                "heat_treatment": heat,
+                "surface_treatment": "none",
+                "target_hardness_hrc": 55,
+                "batch_quantity": 1,
             },
             features=[cam],
         )
@@ -399,8 +493,12 @@ class TestCamshaftRoute:
         route = build_route(req, geom, {})
         names = [op["name"] for op in route]
         expected_chain = [
-            "Rough Grind OD", "Rough Grind Cam Lobe", "Induction Harden Cam Lobe",
-            "CBN Finish Grind Journals", "CBN Finish Grind Cam Lobe", "Polish",
+            "Rough Grind OD",
+            "Rough Grind Cam Lobe",
+            "Induction Harden Cam Lobe",
+            "CBN Finish Grind Journals",
+            "CBN Finish Grind Cam Lobe",
+            "Polish",
             "Magnetic Particle Inspection",
         ]
         idx = -1
@@ -448,15 +546,22 @@ class TestCrankshaftRoute:
 
     def _crank_request(self):
         crank = {
-            "feature_id": "F2", "feature_type": "crank_pin",
-            "positioning_mode": "global_absolute", "global_position_mm": 50,
-            "high_precision": True, "feature_length_mm": 25.0,
-            "crank_pin_diameter_mm": 30.0, "crank_pin_width_mm": 25.0, "crank_offset_mm": 10.0,
+            "feature_id": "F2",
+            "feature_type": "crank_pin",
+            "positioning_mode": "global_absolute",
+            "global_position_mm": 50,
+            "high_precision": True,
+            "feature_length_mm": 25.0,
+            "crank_pin_diameter_mm": 30.0,
+            "crank_pin_width_mm": 25.0,
+            "crank_offset_mm": 10.0,
         }
         req = _make_request(
             global_requirements={
-                "heat_treatment": "quench_temper", "surface_treatment": "none",
-                "target_hardness_hrc": 55, "batch_quantity": 1,
+                "heat_treatment": "quench_temper",
+                "surface_treatment": "none",
+                "target_hardness_hrc": 55,
+                "batch_quantity": 1,
             },
             features=[crank],
         )
@@ -469,8 +574,12 @@ class TestCrankshaftRoute:
         route = build_route(req, geom, {})
         names = [op["name"] for op in route]
         expected_chain = [
-            "Rough Turn Crank Pins", "Finish Turn Crank Pins", "Heat Treatment",
-            "CBN Grind Crank Pins", "Fillet Rolling", "Dynamic Balancing",
+            "Rough Turn Crank Pins",
+            "Finish Turn Crank Pins",
+            "Heat Treatment",
+            "CBN Grind Crank Pins",
+            "Fillet Rolling",
+            "Dynamic Balancing",
             "Magnetic Particle Inspection",
         ]
         idx = -1
@@ -501,22 +610,59 @@ class TestCrankshaftRoute:
         assert "ISO Turning" in categories
         assert "Cylindrical Grinding" in categories
 
+    def test_split_feature_gets_post_heat_finish(self):
+        """A high-precision splittable feature on a crankshaft must be roughed pre-heat AND finished post-heat.
+
+        Regression: the crankshaft builder scheduled split features before heat treatment but never
+        appended the matching post-heat hard-finish operation, leaving the part oversized.
+        """
+        req, geom = self._crank_request()
+        spline = {
+            "feature_id": "F1",
+            "feature_type": "spline",
+            "positioning_mode": "global_absolute",
+            "global_position_mm": 50,
+            "high_precision": True,
+            "feature_length_mm": 30.0,
+            "spline_module": 1.5,
+            "spline_teeth": 10,
+        }
+        req["features"] = [spline, geom["features"][0]]
+        geom["features"] = [spline, geom["features"][0]]
+        route = build_route(req, geom, {})
+        spline_ops = [op for op in route if op.get("feature_id") == "F1"]
+        stages = [op["stage"] for op in spline_ops]
+        assert ProcessStage.feature_before_heat.value in stages, (
+            f"missing pre-heat rough op: {spline_ops}"
+        )
+        assert ProcessStage.feature_after_heat.value in stages, (
+            f"missing post-heat finish op: {spline_ops}"
+        )
+
 
 class TestWormShaftRoute:
     """Worm shaft: carburizing / nitriding / quench-temper three branches."""
 
     def _worm_request(self, heat):
         worm = {
-            "feature_id": "F3", "feature_type": "worm",
-            "positioning_mode": "global_absolute", "global_position_mm": 50,
-            "high_precision": True, "feature_length_mm": 40.0,
-            "worm_module": 2.0, "worm_starts": 1, "worm_pressure_angle_deg": 20.0,
+            "feature_id": "F3",
+            "feature_type": "worm",
+            "positioning_mode": "global_absolute",
+            "global_position_mm": 50,
+            "high_precision": True,
+            "feature_length_mm": 40.0,
+            "worm_module": 2.0,
+            "worm_starts": 1,
+            "worm_pressure_angle_deg": 20.0,
             "worm_outer_diameter_mm": 35.0,
         }
         req = _make_request(
             global_requirements={
-                "heat_treatment": heat, "surface_treatment": "none",
-                "target_hardness_hrc": 58, "case_depth_mm": 1.0, "batch_quantity": 1,
+                "heat_treatment": heat,
+                "surface_treatment": "none",
+                "target_hardness_hrc": 58,
+                "case_depth_mm": 1.0,
+                "batch_quantity": 1,
             },
             features=[worm],
         )
@@ -529,8 +675,12 @@ class TestWormShaftRoute:
         route = build_route(req, geom, {})
         names = [op["name"] for op in route]
         expected_chain = [
-            "Semi-finish Turn Spiral", "Pre-Clean", "Heat Treatment",
-            "Lapping Center Holes", "Rough Grind Spiral", "Low-temp Aging",
+            "Semi-finish Turn Spiral",
+            "Pre-Clean",
+            "Heat Treatment",
+            "Lapping Center Holes",
+            "Rough Grind Spiral",
+            "Low-temp Aging",
             "Finish Grind Spiral",
         ]
         idx = -1
@@ -565,21 +715,59 @@ class TestWormShaftRoute:
         assert "Semi-finish Turn Spiral" not in names
         assert "Finish Grind Spiral" not in names
 
+    def test_split_feature_gets_post_heat_finish(self):
+        """A high-precision splittable feature on a carburized worm must be roughed pre-heat AND finished post-heat.
+
+        Regression: the worm builder scheduled split features before heat treatment but never
+        appended the matching post-heat hard-finish operation.
+        """
+        req, geom = self._worm_request("carburize_quench")
+        spline = {
+            "feature_id": "F1",
+            "feature_type": "spline",
+            "positioning_mode": "global_absolute",
+            "global_position_mm": 50,
+            "high_precision": True,
+            "feature_length_mm": 30.0,
+            "spline_module": 1.5,
+            "spline_teeth": 10,
+        }
+        req["features"] = [spline, geom["features"][0]]
+        geom["features"] = [spline, geom["features"][0]]
+        route = build_route(req, geom, {})
+        spline_ops = [op for op in route if op.get("feature_id") == "F1"]
+        stages = [op["stage"] for op in spline_ops]
+        assert ProcessStage.feature_before_heat.value in stages, (
+            f"missing pre-heat rough op: {spline_ops}"
+        )
+        assert ProcessStage.feature_after_heat.value in stages, (
+            f"missing post-heat finish op: {spline_ops}"
+        )
+
 
 class TestSurfaceHardenedShaftRoute:
     """Nitriding / induction hardening shafts: spindle, precision spline shaft, hollow shaft (only grinding is allowed after nitriding)."""
 
     def _shaft_request(self, heat, features=None):
-        features = features or [{
-            "feature_id": "F4", "feature_type": "spline",
-            "positioning_mode": "global_absolute", "global_position_mm": 50,
-            "high_precision": False, "feature_length_mm": 40.0,
-            "spline_type": "involute", "spline_teeth": 20, "spline_module": 2.0,
-        }]
+        features = features or [
+            {
+                "feature_id": "F4",
+                "feature_type": "spline",
+                "positioning_mode": "global_absolute",
+                "global_position_mm": 50,
+                "high_precision": False,
+                "feature_length_mm": 40.0,
+                "spline_type": "involute",
+                "spline_teeth": 20,
+                "spline_module": 2.0,
+            }
+        ]
         req = _make_request(
             global_requirements={
-                "heat_treatment": heat, "surface_treatment": "none",
-                "target_hardness_hrc": 55, "batch_quantity": 1,
+                "heat_treatment": heat,
+                "surface_treatment": "none",
+                "target_hardness_hrc": 55,
+                "batch_quantity": 1,
             },
             features=features,
         )
@@ -592,8 +780,12 @@ class TestSurfaceHardenedShaftRoute:
         route = build_route(req, geom, {})
         names = [op["name"] for op in route]
         expected_chain = [
-            "Finish Turning", "Heat Treatment", "Repair Center Holes",
-            "Semi-finish Grind OD", "Finish Grind OD", "Lapping & Polishing",
+            "Finish Turning",
+            "Heat Treatment",
+            "Repair Center Holes",
+            "Semi-finish Grind OD",
+            "Finish Grind OD",
+            "Lapping & Polishing",
             "Magnetic Particle / NDT Inspection",
         ]
         idx = -1
@@ -627,16 +819,23 @@ class TestSurfaceHardenedShaftRoute:
 
     def test_hollow_nitrided_shaft_has_deep_hole_chain(self):
         bore = {
-            "feature_id": "F5", "feature_type": "bore",
-            "positioning_mode": "global_absolute", "global_position_mm": 0,
-            "high_precision": False, "bore_diameter_mm": 10.0,
-            "bore_length_mm": 100.0, "bore_through": True,
+            "feature_id": "F5",
+            "feature_type": "bore",
+            "positioning_mode": "global_absolute",
+            "global_position_mm": 0,
+            "high_precision": False,
+            "bore_diameter_mm": 10.0,
+            "bore_length_mm": 100.0,
+            "bore_through": True,
         }
         req = _make_request(
-            blank_type="hollow", blank_inner_diameter_mm=10.0,
+            blank_type="hollow",
+            blank_inner_diameter_mm=10.0,
             global_requirements={
-                "heat_treatment": "nitriding", "surface_treatment": "none",
-                "target_hardness_hrc": 55, "batch_quantity": 1,
+                "heat_treatment": "nitriding",
+                "surface_treatment": "none",
+                "target_hardness_hrc": 55,
+                "batch_quantity": 1,
             },
             features=[bore],
         )
@@ -654,9 +853,12 @@ class TestKnowledgeBaseAlignment:
 
     def _make_feature(self, feature_type, **fields):
         feature = {
-            "feature_id": "F1", "feature_type": feature_type,
-            "positioning_mode": "global_absolute", "global_position_mm": 30,
-            "high_precision": False, "processing_timing": "undecided",
+            "feature_id": "F1",
+            "feature_type": feature_type,
+            "positioning_mode": "global_absolute",
+            "global_position_mm": 30,
+            "high_precision": False,
+            "processing_timing": "undecided",
         }
         feature.update(fields)
         return feature
@@ -664,11 +866,20 @@ class TestKnowledgeBaseAlignment:
     def test_quenched_seal_area_uses_hard_turn(self):
         """Quench-split seal area uses hard turning instead of grinding (以车代磨)."""
         feature = self._make_feature(
-            "seal_area", seal_type="rubber", seal_diameter_mm=28, feature_length_mm=25,
-            roughness_ra=0.4, high_precision=True, processing_timing="before_and_after_heat_treatment",
+            "seal_area",
+            seal_type="rubber",
+            seal_diameter_mm=28,
+            feature_length_mm=25,
+            roughness_ra=0.4,
+            high_precision=True,
+            processing_timing="before_and_after_heat_treatment",
         )
         req = _make_request(
-            global_requirements={"heat_treatment": "quench_temper", "surface_treatment": "none", "batch_quantity": 1},
+            global_requirements={
+                "heat_treatment": "quench_temper",
+                "surface_treatment": "none",
+                "batch_quantity": 1,
+            },
             features=[feature],
         )
         geom = _make_geometry(req)
@@ -683,8 +894,12 @@ class TestKnowledgeBaseAlignment:
     def test_unquenched_precision_seal_area_keeps_grinding(self):
         """A precision seal area without heat treatment keeps the finish-grind path."""
         feature = self._make_feature(
-            "seal_area", seal_type="rubber", seal_diameter_mm=28, feature_length_mm=25,
-            roughness_ra=0.4, high_precision=True,
+            "seal_area",
+            seal_type="rubber",
+            seal_diameter_mm=28,
+            feature_length_mm=25,
+            roughness_ra=0.4,
+            high_precision=True,
         )
         req = _make_request(features=[feature])
         geom = _make_geometry(req)
@@ -697,11 +912,17 @@ class TestKnowledgeBaseAlignment:
 
     def test_center_hole_lapping_precedes_finish_grind(self):
         """Grinding routes schedule center-hole lapping before the finish grind (grinding datum)."""
-        req = _make_request(segments=[{
-            "segment_id": "S1", "diameter_mm": 30, "length_mm": 100,
-            "diameter_upper_deviation_mm": 0.005,
-            "diameter_lower_deviation_mm": -0.005,
-        }])
+        req = _make_request(
+            segments=[
+                {
+                    "segment_id": "S1",
+                    "diameter_mm": 30,
+                    "length_mm": 100,
+                    "diameter_upper_deviation_mm": 0.005,
+                    "diameter_lower_deviation_mm": -0.005,
+                }
+            ]
+        )
         geom = _make_geometry(req)
         route = build_route(req, geom, {})
         names = [op["name"] for op in route]
@@ -710,9 +931,12 @@ class TestKnowledgeBaseAlignment:
 
     def test_slender_shaft_straighten_note(self):
         """Slender shafts (L/D > 30) carry the deflection-control straightening note."""
-        req = _make_request(blank_diameter_mm=20, segments=[
-            {"segment_id": "S1", "diameter_mm": 18, "length_mm": 560, "roughness_ra": 3.2},
-        ])
+        req = _make_request(
+            blank_diameter_mm=20,
+            segments=[
+                {"segment_id": "S1", "diameter_mm": 18, "length_mm": 560, "roughness_ra": 3.2},
+            ],
+        )
         geom = _make_geometry(req)
         assert geom["total_length_mm"] / geom["max_finished_diameter_mm"] > 30
         route = build_route(req, geom, {})

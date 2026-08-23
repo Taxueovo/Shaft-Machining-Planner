@@ -1,4 +1,5 @@
 """pytest configuration - automatically adds the backend directory to the Python path."""
+
 import os
 import sys
 from pathlib import Path
@@ -7,6 +8,9 @@ import pytest
 
 os.environ.setdefault("LOCAL_API_TOKEN", "pytest-loopback-token")
 os.environ.setdefault("JOB_DB_FILE", ":memory:")
+# Keep the whole test suite deterministic: never call a real model API. The rule engine
+# is fully deterministic, so workflow tests run hermetically in rules mode.
+os.environ.setdefault("LLM_PROVIDER", "rules")
 
 # Add the backend directory to the Python path to avoid manual sys.path.insert in each test file
 backend_dir = Path(__file__).resolve().parent.parent

@@ -74,7 +74,11 @@
       body:JSON.stringify({choices})
     });
     const data = await response.json();
-    if (!response.ok) { showError(JSON.stringify(data.detail || data)); return; }
+    if (!response.ok) {
+      showError(JSON.stringify(data.detail || data));
+      schedule(1800); // keep polling so the status panel does not freeze on an error
+      return;
+    }
     $("choice-panel").classList.add("hidden");
     schedule(300);
   });
@@ -205,17 +209,18 @@
     $("result-container").innerHTML = html.join("");
     $("result-container").classList.remove("hidden");
 
-    // Render the 3D shaft model from geometry
+    // Render the 3D shaft model from geometry. The Three.js module (~700 KB) is
+    // imported lazily only now that a result is shown, not on page load.
     function doRender3D() {
       const container = $("shaft-3d-container");
       if (!container) return;
-      try { renderShaft3D("shaft-3d-container", geo); } catch (e) { console.warn("3D render failed:", e); }
+      import(`/static/shaft3d.js?v=${window.STATIC_VERSION || ""}`)
+        .then(() => {
+          try { renderShaft3D("shaft-3d-container", geo); } catch (e) { console.warn("3D render failed:", e); }
+        })
+        .catch(e => console.warn("3D load failed:", e));
     }
-    if (typeof renderShaft3D === "function") {
-      doRender3D();
-    } else {
-      window.addEventListener("shaft3d-ready", doRender3D, { once: true });
-    }
+    doRender3D();
 
     bindRouteButtons();
   }
@@ -504,7 +509,11 @@
       $("progress-value").textContent = `${data.progress}%`;
       $("current-step").textContent = data.current_step;
       $("status-message").textContent = data.message;
-      if (data.error) showError(data.error);
+      if (data.error) {
+        showError(data.error);
+      } else if (!$("error-panel").classList.contains("hidden")) {
+        $("error-panel").classList.add("hidden"); // clear a stale error once it is gone
+      }
 
       if (data.status === "waiting_user_choice") return showChoices(data.pending_choices || []);
       if (["completed","resource_mismatch","failed"].includes(data.status) && data.result_ready) {
@@ -518,7 +527,10 @@
           showError(`Result rendering failed: ${renderErr.message}`);
         }
       }
-      schedule(800);
+      // A terminal status whose result is not ready yet is transient; poll more
+      // slowly instead of hammering the backend every 800 ms.
+      const backoffMs = ["completed","resource_mismatch","failed"].includes(data.status) ? 2000 : 800;
+      schedule(backoffMs);
     } catch (error) {
       showError(`Status fetch failed: ${error.message}`);
       schedule(1800);

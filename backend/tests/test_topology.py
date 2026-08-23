@@ -1,6 +1,5 @@
 """Topology verification tests (DEF-VAL-01)."""
 
-
 from workflow.graph import Workflow
 
 
@@ -78,7 +77,12 @@ class TestTopologyWithFeatures:
             {"operation_no": 20, "name": "Face Turning", "stage": "datum"},
             {"operation_no": 30, "name": "Rough Turning", "stage": "rough"},
             {"operation_no": 40, "name": "Semi-finish Turning", "stage": "semi_finish"},
-            {"operation_no": 50, "name": "Mill keyway", "stage": "feature_before_heat", "feature_id": "F1"},
+            {
+                "operation_no": 50,
+                "name": "Mill keyway",
+                "stage": "feature_before_heat",
+                "feature_id": "F1",
+            },
             {"operation_no": 60, "name": "Heat Treatment", "stage": "heat_treatment"},
             {"operation_no": 70, "name": "Repair Center Holes", "stage": "datum_recovery"},
             {"operation_no": 80, "name": "Finish Turning", "stage": "finish"},
@@ -96,7 +100,12 @@ class TestTopologyWithFeatures:
             {"operation_no": 40, "name": "Semi-finish Turning", "stage": "semi_finish"},
             {"operation_no": 50, "name": "Finish Turning", "stage": "finish"},
             {"operation_no": 60, "name": "Finish Grind OD", "stage": "precision_finish"},
-            {"operation_no": 70, "name": "Mill keyway", "stage": "feature_before_inspection", "feature_id": "F1"},
+            {
+                "operation_no": 70,
+                "name": "Mill keyway",
+                "stage": "feature_before_inspection",
+                "feature_id": "F1",
+            },
             {"operation_no": 80, "name": "Final Inspection", "stage": "inspection"},
         ]
         assert _topo(route)["passed"] is True

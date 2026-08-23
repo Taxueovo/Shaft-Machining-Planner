@@ -53,8 +53,12 @@ class TaxonomyDB:
 
         self._file_path.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.NamedTemporaryFile(
-            "w", encoding="utf-8", dir=self._file_path.parent,
-            prefix=f".{self._file_path.name}.", suffix=".tmp", delete=False,
+            "w",
+            encoding="utf-8",
+            dir=self._file_path.parent,
+            prefix=f".{self._file_path.name}.",
+            suffix=".tmp",
+            delete=False,
         ) as temp_file:
             json.dump(self._tree.model_dump(), temp_file, indent=2, ensure_ascii=False)
             temp_path = Path(temp_file.name)
