@@ -174,9 +174,12 @@ def chat(
     temperature: Optional[float] = None,
     max_tokens: Optional[int] = None,
     response_format=None,
+    timeout_seconds: Optional[float] = None,
 ):
 
     client = _get_client()
+    if timeout_seconds is not None:
+        client = client.with_options(timeout=timeout_seconds, max_retries=0)
 
     _, _, configured_model = _runtime_config()
     kwargs = {
@@ -214,7 +217,7 @@ def chat(
 # =====================================================
 
 
-def chat_json(messages, *, model=None, temperature=None, max_tokens=None):
+def chat_json(messages, *, model=None, temperature=None, max_tokens=None, timeout_seconds=None):
 
     try:
         raw = chat(
@@ -223,13 +226,20 @@ def chat_json(messages, *, model=None, temperature=None, max_tokens=None):
             temperature=temperature,
             max_tokens=max_tokens,
             response_format={"type": "json_object"},
+            timeout_seconds=timeout_seconds,
         )
 
     except Exception as e:
         msg = str(e).lower()
 
         if "response_format" in msg or "unsupported" in msg or "not supported" in msg:
-            raw = chat(messages, model=model, temperature=temperature, max_tokens=max_tokens)
+            raw = chat(
+                messages,
+                model=model,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout_seconds=timeout_seconds,
+            )
 
         else:
             raise

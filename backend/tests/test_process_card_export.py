@@ -278,26 +278,22 @@ class TestCustomRouteExport:
 
 class TestCustomizeRouteService:
     def test_customize_and_reset_route_methods(self):
-        """customize_route saves the adjusted route; reset_custom_route clears it back to None."""
-        from models.process import ProcessOperation
-
+        # Full-workflow edit/revalidation/reset coverage lives in test_production_reviews.
+        # A historical result can still be reset without pretending it was revalidated.
         service = _service_without_rag()
         job_id = uuid.uuid4().hex[:12]
         service.store.create(job_id, {"global_requirements": {}})
-        ops = _make_result()["process_route"]
-        service.store.update(job_id, status="completed", result=_make_result())
-
-        reordered = [
-            ProcessOperation(**ops[2]),
-            ProcessOperation(**ops[0]),
-            ProcessOperation(**ops[1]),
-        ]
-        saved = service.customize_route(job_id, reordered)
-        assert [o["operation_no"] for o in saved] == [3, 1, 2]
-        assert service.store.get(job_id)["custom_route"][0]["name"] == "Rough Turning"
-
+        service.store.update(
+            job_id,
+            status="completed",
+            result=_make_result(),
+            custom_route=_make_result()["process_route"],
+            custom_result={"stale": True},
+        )
         service.reset_custom_route(job_id)
-        assert service.store.get(job_id)["custom_route"] is None
+        job = service.store.get(job_id)
+        assert job["custom_route"] is None and job["custom_result"] is None
+        assert job["route_revision"] == 1
 
     def test_customize_route_requires_generated_route(self):
         """Customization is not allowed when result is not ready (no process_route)."""

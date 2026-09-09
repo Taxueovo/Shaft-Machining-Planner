@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
+# rank-bm25 与 jieba 属可选依赖：缺失时模块仍可导入，检索能力相应降级
 try:
     import jieba
     from rank_bm25 import BM25Okapi
@@ -46,6 +47,7 @@ class BM25IndexManager:
     """
 
     def __init__(self):
+        """初始化双通道 BM25 索引管理器；索引延迟到 sync_from_vector_store 时构建。"""
         if not HAS_BM25:
             raise RuntimeError("BM25 unavailable. Install it with: pip install rank-bm25 jieba")
         self._spec_index: Optional[BM25Okapi] = None
@@ -56,6 +58,7 @@ class BM25IndexManager:
 
     @property
     def ready(self) -> bool:
+        """索引是否已完成构建并同步就绪。"""
         return self._ready
 
     # ── Sync ──
@@ -117,6 +120,11 @@ class BM25IndexManager:
     def _search(
         self, query: str, index: BM25Okapi, docs: list[dict], channel: Channel, top_k: int
     ) -> list[SearchResult]:
+        """在指定 BM25 索引上检索 query，返回前 top_k 个得分大于 0 的命中。
+
+        命中按原始得分降序截断，并将原始得分按最高分归一化到 0-1，
+        以便与向量检索的余弦相似度在混合排序（RRF）前可比。
+        """
         tokens = _tokenize(query)
         scores = index.get_scores(tokens)
         # Take top_k

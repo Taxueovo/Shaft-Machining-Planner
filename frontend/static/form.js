@@ -1,3 +1,13 @@
+// ============================================================
+// 文件职责：工艺规划录入表单页的核心交互(轴类零件建模入口)。
+//  - 维护"轴段(segments)"与"条件特征(features)"两套动态行 / 卡片，字段名与后端
+//    /api/jobs 请求结构一一对应(见 collectSegments / collectFeatures)；
+//  - 按 URL 指定案例回填(loadCaseFromUrl)、一键载入示例、保存为案例库(saveCase)；
+//  - 提交时先做毛坯直径等客户端校验，再 POST /api/jobs 创建作业并跳转到进度页；
+//  - 实时"工艺路线预览"：对输入去抖后请求 /api/preview-route，按阶段上色展示工序、
+//    资源校验徽标与推荐机床 / 刀具，方便提交前评估可制造性。
+// 各段 / 特征的定位分为"相对所在段(segment_relative)"与"全局绝对(global_absolute)"两种模式。
+// ============================================================
 (() => {
   // Escape a value for safe interpolation into an HTML attribute value ("..." context).
   // Used wherever saved case data is interpolated into markup; prevents stored XSS.
@@ -25,6 +35,8 @@
   const materialDesc = document.getElementById("material-desc");
   let materialsData = [];
 
+  // 拉取 /api/materials 并按材料组(P / M / N / S / H)生成分组下拉框，默认选中 45 钢；
+  // 加载失败时回退为一组内置常见材料，保证离线也能录入。
   async function loadMaterials() {
     try {
       const response = await fetch("/api/materials");
@@ -89,8 +101,10 @@
   const submit = document.getElementById("submit-button");
   let segmentNo = 0, featureNo = 0;
 
+  // 空字符串(用户未填写的可选数值)统一转为 null 以贴合后端可选字段约定，否则转 Number。
   const numOrNull = value => value === "" ? null : Number(value);
   let errorTimer = null;
+  // 表单错误提示：滚动到错误框并展示 msg，4 秒后自动隐藏(先清除旧定时器避免提前收起)。
   const showError = msg => {
     clearTimeout(errorTimer);
     errorBox.textContent = msg;
@@ -99,6 +113,7 @@
     errorTimer = setTimeout(() => errorBox.classList.add("hidden"), 4000);
   };
 
+  // 汇总所有轴段长度行并刷新"总长"显示(保留三位小数)。
   function updateTotal() {
     const total = [...segmentsBody.querySelectorAll(".seg-length")]
       .reduce((sum, el) => sum + (Number(el.value) || 0), 0);
@@ -106,6 +121,7 @@
       `${Number(total.toFixed(3))} mm`;
   }
 
+  // 轴段增删后重建所有特征"所属段"下拉(选项 1..段数)，并尽量保留之前的选中值。
   function refreshSegmentOptions() {
     const count = segmentsBody.children.length;
     document.querySelectorAll(".feature-segment").forEach(select => {
@@ -117,6 +133,8 @@
     });
   }
 
+  // 新增一行轴段输入(可用 v 预填，如案例回填)；未指定 segment_id 时自动编号 S01/S02…
+  // 每行绑定长度合计与删除；删除保护(至少保留一段)，随后刷新段选项并触发去抖预览。
   function addSegment(v = {}) {
     segmentNo++;
     const row = document.createElement("tr");
@@ -141,6 +159,8 @@
     debouncePreview();
   }
 
+  // 按特征类型返回其专属子字段的输入区 HTML(纯模板函数)。type 与后端 feature_type 对应，
+  // 各类型所需参数(键槽宽深、孔径孔深、螺距规格、齿轮模数等)见下方分支；采集逻辑见 collectFeatures。
   function specific(type) {
     if (type === "keyway") return `
       <div class="grid four">
@@ -269,9 +289,12 @@
         <label>Crank Offset (mm)<input class="crank-offset" type="number" min="0" step="0.001"></label>
         <label>Pin Length (mm)<input class="feature-length" type="number" min="0.001" step="0.001" required></label>
       </div>`;
+    // 上述分支均未覆盖的类型(普通轴肩 / 其他轴向台)退化为仅"长度"一项，保证至少可填一个参数。
     return `<div class="grid two"><label>Feature Length (mm)<input class="feature-length" type="number" min="0.001" step="0.001"></label></div>`;
   }
 
+  // 处理特征类型相关的联动(目前用于孔类)：盲孔时显示深度输入并置为必填(原生校验)，
+  // 通孔则隐藏并解除必填 —— 交由表单内置校验给出提示，避免直接吃后端 422。
   function bindSpecific(card) {
     const type = card.querySelector(".hole-type");
     if (type) {
@@ -287,6 +310,9 @@
     }
   }
 
+  // 新增一张特征卡片(可用 v 预填既有特征)。卡片含通用字段(类型 / 定位方式 / 公差 / 粗糙度)
+  // 与 specific() 生成的专属子字段；切换特征类型会重建专属区，切换定位方式会联动
+  // 显隐"所属段 + 偏移"或"全局位置"输入。删除卡片后若空则恢复"无特征"占位。
   function addFeature(v = {}) {
     featureNo++;
     const card = document.createElement("div");
@@ -433,6 +459,8 @@
     debouncePreview();
   }
 
+  // 采集当前所有轴段行为后端要求的段结构(字段名与 /api/jobs 请求体一致)；
+  // 直径偏差 / 粗糙度 / 表面积等可选字段按 numOrNull 规则转为 null 或数值。
   function collectSegments() {
     return [...segmentsBody.querySelectorAll("tr")].map(row => ({
       segment_id: row.querySelector(".seg-id").value.trim(),
@@ -446,6 +474,9 @@
     }));
   }
 
+  // 采集所有特征卡片：公共字段 + 依类型归集的专属参数，输出后端约定的 feature 结构。
+  // 定位方式为 segment_relative 时携带 segment_index / segment_offset_mm，
+  // global_absolute 时改带 global_position_mm(两者互斥置 null)。
   function collectFeatures() {
     return [...featuresBox.querySelectorAll(".feature-card")].map(card => {
       const type = card.querySelector(".feature-type").value;
@@ -547,6 +578,8 @@
     });
   }
 
+  // 汇总全局工艺要求(热处理 / 目标硬度 / 渗碳层深 / 毛坯状态等)。
+  // 当前页面无表面处理与批量录入入口，故 surface_treatment 固定 "none"、batch_quantity 固定 1。
   function collectGlobalRequirements() {
     return {
       heat_treatment: document.getElementById("heat-treatment").value,
@@ -597,6 +630,7 @@
     const segments = collectSegments();
     const blankDia = Number(document.getElementById("blank-diameter").value);
     const maxSegDia = segments.reduce((max, s) => Math.max(max, s.diameter_mm), 0);
+    // 客户端前置校验：毛坯直径须不小于所有轴段的最大直径，避免创建作业后才发现不可加工。
     if (blankDia < maxSegDia) {
       showError(`Blank diameter (${blankDia} mm) must be ≥ max segment diameter (${maxSegDia} mm).`);
       return;
@@ -619,6 +653,7 @@
       location.href = `/jobs/${data.job_id}`;
     } catch (error) {
       let msg = error.message;
+      // TypeError 多为 fetch 网络层失败(如后端未启动)，此时给出可操作的中文指引而非报错原文。
       if (error.name === "TypeError") {
         msg = "Unable to connect to server. Please confirm Shaft Machining Planner is running (execute python start_shaftplanner.py in terminal).";
       }
@@ -628,6 +663,10 @@
   });
 
   // Load case from URL parameter
+  // 页面载入时按 URL 指定的案例回填表单：先展示案例横幅并清空现有数据，再重建材料 /
+  // 热处理 / 段 / 特征。段与特征优先用案例中已结构化的 segments / features；
+  // 否则按其 main_features 文本关键词推断特征类型并生成合理参数(尺寸按主轴直径
+  // 比例折算并加安全余量)。无可用案例时回填默认示例。
   async function loadCaseFromUrl() {
     const caseId = window.CASE_ID_FROM_URL;
     if (!caseId) {
@@ -1039,6 +1078,7 @@
     }
   }
 
+  // 打开"保存为案例"对话框，并异步加载分类(taxonomy)下拉的可选树。
   window.openSaveCaseDialog = function() {
     const dialog = document.getElementById('save-case-dialog');
     if (dialog) {
@@ -1047,6 +1087,7 @@
     }
   };
 
+  // 关闭保存对话框并复位其中的错误提示。
   window.closeSaveCaseDialog = function() {
     const dialog = document.getElementById('save-case-dialog');
     if (dialog) {
@@ -1055,6 +1096,9 @@
     }
   };
 
+  // 将当前表单内容作为一条案例保存到案例库：先校验名称，再采集段 / 特征，
+  // 把各特征类型映射为去重后的 main_features 关键词列表，连同结构 POST 到
+  // /cases/save-from-form；成功后提示并跳转到该案例详情页。
   window.saveCase = async function() {
     const nameInput = document.getElementById('case-name-input');
     const taxonomySelect = document.getElementById('case-taxonomy-select');
@@ -1165,11 +1209,14 @@
   let previewTimer = null;
   let previewAbort = null;
 
+  // 工艺路线预览去抖：用户在 500ms 内的连续输入 / 改动只触发最后一次 requestPreview，
+  // 避免每次按键都向后端发起一次完整工艺规划请求。
   function debouncePreview() {
     clearTimeout(previewTimer);
     previewTimer = setTimeout(requestPreview, 500);
   }
 
+  // 组装路线预览请求载荷(结构同作业提交体)；没有任何轴段时返回 null 供调用方提示。
   function collectPreviewPayload() {
     const segments = collectSegments();
     const features = collectFeatures();
@@ -1185,6 +1232,8 @@
     };
   }
 
+  // 路线预览核心请求：负责用 AbortController 中止上一次尚未返回的请求(避免结果串台)、
+  // 点亮"进行中"圆点，成功则调用 renderPreview 渲染；面板折叠时提前返回。
   async function requestPreview() {
     const content = document.getElementById("route-preview-content");
     const warningsBox = document.getElementById("route-preview-warnings");
@@ -1228,6 +1277,9 @@
     }
   }
 
+  // 将预览响应渲染为有序工序列表：按 stage 上色、以操作名优先取显示标签(见 STAGE_LABELS)，
+  // 叠加设备能力总览、每道工序的资源校验徽标(本地工具是否匹配)与推荐机床 / 刀具，
+  // 并在下方列出规划器给出的可制造性警告。
   function renderPreview(data) {
     const content = document.getElementById("route-preview-content");
     const warningsBox = document.getElementById("route-preview-warnings");

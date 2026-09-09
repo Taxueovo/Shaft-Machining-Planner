@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+{# 自定义工艺规划表单页：分三段填写轴体/特征/热处理，顶部可折叠预览工艺路线，也可把当前输入另存为案例。 #}
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -62,6 +63,7 @@
 <main class="shell">
   {% if backend_detail %}<div class="alert {{ 'warning' if backend_ok else 'danger' }}">{{ backend_detail }}</div>{% endif %}
 
+  {# 案例横幅：从案例库“使用该案例”进入（URL 带 ?case=）时由 form.js 填充并显示，否则保持隐藏 #}
   <div id="case-banner" class="case-banner" style="display:none">
     <div class="info">
       <div class="icon">📋</div>
@@ -77,6 +79,7 @@
   </div>
 
   <form id="planning-form" class="stack">
+    {# 表单顶部内嵌可折叠的工艺路线实时预览，随下方各段输入刷新 #}
     <div class="preview-inline">
       <button type="button" id="preview-toggle" class="preview-toggle">▸ Process Route Preview</button>
       <div class="preview-panel hidden" id="preview-panel">
@@ -90,6 +93,7 @@
       </div>
     </div>
 
+    {# 段 00：定义毛坯与各阶梯段的几何参数，是后续特征与热处理的几何基准 #}
     <section class="panel">
       <div class="heading"><div><b>00</b><h2>Shaft Body Definition</h2></div><button type="button" id="load-example" class="button ghost">Load Example</button></div>
       <div class="grid three">
@@ -108,6 +112,7 @@
       </table></div>
     </section>
 
+    {# 段 01：为所选轴段追加条件特征（键槽/螺纹/孔等），位置支持相对段起点或全局坐标 #}
     <section class="panel">
       <div class="heading"><div><b>01</b><h2>Conditional Features</h2></div><button type="button" id="add-feature" class="button secondary">+ Add Feature</button></div>
       <p class="muted">Segment offset is relative to the left end of the segment; global position is relative to the left end of the part. Hole position indicates the hole center.</p>
@@ -115,6 +120,7 @@
       <div id="no-features" class="empty">No conditional features currently.</div>
     </section>
 
+    {# 段 02：热处理需求；系统据此编排预热处理/最终热处理及后续精整工序 #}
     <section class="panel">
       <div class="heading"><div><b>02</b><h2>Heat Treatment Requirements</h2></div></div>
       <p class="muted">Use drawing-approved values. The system uses these inputs to arrange pre-treatment, final heat treatment and post-heat finishing constraints.</p>
@@ -154,6 +160,7 @@
     </section>
 
     <div id="form-error" class="alert danger hidden"></div>
+    {# 提交行：后端未连接时经 Jinja 禁用“开始工艺规划”按钮 #}
     <div class="submit-row">
       <div></div>
       <div style="display:flex;gap:10px">
@@ -190,6 +197,7 @@
 </div>
 
 <style>
+  /* 模态遮罩：fixed 铺满视口且 z-index 置顶，遮罩本身不设关闭点击，仅能经对话框按钮操作 */
   .dialog-overlay {
     position: fixed;
     top: 0; left: 0; right: 0; bottom: 0;

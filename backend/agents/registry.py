@@ -14,25 +14,30 @@ class AgentRegistry:
     """Dynamic agent registry - supports registration, discovery and capability-based dispatch."""
 
     def __init__(self) -> None:
+        """初始化代理表及“标签 → 代理名”索引，供按能力检索使用。"""
         self._agents: dict[str, BaseAgent] = {}
         self._tags: dict[str, list[str]] = {}
 
     def register(self, agent: BaseAgent) -> None:
+        """注册代理并按其能力标签建立索引；同名代理不允许重复注册。"""
         name = agent.name
         if name in self._agents:
             raise ValueError(f"Agent '{name}' is already registered.")
         self._agents[name] = agent
         cap = agent.capabilities()
+        # 维护倒排索引：同一标签下可挂多个代理，便于后续按标签/能力调度
         for tag in cap.tags:
             self._tags.setdefault(tag, []).append(name)
         logger.info("Registered agent: %s (tags: %s)", name, cap.tags)
 
     def get(self, name: str) -> BaseAgent:
+        """按名称获取代理；未注册时抛出 KeyError。"""
         if name not in self._agents:
             raise KeyError(f"Unknown agent: {name}")
         return self._agents[name]
 
     def list_agents(self) -> list[dict[str, Any]]:
+        """返回各代理的注册信息摘要（名称、能力描述与累计执行次数）。"""
         return [
             {
                 "name": agent.name,
@@ -43,6 +48,7 @@ class AgentRegistry:
         ]
 
     def find_for_state(self, state: dict[str, Any]) -> list[BaseAgent]:
+        """返回当前状态下可用（前置依赖键均已就绪）的代理列表。"""
         available = []
         for agent in self._agents.values():
             cap = agent.capabilities()
@@ -51,7 +57,9 @@ class AgentRegistry:
         return available
 
     def __len__(self) -> int:
+        """已注册代理的总数。"""
         return len(self._agents)
 
     def __contains__(self, name: str) -> bool:
+        """判断指定名称的代理是否已注册。"""
         return name in self._agents

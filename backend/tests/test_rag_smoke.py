@@ -78,9 +78,30 @@ def test_feature_penalty_fires_for_english_workflow_query():
     assert by_id["hit"].score == 1.0
 
 
-def test_vector_store_build_and_search(tmp_path):
+def test_vector_store_build_and_search(tmp_path, monkeypatch):
     from backend.rag.vector_store import VectorStoreManager
 
+    import backend.rag.vector_store as vector_store
+    from chromadb.api.types import EmbeddingFunction
+
+    class TestEmbedding(EmbeddingFunction):
+        def __init__(self):
+            pass
+
+        def name(self):
+            return "test-local"
+
+        def get_config(self):
+            return {}
+
+        def __call__(self, input):
+            return [
+                [float("rough" in text.lower()) + 0.01, float("grind" in text.lower()) + 0.01, 0.1]
+                for text in input
+            ]
+
+    monkeypatch.setattr(vector_store, "_embedding_available", lambda: True)
+    monkeypatch.setattr(vector_store, "ShaftMachiningPlannerEmbeddingFunction", TestEmbedding)
     store = VectorStoreManager(persist_dir=str(tmp_path / "chroma"))
     chunks = [
         SpecChunk(

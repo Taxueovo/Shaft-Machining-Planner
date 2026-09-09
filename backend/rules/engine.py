@@ -27,6 +27,7 @@ def add_operation(
     feature_id: Optional[str] = None,
     conditional: bool = False,
 ) -> None:
+    """向工序列表追加一条工序记录（工序号先占位为 0，各路由末尾再统一按顺序重排）。"""
     operations.append(
         {
             "operation_no": 0,
@@ -59,6 +60,7 @@ def _allowance(diameter_mm: float, *, finish: bool) -> float:
 
 
 def _allowance_text(diameter_mm: float, *, finish: bool) -> str:
+    """将直径对应的粗/精车余量格式化为工艺描述文本（保留 1 位小数，如 "1.5 mm"）。"""
     return f"{_allowance(diameter_mm, finish=finish):.1f} mm"
 
 
@@ -109,6 +111,7 @@ def _get_post_finish_operation(
     feature_type: str, high_precision: bool
 ) -> tuple[str, Optional[str]]:
     """Get the final-machining operation and its resource category after the finished-part datum is established."""
+    # 常规精度方案：以车/铣为主的一次精加工，并返回标准加工资源类别
     standard = {
         "keyway": ("Mill keyway", "Indexable Milling"),
         "hole": ("Drill hole", "Drilling"),
@@ -124,6 +127,7 @@ def _get_post_finish_operation(
         "worm": ("Finish turn worm spiral", "Threading"),
         "crank_pin": ("Finish turn crank pin", "ISO Turning"),
     }
+    # 高精度方案：相应换用磨削等精密工序（如轴承座/密封区/凸轮/丝杠改磨削），保证精度与表面质量
     precision = {
         "keyway": ("Precision mill keyway", "Indexable Milling"),
         "hole": ("Ream hole", "Drilling"),
@@ -185,22 +189,54 @@ def _feature_position_desc(feature: dict[str, Any]) -> str:
     return desc
 
 
-def _is_main_bore_covered(feature: dict[str, Any], is_hollow: bool, inner_dia: Any) -> bool:
-    """Whether the main bore of a hollow blank is already covered by Blank-stage rough/finish boring.
-
-    For a hollow blank, Blank stage already schedules "Rough Boring / Finish Boring" (bored to inner_dia);
-    scheduling feature-level boring for a bore feature of the same diameter would duplicate it, so it is skipped here.
-    Steps of the stepped bore with a different (smaller) diameter are unaffected and are still scheduled normally.
-    """
-    if not is_hollow or feature.get("feature_type") != "bore":
-        return False
-    try:
-        return abs(float(feature.get("bore_diameter_mm", 0.0)) - float(inner_dia)) < 0.5
-    except (TypeError, ValueError):
-        return False
-
-
 def build_route(
+    request: dict[str, Any], geometry: dict[str, Any], choices: dict[str, str]
+) -> list[dict[str, Any]]:
+    """Generate routes from actual finished features, never from stock bore dimensions."""
+    route = _build_route(request, geometry, choices)
+    stock_id = (
+        request.get("blank_inner_diameter_mm") if request.get("blank_type") == "hollow" else None
+    )
+    if request.get("blank_type") == "hollow":
+        for op in route:
+            if "center" in op["name"].lower():
+                recovery = op["stage"] != "datum"
+                op.update(
+                    name="Recover Workholding Datum" if recovery else "Prepare Workholding",
+                    description="Confirm approved mandrel, plugs or alternative locating surfaces for the hollow shaft; verify runout and support. Do not drill center holes into an existing bore.",
+                    process_category=None,
+                    conditional=True,
+                )
+    for feature in geometry.get("features", []):
+        if feature["feature_type"] != "bore":
+            continue
+        operations = [
+            op
+            for op in route
+            if op.get("feature_id") == feature["feature_id"]
+            and op.get("process_category") == "Boring"
+        ]
+        target = feature.get("bore_diameter_mm")
+        if len(operations) == 1 and target:
+            op = operations[0]
+            op["dimensions"] = [
+                {
+                    "object_id": feature["feature_id"],
+                    "surface": "internal",
+                    "before_mm": stock_id,
+                    "after_mm": target,
+                }
+            ]
+            op["description"] += f" Finished bore target diameter {target:g} mm."
+            if stock_id is not None and target == stock_id:
+                op["conditional"] = True
+                op["description"] += (
+                    " Stock nominal equals target: confirm supplied-bore tolerance and available allowance before cutting."
+                )
+    return route
+
+
+def _build_route(
     request: dict[str, Any], geometry: dict[str, Any], choices: dict[str, str]
 ) -> list[dict[str, Any]]:
     """Generate process route - pure rule engine with a fixed if-else strategy."""
@@ -237,16 +273,6 @@ def build_route(
     inner_dia = request.get("blank_inner_diameter_mm")
     is_hollow = blank_type == "hollow" and inner_dia
 
-    # The main bore of a hollow blank is covered by Blank-stage rough/finish boring: these two
-    # operations carry that bore feature's feature_id, so the verification layer's Feature Coverage
-    # can find the corresponding operation, and the process card clearly shows which operation machines the bore feature.
-    main_bore_fid = None
-    if is_hollow:
-        for feature in geometry["features"]:
-            if _is_main_bore_covered(feature, True, inner_dia):
-                main_bore_fid = feature["feature_id"]
-                break
-
     material_notes = ""
     if material_props["machinability"] == "difficult":
         material_notes = f" ({material} is difficult to machine, reduce cutting parameters)"
@@ -256,6 +282,7 @@ def build_route(
     max_finished_dia = float(
         geometry.get("max_finished_diameter_mm") or request["blank_diameter_mm"]
     )
+    # 粗/精车预留余量按整轴的最大成品直径查标准余量表统一确定（直径越大，外圆车削的标准余量越大）
     rough_allowance = _allowance_text(max_finished_dia, finish=False)
     finish_allowance = _allowance_text(max_finished_dia, finish=True)
     # Slender shafts (L/D > 30) are deflection-prone and need straightening/stable cutting (cnc_machining.md / grinding_process.md).
@@ -292,15 +319,6 @@ def build_route(
     )
 
     # Hollow shaft: rough bore the inner diameter
-    if is_hollow:
-        add_operation(
-            operations,
-            "Rough Boring",
-            "rough",
-            f"Rough bore inner diameter to {inner_dia + 1} mm with finishing allowance.",
-            "Boring",
-            feature_id=main_bore_fid,
-        )
 
     add_operation(
         operations,
@@ -344,9 +362,6 @@ def build_route(
     for feature in geometry["features"]:
         feature_type = feature["feature_type"]
         feature_id = feature["feature_id"]
-        # The main bore of a hollow blank is already covered by Blank-stage rough/finish boring; skip feature-level boring to avoid duplication
-        if _is_main_bore_covered(feature, is_hollow, inner_dia):
-            continue
         high = feature["high_precision"]
         can_split = FEATURE_SUPPORTS_SPLIT.get(feature_type, False)
         timing = choices.get(feature_id, feature.get("processing_timing", "undecided"))
@@ -356,6 +371,8 @@ def build_route(
         if high and has_heat and timing == "undecided":
             timing = "before_and_after_heat_treatment" if can_split else "before_heat_treatment"
         is_split = high and has_heat and can_split and timing == "before_and_after_heat_treatment"
+        # 需在热处理前加工的情形（命中任一即提前排程）：已拆分待精磨的特征、
+        # 齿轮/花键/滚花等软态特征，或高精度特征被显式指定为“热处理前一次加工到位”
         needs_pre_heat = (
             is_split
             or (has_heat and feature_type in pre_heat_features)
@@ -427,15 +444,6 @@ def build_route(
     )
 
     # Hollow shaft: finish bore the inner diameter
-    if is_hollow:
-        add_operation(
-            operations,
-            "Finish Boring",
-            "finish",
-            f"Finish bore inner diameter to {inner_dia} mm.",
-            "Boring",
-            feature_id=main_bore_fid,
-        )
 
     # ---- 6. Finish grinding (condition: tolerance <=0.01 or Ra <=0.4) ----
     grinding_segments = [
@@ -505,9 +513,6 @@ def build_route(
         feature_type = feature["feature_type"]
         feature_id = feature["feature_id"]
         if feature_id in split_features:
-            continue
-        # The main bore of a hollow blank is already covered by Blank-stage finish boring; skip feature-level boring to avoid duplication
-        if _is_main_bore_covered(feature, is_hollow, inner_dia):
             continue
         timing = choices.get(feature_id, feature.get("processing_timing", "undecided"))
         # Features explicitly chosen to be done before heat treatment, or gear teeth/splines/knurling that must
@@ -644,12 +649,6 @@ def _build_carburized_gear_shaft_route(
     is_hollow = blank_type == "hollow" and inner_dia
 
     # feature_id of the main bore of a hollow blank (carried by Blank-stage rough/finish boring, avoids false Feature Coverage reports)
-    main_bore_fid = None
-    for feature in geometry["features"]:
-        if _is_main_bore_covered(feature, is_hollow, inner_dia):
-            main_bore_fid = feature["feature_id"]
-            break
-
     material_notes = ""
     if material_props["machinability"] == "difficult":
         material_notes = f" ({material} is difficult to machine, reduce cutting parameters)"
@@ -688,15 +687,6 @@ def _build_carburized_gear_shaft_route(
         f"Rough turn stepped profile with allowance (soft state).{material_notes}",
         "ISO Turning",
     )
-    if is_hollow:
-        add_operation(
-            operations,
-            "Rough Boring",
-            "rough",
-            f"Rough bore inner diameter to {inner_dia + 1} mm with finishing allowance.",
-            "Boring",
-            feature_id=main_bore_fid,
-        )
     add_operation(
         operations,
         "Semi-finish Turning",
@@ -711,22 +701,11 @@ def _build_carburized_gear_shaft_route(
         "Finish turn stepped profile to near-final size before carburizing (soft state).",
         "ISO Turning",
     )
-    if is_hollow:
-        add_operation(
-            operations,
-            "Finish Boring",
-            "finish_before_heat",
-            f"Finish bore inner diameter to {inner_dia} mm before carburizing.",
-            "Boring",
-            feature_id=main_bore_fid,
-        )
 
     # ---- 2. Soft-state features: gear hobbing + gear chamfering; splines/knurling also before heat treatment ----
     pre_heat_features = {"spline", "knurl"}
     for feature in geometry["features"]:
         ftype = feature["feature_type"]
-        if _is_main_bore_covered(feature, is_hollow, inner_dia):
-            continue
         if ftype == "gear_teeth":
             add_operation(
                 operations,
@@ -886,8 +865,6 @@ def _build_carburized_gear_shaft_route(
     # ---- 5. Final-machining features (keyways/holes/bearing seats etc., machined after finish grinding) ----
     for feature in geometry["features"]:
         ftype = feature["feature_type"]
-        if _is_main_bore_covered(feature, is_hollow, inner_dia):
-            continue
         if ftype in ("gear_teeth", "spline", "knurl", "cam", "crank_pin"):
             continue
         op_name, process = _get_post_finish_operation(ftype, feature["high_precision"])
@@ -956,18 +933,6 @@ def _build_carburized_gear_shaft_route(
 # ============================================================
 
 
-def _main_bore_feature_id(
-    geometry: dict[str, Any],
-    is_hollow: bool,
-    inner_dia: Any,
-) -> Optional[str]:
-    """ID of the bore feature matching the main bore of a hollow blank (carried by Blank-stage rough/finish boring)."""
-    for feature in geometry["features"]:
-        if _is_main_bore_covered(feature, is_hollow, inner_dia):
-            return feature["feature_id"]
-    return None
-
-
 def _first_feature_id(geometry: dict[str, Any], feature_type: str) -> Optional[str]:
     """ID of the first feature of the given type (None if absent)."""
     for feature in geometry["features"]:
@@ -998,8 +963,6 @@ def _append_soft_features(
         feature_type = feature["feature_type"]
         if own_primary and feature_type in own_primary:
             continue
-        if _is_main_bore_covered(feature, is_hollow, inner_dia):
-            continue
         feature_id = feature["feature_id"]
         high = feature["high_precision"]
         can_split = FEATURE_SUPPORTS_SPLIT.get(feature_type, False)
@@ -1007,6 +970,7 @@ def _append_soft_features(
         if high and has_heat and timing == "undecided":
             timing = "before_and_after_heat_treatment" if can_split else "before_heat_treatment"
         is_split = high and has_heat and can_split and timing == "before_and_after_heat_treatment"
+        # 与通用路线中的判定一致：软态特征 / 拆分特征 / 明确选择热处理前加工的高精度特征需提前排程
         needs_pre_heat = (
             is_split
             or (has_heat and feature_type in soft_set)
@@ -1094,11 +1058,11 @@ def _append_post_finish_features(
         feature_id = feature["feature_id"]
         if feature_id in split_features:
             continue
-        if _is_main_bore_covered(feature, is_hollow, inner_dia):
-            continue
         if own_primary and feature_type in own_primary:
             continue
         timing = choices.get(feature_id, feature.get("processing_timing", "undecided"))
+        # 已安排到热处理前完成的特征不再在此重复排程：软态特征（齿轮/花键/滚花），
+        # 以及选择“热处理前加工”或尚未决定的高精度特征
         if has_heat and (
             feature_type in pre_heat_features
             or (feature["high_precision"] and timing in ("before_heat_treatment", "undecided"))
@@ -1153,7 +1117,6 @@ def _build_camshaft_route(
     blank_type = request.get("blank_type", "solid")
     inner_dia = request.get("blank_inner_diameter_mm")
     is_hollow = blank_type == "hollow" and inner_dia
-    main_bore_fid = _main_bore_feature_id(geometry, is_hollow, inner_dia)
     cam_fid = _first_feature_id(geometry, "cam")
 
     material_notes = ""
@@ -1201,15 +1164,6 @@ def _build_camshaft_route(
         None,
         conditional=True,
     )
-    if is_hollow:
-        add_operation(
-            operations,
-            "Rough Boring",
-            "rough",
-            f"Rough bore inner diameter to {inner_dia + 1} mm with finishing allowance.",
-            "Boring",
-            feature_id=main_bore_fid,
-        )
     add_operation(
         operations,
         "Semi-finish Turning",
@@ -1225,15 +1179,6 @@ def _build_camshaft_route(
         "Finish turn journals to near-final size before hardening (hardened cam surface cannot be turned).",
         "ISO Turning",
     )
-    if is_hollow:
-        add_operation(
-            operations,
-            "Finish Boring",
-            "finish_before_heat",
-            f"Finish bore inner diameter to {inner_dia} mm before hardening.",
-            "Boring",
-            feature_id=main_bore_fid,
-        )
 
     split_features = _append_soft_features(
         operations, geometry, choices, inner_dia, is_hollow, True, own_primary={"cam"}
@@ -1420,7 +1365,6 @@ def _build_crankshaft_route(
     blank_type = request.get("blank_type", "solid")
     inner_dia = request.get("blank_inner_diameter_mm")
     is_hollow = blank_type == "hollow" and inner_dia
-    main_bore_fid = _main_bore_feature_id(geometry, is_hollow, inner_dia)
     crank_fid = _first_feature_id(geometry, "crank_pin")
 
     material_notes = ""
@@ -1470,15 +1414,6 @@ def _build_crankshaft_route(
             crank_fid,
             True,
         )
-    if is_hollow:
-        add_operation(
-            operations,
-            "Rough Boring",
-            "rough",
-            f"Rough bore inner diameter to {inner_dia + 1} mm with finishing allowance.",
-            "Boring",
-            feature_id=main_bore_fid,
-        )
     add_operation(
         operations,
         "Semi-finish Turning",
@@ -1504,15 +1439,6 @@ def _build_crankshaft_route(
             "ISO Turning",
             crank_fid,
             True,
-        )
-    if is_hollow:
-        add_operation(
-            operations,
-            "Finish Boring",
-            "finish_before_heat",
-            f"Finish bore inner diameter to {inner_dia} mm before hardening.",
-            "Boring",
-            feature_id=main_bore_fid,
         )
 
     split_features = _append_soft_features(
@@ -1691,7 +1617,6 @@ def _build_worm_shaft_route(
     blank_type = request.get("blank_type", "solid")
     inner_dia = request.get("blank_inner_diameter_mm")
     is_hollow = blank_type == "hollow" and inner_dia
-    main_bore_fid = _main_bore_feature_id(geometry, is_hollow, inner_dia)
     worm_fid = _first_feature_id(geometry, "worm")
 
     material_notes = ""
@@ -1731,15 +1656,6 @@ def _build_worm_shaft_route(
         f"Rough turn external profile with allowance.{material_notes}",
         "ISO Turning",
     )
-    if is_hollow:
-        add_operation(
-            operations,
-            "Rough Boring",
-            "rough",
-            f"Rough bore inner diameter to {inner_dia + 1} mm with finishing allowance.",
-            "Boring",
-            feature_id=main_bore_fid,
-        )
     add_operation(
         operations,
         "Semi-finish Turning",
@@ -1769,15 +1685,6 @@ def _build_worm_shaft_route(
             "Finish turn regions not requiring carburizing before the carburizing chain (soft state).",
             "ISO Turning",
         )
-        if is_hollow:
-            add_operation(
-                operations,
-                "Finish Boring",
-                "finish_before_heat",
-                f"Finish bore inner diameter to {inner_dia} mm before carburizing.",
-                "Boring",
-                feature_id=main_bore_fid,
-            )
         split_features = _append_soft_features(
             operations, geometry, choices, inner_dia, is_hollow, True, own_primary={"worm"}
         )
@@ -1930,15 +1837,6 @@ def _build_worm_shaft_route(
             "Finish turn external profile before nitriding (nitrided case cannot be turned).",
             "ISO Turning",
         )
-        if is_hollow:
-            add_operation(
-                operations,
-                "Finish Boring",
-                "finish_before_heat",
-                f"Finish bore inner diameter to {inner_dia} mm before nitriding.",
-                "Boring",
-                feature_id=main_bore_fid,
-            )
         split_features = _append_soft_features(
             operations, geometry, choices, inner_dia, is_hollow, True, own_primary={"worm"}
         )
@@ -2189,7 +2087,6 @@ def _build_surface_hardened_shaft_route(
     blank_type = request.get("blank_type", "solid")
     inner_dia = request.get("blank_inner_diameter_mm")
     is_hollow = blank_type == "hollow" and inner_dia
-    main_bore_fid = _main_bore_feature_id(geometry, is_hollow, inner_dia)
 
     material_notes = ""
     if material_props["machinability"] == "difficult":
@@ -2228,30 +2125,6 @@ def _build_surface_hardened_shaft_route(
         f"Rough turn stepped profile with allowance.{material_notes}",
         "ISO Turning",
     )
-    if is_hollow:
-        # Deep-hole chain: deep-hole drilling (L/D>5) -> rough boring
-        try:
-            deep_hole = geometry["total_length_mm"] / inner_dia > 5
-        except (TypeError, ZeroDivisionError):
-            deep_hole = False
-        if deep_hole:
-            add_operation(
-                operations,
-                "Deep Hole Drilling",
-                "rough",
-                f"Deep-hole drill inner bore (L/D > 5) to {inner_dia + 2} mm with finishing allowance.",
-                "Drilling",
-                feature_id=main_bore_fid,
-                conditional=True,
-            )
-        add_operation(
-            operations,
-            "Rough Boring",
-            "rough",
-            f"Rough bore inner diameter to {inner_dia + 1} mm with finishing allowance.",
-            "Boring",
-            feature_id=main_bore_fid,
-        )
     add_operation(
         operations,
         "Semi-finish Turning",
@@ -2259,16 +2132,6 @@ def _build_surface_hardened_shaft_route(
         f"Semi-finish turn segments with finishing allowance.{material_notes}",
         "ISO Turning",
     )
-    if is_hollow:
-        add_operation(
-            operations,
-            "Expand-ream Stepped Bore",
-            "semi_finish",
-            f"Expand and ream the stepped bore to {inner_dia} mm before finishing.",
-            "Boring",
-            feature_id=main_bore_fid,
-            conditional=True,
-        )
     # Stabilization: relieves residual stress for nitrided/precision shafts (before finishing operations)
     add_operation(
         operations,
@@ -2287,15 +2150,6 @@ def _build_surface_hardened_shaft_route(
         "Finish turn external profile to near-final size before hardening (hardened case cannot be turned).",
         "ISO Turning",
     )
-    if is_hollow:
-        add_operation(
-            operations,
-            "Finish Boring",
-            "finish_before_heat",
-            f"Finish bore inner diameter to {inner_dia} mm before hardening.",
-            "Boring",
-            feature_id=main_bore_fid,
-        )
 
     split_features = _append_soft_features(
         operations, geometry, choices, inner_dia, is_hollow, True

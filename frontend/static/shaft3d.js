@@ -1,9 +1,18 @@
 /**
  * shaft3d.js — 3D stepped shaft model (Three.js local ES module)
  */
+// 文件职责：用 Three.js 在 #shaft-3d-container 中绘制阶梯轴 3D 模型。
+// app.js 在结果渲染后动态 import 本模块，暴露全局 renderShaft3D 并以事件通知就绪：
+//   - 坐标换算：把整轴总长映射到 3 个世界单位(scale = 3 / total_length_mm)，毫米坐标统一换算；
+//   - 各轴段用圆柱体按顺序排布，高精度段(high_precision)以橙色材质区分，段间加端面圆环分界；
+//   - 毛坯(blank_diameter_mm)用半透明大圆柱包络整轴；条件特征(键槽/孔/铣面/螺纹/滚花等)
+//     用彩色圆环标记并附文字精灵(segment_id / φ径×长、feature_id)；
+//   - 提供轨道旋转控制、视口自适应，以及页面隐藏时暂停渲染循环以节省 GPU。
 import * as THREE from "./three.module.min.js";
 import { OrbitControls } from "./OrbitControls.js";
 
+// 渲染入口：按容器 id 与几何数据(segments / features / total_length_mm / blank_diameter_mm)
+// 构建场景。容器不存在或几何缺少轴段时直接返回；每次调用会先清空容器以支持重复渲染。
 function renderShaft3D(containerId, geometry) {
   var container = document.getElementById(containerId);
   if (!container || !geometry || !geometry.segments || !geometry.segments.length) return;
@@ -51,6 +60,8 @@ function renderShaft3D(containerId, geometry) {
     var geo = new THREE.CylinderGeometry(r, r, h, 64);
     var mat = seg.high_precision ? matPrecision : matNormal;
     var mesh = new THREE.Mesh(geo, mat);
+    // 轴段在整轴上占据的毫米区间换算为世界坐标：以该段中点的全局位置定位，
+    // 并整体下移半轴长，使模型垂直居中于原点(圆柱轴向即 Y 轴)。
     var yCenter = ((seg.global_start_mm + seg.global_end_mm) / 2) * scale - (totalLen * scale) / 2;
     mesh.position.y = yCenter;
     shaftGroup.add(mesh);
@@ -75,6 +86,8 @@ function renderShaft3D(containerId, geometry) {
 
   // ── Feature markers ──
   features.forEach(function (f) {
+    // 特征标记定位：按 global_position_mm(整轴左端起)遍历轴段确定其所在段，
+    // 以该段半径作为标记环的基准半径(未命中任何段时 segR 保持 0)。
     var y = f.global_position_mm * scale - (totalLen * scale) / 2;
     var segR = 0;
     for (var i = 0; i < segments.length; i++) {

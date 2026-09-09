@@ -232,16 +232,19 @@ LATHE_PROCESSES = "Threading|Taper Turning|Grooving"
 
 
 def _max_dia(rod, chuck):
+    """取棒料与卡盘两种车削直径中的较大者作为工件最大直径；两者皆非数值时返回 None。"""
     vals = [v for v in (rod, chuck) if isinstance(v, (int, float))]
     return max(vals) if vals else None
 
 
 def main():
+    """写库主流程：先为现有车床行补足车螺纹/车锥度/车沟槽能力，再按需追加 NEW_ROWS 中的真实设备记录。"""
     wb = load_workbook(XLSX)
     ws = wb[SHEET]
     headers = [c.value for c in ws[1]]
 
     def row_index(name):
+        """按表头名称换算其列号；openpyxl 的列号从 1 起计，故表头索引需 +1。"""
         # openpyxl cell(row, col) uses a 1-based column number
         return headers.index(name) + 1
 

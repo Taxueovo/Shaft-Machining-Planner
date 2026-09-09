@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+{# RAG 运维页：管理知识库索引（规格/案例）的构建与清空，并提供检索与分块浏览调试；交互由 app.js/rag.js 驱动。 #}
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -56,6 +57,7 @@
     Install chromadb and configure EMBEDDING_API_KEY / EMBEDDING_MODEL in the .env file.
   </div>
 
+  {# 主体内容默认隐藏：页面先请求 /api/rag/status，后端可用时才显示并填充下方区域 #}
   <div id="rag-content" class="hidden">
   <div class="rag-layout">
 

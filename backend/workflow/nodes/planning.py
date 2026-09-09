@@ -18,12 +18,14 @@ class PlanningNodesMixin:
     """Mixin for task planning and feature analysis nodes."""
 
     def progress(self, state: WorkflowState, value: int, step: str, message: str) -> None:
+        """把当前节点进度与说明写回任务存储，供前端实时显示执行过程。"""
         self.store.update(
             state["job_id"], status="running", progress=value, current_step=step, message=message
         )
 
     @traced("task_planning", ["request"])
     def task_planning(self, state: WorkflowState) -> dict[str, Any]:
+        """将加工请求拆解为带优先级的子任务清单，并判断是否需人工介入(HITL)。"""
         self.progress(state, 5, "task_planning", "Analyzing task and creating execution plan.")
         request = state["request"]
         segments = request["segments"]
@@ -47,6 +49,7 @@ class PlanningNodesMixin:
             },
         ]
 
+        # 高精度特征且需热处理时，精加工时机需用户确认，故追加 precision_choice 子任务。
         has_high_precision = any(is_feature_high_precision(f) for f in features)
         needs_hitl = has_high_precision and global_req["heat_treatment"] != "none"
         if needs_hitl:
@@ -79,10 +82,17 @@ class PlanningNodesMixin:
                 },
                 {
                     "id": f"ST{planning_start + 2:02d}",
+                    "name": "Independent specialist reviews",
+                    "description": "Parallel machining, quality and heat-treatment reviews with evidence-based coordination.",
+                    "agent": "review_coordination",
+                    "priority": planning_start + 2,
+                },
+                {
+                    "id": f"ST{planning_start + 3:02d}",
                     "name": "Verification",
                     "description": "Verify route completeness and resource coverage.",
                     "agent": "verification",
-                    "priority": planning_start + 2,
+                    "priority": planning_start + 3,
                 },
             ]
         )
@@ -112,10 +122,15 @@ class PlanningNodesMixin:
 
     @traced("feature_analysis", ["request"])
     def feature_analysis(self, state: WorkflowState) -> dict[str, Any]:
+        """把局部坐标下的段/特征换算为整体坐标，校验引用合法性并标记高精度属性。"""
         self.progress(state, 15, "feature_analysis", "Calculating segment and feature coordinates.")
         request = state["request"]
+        from rules.geometry import validate_manufacturing_geometry
+
+        validate_manufacturing_geometry(request)
         segments = []
         cursor = 0.0
+        # 用游标顺次累加段长，得到每个轴段在整根轴上的全局起止区间。
         for source in request["segments"]:
             item = dict(source)
             item["global_start_mm"] = round(cursor, 3)

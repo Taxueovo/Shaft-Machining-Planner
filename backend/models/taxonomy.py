@@ -42,6 +42,7 @@ class TaxonomyTree(BaseModel):
         """Get path from root to specified node."""
         path = []
         current = self.get_node(node_id)
+        # 自目标节点沿 parent 链向根回溯并逐次前插，最终得到根 → 目标节点的有序路径
         while current:
             path.insert(0, current)
             current = self.get_node(current.parent_id) if current.parent_id else None

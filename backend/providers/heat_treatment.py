@@ -16,6 +16,7 @@ class HeatTreatmentProvider:
     an engineer still needs to supply.
     """
 
+    # 工艺族知识表：每族给出路线说明与后续工序约束（是否需恢复定位基准、是否需预留硬加工余量）
     _PROFILES: dict[str, dict[str, Any]] = {
         "normalizing": {
             "process_name": "Normalizing",
@@ -37,7 +38,7 @@ class HeatTreatmentProvider:
         },
         "nitriding": {
             "process_name": "Nitriding",
-            "route_description": "Nitride to a hard wear-resistant case (surface hardness HV >= 900) with minimal distortion; low-temperature process, finishing by grinding after nitriding.",
+            "route_description": "Nitride specified surfaces to drawing-controlled hardness and case depth. Post-treatment removal requires an approved case-depth allowance.",
             "requires_datum_recovery": True,
             "requires_hard_finish": True,
         },
@@ -65,8 +66,15 @@ class HeatTreatmentProvider:
     }
 
     def recommend(self, request: dict[str, Any], geometry: dict[str, Any]) -> dict[str, Any]:
+        """综合零件需求与几何信息，输出保守的热处理工艺族决策。
+
+        结合全局要求、材料属性与是否存在高精度特征来判定工艺族，并生成
+        前置约束与待确认预警；本方法不计算炉温/保温/淬火介质等配方细节
+        （须由图纸或规范决定），返回结果附可解释的 trace 供上层追溯。
+        """
         global_req = request.get("global_requirements", {})
         requested = global_req.get("heat_treatment", "none")
+        # 术语归一化：外部请求名 "quench_and_temper" 映射为内部工艺键 "quench_temper"
         heat_treatment = "quench_temper" if requested == "quench_and_temper" else requested
         material = str(request.get("material", ""))
         material_props = get_material_properties(material)
@@ -109,6 +117,7 @@ class HeatTreatmentProvider:
             )
 
         profile = self._PROFILES.get(heat_treatment)
+        # 未命中已知工艺族（如自定义/不支持的名称）时退化为占位结果，交由工程师人工复核
         if profile is None:
             warnings.append(
                 f"Unsupported heat treatment type: {requested}. Engineer review is required."
@@ -161,6 +170,7 @@ class HeatTreatmentProvider:
             warnings.append(
                 "Induction hardening target hardness is not specified; use drawing or specification before release."
             )
+        # 材料自带推荐工艺与请求工艺不一致时仅提示差异，图纸/规范要求优先
         recommended = material_props.get("recommended_heat_treatment", "none")
         if recommended not in ("none", heat_treatment):
             warnings.append(
@@ -182,6 +192,11 @@ class HeatTreatmentProvider:
         )
 
     def _resolve_pre_treatment(self, global_req: dict[str, Any]) -> dict[str, str] | None:
+        """解析热处理前的预备工艺。
+
+        优先采用图纸/规范明确指定的预处理的类型；当为 "auto" 且毛坯是锻造件
+        时，默认先正火以细化晶粒、消除应力；其余情况返回 None（无需预备处理）。
+        """
         requested = global_req.get("pre_heat_treatment", "auto")
         if requested in self._PRE_TREATMENTS:
             return {"type": requested, **self._PRE_TREATMENTS[requested]}
@@ -203,6 +218,7 @@ class HeatTreatmentProvider:
         constraints: list[str],
         warnings: list[str],
     ) -> dict[str, Any]:
+        """纯函数：将决策字段与追溯信息（输入、知识、约束、预警）组装为统一结果字典。"""
         decision = {
             "heat_treatment": heat_treatment,
             "process_name": process_name,

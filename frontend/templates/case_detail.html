@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+{# 案例详情页：后端只返回骨架，脚本经 /api/cases/{id} 取数后按字段是否存在逐段渲染。 #}
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -44,6 +45,7 @@
     <button type="button" id="shutdown-btn" class="button ghost danger" title="Shutdown System">Stop System</button>
   </div>
 </header>
+{# 内容区仅含加载占位，真实案例详情由下方脚本按需分段渲染进 #content #}
 <main class="shell">
   <div id="content">
     <div class="loading">Loading case details...</div>
@@ -53,6 +55,7 @@
 <script nonce="{{ request.state.csp_nonce }}">
 (function() {
   const caseId = {{ case_id | tojson }};
+  // HTML 转义：后端文本以字符串拼进 innerHTML，注入前必须转义以防破坏页面结构
   const esc = value => String(value ?? '')
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
@@ -70,6 +73,7 @@
 
   function renderCase(c) {
     const content = document.getElementById('content');
+    // 模板字符串中的 ${c.xxx ? ... : ''} 依字段是否存在，决定是否渲染对应区块
     content.innerHTML = `
       <div class="breadcrumb">
         <a href="/cases">Cases</a>
