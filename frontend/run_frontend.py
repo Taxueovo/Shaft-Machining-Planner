@@ -1,3 +1,10 @@
+"""前端启动器：编排后端与前端两个本地服务的启动过程。
+
+- 未检测到后端时，自动以独立子进程启动 backend/run_backend.py 并等待其就绪；
+- 若环境未提供 LOCAL_API_TOKEN 则临时生成一个，使前后端共用同一鉴权；
+- 强制只监听回环地址，刻意禁止把该本地工具暴露到远程。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -24,6 +31,7 @@ FRONTEND_URL = os.getenv("FRONTEND_URL", "http://127.0.0.1:8000")
 
 
 def backend_ready() -> bool:
+    """探测后端 /health 是否已经可以访问。"""
     try:
         with urllib.request.urlopen(f"{BACKEND_URL}/health", timeout=1.5) as response:
             return response.status == 200
@@ -32,6 +40,7 @@ def backend_ready() -> bool:
 
 
 def start_backend() -> subprocess.Popen:
+    """以独立子进程启动后端（沿用当前 Python 解释器/环境）。"""
     return subprocess.Popen(
         [sys.executable, str(BACKEND_RUNNER)],
         cwd=str(PROJECT_DIR / "backend"),
@@ -39,6 +48,7 @@ def start_backend() -> subprocess.Popen:
 
 
 def wait_backend(timeout: int = 35) -> None:
+    """轮询等待后端就绪，超时则报错并提示排查依赖。"""
     deadline = time.time() + timeout
     while time.time() < deadline:
         if backend_ready():
@@ -50,6 +60,8 @@ def wait_backend(timeout: int = 35) -> None:
 
 
 def main() -> None:
+    """编排后端与前端两个本地服务的启动与收尾流程。"""
+    # 环境里未显式提供 LOCAL_API_TOKEN 时临时生成一个，前后端须共用同一 token 才能互相鉴权
     token_was_supplied = bool(os.environ.get("LOCAL_API_TOKEN"))
     os.environ.setdefault("LOCAL_API_TOKEN", secrets.token_urlsafe(32))
     parser = argparse.ArgumentParser(description="Start the Shaft Machining Planner frontend.")
@@ -64,6 +76,7 @@ def main() -> None:
     backend_process = None
     try:
         backend_is_ready = backend_ready()
+        # 已有后端在跑但未提供 token：无法与其共用鉴权，终止并改由本启动器统一拉起
         if backend_is_ready and not token_was_supplied:
             raise RuntimeError(
                 "A backend is already running, but LOCAL_API_TOKEN was not supplied. "
@@ -86,6 +99,7 @@ def main() -> None:
         if not args.no_browser:
             threading.Timer(1.2, lambda: webbrowser.open(FRONTEND_URL)).start()
 
+        # 强制只监听回环地址：该工具包含本机后端关机等操作，刻意禁止远程托管
         host = os.getenv("FRONTEND_HOST", "127.0.0.1")
         try:
             is_loopback = host.lower() == "localhost" or ipaddress.ip_address(host).is_loopback

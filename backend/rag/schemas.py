@@ -29,11 +29,15 @@ def make_chunk_id(kind: str, source_file: str, content: str) -> str:
 
 
 class ChunkType(str, enum.Enum):
+    """分块类型：规范（spec）与案例（case）。"""
+
     SPEC = "spec"
     CASE = "case"
 
 
 class Channel(str, enum.Enum):
+    """检索通道：specs（规范库）或 cases（案例库）。"""
+
     SPECS = "specs"
     CASES = "cases"
 

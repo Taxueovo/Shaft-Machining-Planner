@@ -35,7 +35,7 @@ def test_preview_route_returns_local_resource_matching():
     )
 
 
-def test_preview_auto_adds_material_recommended_heat_for_precision_bearing_seat():
+def test_preview_preserves_no_heat_for_precision_bearing_seat():
     result = preview_route(
         {
             "material": "45",
@@ -56,17 +56,9 @@ def test_preview_auto_adds_material_recommended_heat_for_precision_bearing_seat(
     )
 
     names = [operation["name"] for operation in result["route"]]
-    assert "Heat Treatment" in names
-    assert result["heat_treatment_decision"]["process_name"] == "Quench and Temper"
-    assert "Rough turn bearing seat" in names
-    assert "Precision grind bearing seat" in names
-    heat_resource = next(
-        item
-        for item in result["resource_selection"]["operation_resources"]
-        if item["process_category"] == "Heat Treatment"
-    )
-    assert heat_resource["verification_status"] == "not_applicable"
-    assert "intentionally out of scope" in heat_resource["note"]
+    assert "Heat Treatment" not in names
+    assert result["heat_treatment_decision"]["process_name"] is None
+    assert any(op.get("feature_id") == "F01" for op in result["route"])
 
 
 def test_grinding_routes_query_local_grinding_machine_records():

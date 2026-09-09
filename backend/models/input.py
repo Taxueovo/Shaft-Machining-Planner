@@ -4,10 +4,16 @@ from __future__ import annotations
 
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-class ShaftSegment(BaseModel):
+class FiniteModel(BaseModel):
+    model_config = ConfigDict(allow_inf_nan=False)
+
+
+class ShaftSegment(FiniteModel):
+    """轴段输入：描述一段同轴外圆几何，含直径公差与表面粗糙度。"""
+
     segment_id: str = Field(min_length=1, max_length=30)
     diameter_mm: float = Field(gt=0)
     length_mm: float = Field(gt=0)
@@ -18,8 +24,20 @@ class ShaftSegment(BaseModel):
     surface_area_mm2: Optional[float] = Field(default=None, gt=0)
     segment_type: Optional[str] = None
 
+    @model_validator(mode="after")
+    def validate_tolerance(self):
+        if (
+            self.diameter_upper_deviation_mm is not None
+            and self.diameter_lower_deviation_mm is not None
+            and self.diameter_upper_deviation_mm < self.diameter_lower_deviation_mm
+        ):
+            raise ValueError("Diameter upper deviation must be >= lower deviation.")
+        return self
 
-class FeatureInput(BaseModel):
+
+class FeatureInput(FiniteModel):
+    """加工特征通用输入模型：feature_type 决定启用哪一组专用字段，未用字段保持 None。"""
+
     feature_id: str = Field(min_length=1, max_length=30)
     feature_type: Literal[
         "keyway",
@@ -130,12 +148,20 @@ class FeatureInput(BaseModel):
 
     @model_validator(mode="after")
     def validate_feature(self) -> "FeatureInput":
+        """模型级校验：按定位方式与 feature_type 检查必填参数是否齐备。"""
+        # 相对定位需指定所在轴段与偏移；绝对定位则必须给出全局坐标
         if self.positioning_mode == "segment_relative":
             if self.segment_index is None or self.segment_offset_mm is None:
                 raise ValueError("Segment relative positioning requires segment index and offset.")
         elif self.global_position_mm is None:
             raise ValueError("Global absolute positioning requires global position.")
 
+        if (
+            self.tolerance_upper_mm is not None
+            and self.tolerance_lower_mm is not None
+            and self.tolerance_upper_mm < self.tolerance_lower_mm
+        ):
+            raise ValueError("Feature upper deviation must be >= lower deviation.")
         required: dict[str, Any]
         if self.feature_type == "keyway":
             required = {
@@ -217,13 +243,16 @@ class FeatureInput(BaseModel):
                 "feature_length_mm": self.feature_length_mm,
             }
 
+        # None 与空字符串均视为未提供；分组集中校验便于一次性汇总所有缺失参数
         missing = [name for name, value in required.items() if value in (None, "")]
         if missing:
             raise ValueError("Feature missing required parameters: " + ", ".join(missing))
         return self
 
 
-class GlobalRequirements(BaseModel):
+class GlobalRequirements(FiniteModel):
+    """整轴级全局要求：热处理、毛坯状态、预备热处理、表面处理与批量等。"""
+
     heat_treatment: Literal[
         "none",
         "normalizing",
@@ -251,6 +280,8 @@ class GlobalRequirements(BaseModel):
 
 
 class FeatureChoice(BaseModel):
+    """用户对某一特征加工时机的单项选择（热处理前或热处理前后各做一次）。"""
+
     feature_id: str
     processing_timing: Literal[
         "before_heat_treatment",
@@ -259,4 +290,6 @@ class FeatureChoice(BaseModel):
 
 
 class ChoicesRequest(BaseModel):
+    """批量提交多个特征的加工时机选择（至少一项）。"""
+
     choices: list[FeatureChoice] = Field(min_length=1)

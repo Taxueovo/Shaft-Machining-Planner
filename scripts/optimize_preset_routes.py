@@ -35,6 +35,7 @@ _inspect = "Check dimensions, tolerances, roughness and feature positions."
 
 
 def _st(no, name, stage, desc, machine=None):
+    """生成一个工艺步骤字典；machine 为空时省略该键，避免写入空设备字段。"""
     s = {"step_no": no, "name": name, "stage": stage, "description": desc}
     if machine:
         s["machine"] = machine
@@ -687,16 +688,19 @@ ROUTES["RS-001"] = _qt_base("φ80 bar", stress_relief=True) + [
 
 
 def renumber(steps):
+    """把步骤按 1 起顺序重排 step_no，修正因条件分支插入造成的编号断档。"""
     for i, s in enumerate(steps, 1):
         s["step_no"] = i
     return steps
 
 
 def main():
+    """用 ROUTES 中的工艺模板覆盖 data/cases.json 各预设用例的 process_plan，并在写回前做防呆校验。"""
     with open(CASES_FILE, encoding="utf-8") as f:
         cases = json.load(f)
     items = cases if isinstance(cases, list) else cases["cases"]
 
+    # 防呆校验：模板中存在而 cases.json 中缺失的用例 id 会在写入时被静默丢弃，故发现即终止
     missing = [cid for cid in ROUTES if cid not in {c["case_id"] for c in items}]
     if missing:
         raise SystemExit(f"ROUTES has ids not in cases.json: {missing}")

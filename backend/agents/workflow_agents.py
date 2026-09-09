@@ -29,6 +29,7 @@ class TaskPlanningAgent(BaseAgent):
         )
 
     def execute(self, state: dict[str, Any]) -> AgentResult:
+        """调用任务规划节点，分析请求并生成执行计划写入状态。"""
         return AgentResult(success=True, state_updates=self._workflow.task_planning(state))
 
 
@@ -49,6 +50,7 @@ class FeatureAnalysisAgent(BaseAgent):
         )
 
     def execute(self, state: dict[str, Any]) -> AgentResult:
+        """调用特征分析节点，计算各轴段与特征坐标生成几何模型。"""
         return AgentResult(success=True, state_updates=self._workflow.feature_analysis(state))
 
 
@@ -69,6 +71,7 @@ class HeatTreatmentPlanningAgent(BaseAgent):
         )
 
     def execute(self, state: dict[str, Any]) -> AgentResult:
+        """调用热处理规划节点，判定热处理工艺家族与路线约束。"""
         return AgentResult(
             success=True, state_updates=self._workflow.heat_treatment_planning(state)
         )
@@ -91,6 +94,7 @@ class PrecisionChoiceAgent(BaseAgent):
         )
 
     def execute(self, state: dict[str, Any]) -> AgentResult:
+        """调用精度选择节点，识别高精度特征并产出待人工确认项。"""
         return AgentResult(success=True, state_updates=self._workflow.precision_choice(state))
 
 
@@ -111,6 +115,7 @@ class ProcessPlanningAgent(BaseAgent):
         )
 
     def execute(self, state: dict[str, Any]) -> AgentResult:
+        """调用工艺规划节点，基于几何与用户选择生成工艺路线。"""
         return AgentResult(success=True, state_updates=self._workflow.process_planning(state))
 
 
@@ -131,6 +136,7 @@ class ResourceSelectionAgent(BaseAgent):
         )
 
     def execute(self, state: dict[str, Any]) -> AgentResult:
+        """调用资源选择节点，为各工序匹配机床/刀具等制造资源。"""
         return AgentResult(success=True, state_updates=self._workflow.resource_selection(state))
 
 
@@ -158,6 +164,7 @@ class VerificationAgent(BaseAgent):
         )
 
     def execute(self, state: dict[str, Any]) -> AgentResult:
+        """调用验证节点，检查工艺计划各环节的完整性与一致性。"""
         return AgentResult(success=True, state_updates=self._workflow.verification(state))
 
 
@@ -178,9 +185,11 @@ class RepairAgent(BaseAgent):
         )
 
     def execute(self, state: dict[str, Any]) -> AgentResult:
+        """调用修复节点，依据验证反馈修订工艺路线并计数。"""
         return AgentResult(success=True, state_updates=self._workflow.repair(state))
 
 
+# 全部流程代理类清单：上层据此批量实例化（注入 Workflow）并注册到 AgentRegistry
 ALL_AGENTS = [
     TaskPlanningAgent,
     FeatureAnalysisAgent,

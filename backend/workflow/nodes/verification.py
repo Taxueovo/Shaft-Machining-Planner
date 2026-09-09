@@ -13,7 +13,7 @@ from models.process import (
     ProcessOperation,
     ValidationIssue,
     STAGE_DEPENDENCY_RULES,
-    MANDATORY_OPERATION_NAMES,
+    required_operation_names,
 )
 from models.workflow import WorkflowState, traced, MAX_REPLAN_RETRIES
 from rules import (
@@ -34,6 +34,7 @@ class VerificationNodesMixin:
     """Mixin for verification and repair nodes."""
 
     def _route_after_verification(self, state: WorkflowState) -> str:
+        """verification 之后的流转决策：通过/有条件通过即结束，否则进入 repair（除非已满足终止条件）。"""
         verification = state.get("verification", {})
         conclusion = verification.get("conclusion", "pass")
         if conclusion in ("pass", "conditional_pass"):
@@ -50,6 +51,7 @@ class VerificationNodesMixin:
 
     @traced("verification", ["process_route", "geometry", "capability"])
     def verification(self, state: WorkflowState) -> dict[str, Any]:
+        """执行多维度校验并给出结论(pass/conditional_pass/failed)，必要时触发自动修复循环。"""
         retry_count = state.get("retry_count", 0)
         replan_label = f"(attempt {retry_count + 1})" if retry_count else ""
         self.progress(state, 94, "verification", f"Verifying plan completeness{replan_label}.")
@@ -62,7 +64,7 @@ class VerificationNodesMixin:
         # Check 1: Mandatory operations
         route_names = {item["name"] for item in route}
         route_stages = {item["stage"] for item in route}
-        mandatory_missing = MANDATORY_OPERATION_NAMES - route_names
+        mandatory_missing = required_operation_names(state["request"]) - route_names
         basic_check = {
             "name": "Mandatory Operations",
             "passed": not mandatory_missing,
@@ -182,7 +184,9 @@ class VerificationNodesMixin:
             )
 
         # Check 6: Route structure
-        route_errors = Guardrails.validate_route(route)
+        from rules.geometry import dimension_route_errors
+
+        route_errors = Guardrails.validate_route(route) + dimension_route_errors(route)
         route_check = {
             "name": "Route Structure",
             "passed": not route_errors,
@@ -201,11 +205,36 @@ class VerificationNodesMixin:
             topo_result,
             route_check,
         ]
+        council = state.get("agent_collaboration", {})
+        repair_requests = council.get("repair_requests", [])
+        if council:
+            checks.append(
+                {
+                    "name": "Independent Specialist Review",
+                    "passed": not repair_requests,
+                    "message": "Specialists request route repair."
+                    if repair_requests
+                    else "Specialist findings recorded; engineering release remains pending.",
+                }
+            )
+        for finding in repair_requests:
+            validation_issues.append(
+                ValidationIssue(
+                    error_code=finding["code"],
+                    object_id=finding["agent"],
+                    message=finding["message"]
+                    + " Recommended correction: "
+                    + finding["recommendation"],
+                ).model_dump()
+            )
         hard_fail = any(not c["passed"] for c in checks)
-        partial = state["resource_selection"]["partial_verification_count"] > 0 or bool(
-            state["capability"]["notes"]
+        partial = (
+            bool(council.get("findings") or council.get("degraded"))
+            or state["resource_selection"]["partial_verification_count"] > 0
+            or bool(state["capability"]["notes"])
         )
 
+        # 用路线内容哈希识别“与上一轮完全相同”的无效修复，避免陷入无进展的修复循环。
         route_hash = hashlib.md5(
             json.dumps(route, sort_keys=True, default=str).encode()
         ).hexdigest()[:16]
@@ -243,7 +272,7 @@ class VerificationNodesMixin:
         elif partial:
             conclusion, message, final_status = (
                 "conditional_pass",
-                "Conditional pass; resources not covered need engineer confirmation.",
+                "Planning checks complete; unresolved specialist findings and resource requirements need engineering review.",
                 "completed",
             )
             self.store.update(
@@ -280,7 +309,7 @@ class VerificationNodesMixin:
                 "Verification passed cleanly; skipping LLM AI review "
                 "(SKIP_AI_REVIEW_ON_CLEAN_PASS=true)."
             )
-        elif llm_available():
+        elif llm_available() and not council:
             try:
                 self.store.update(
                     state["job_id"],
@@ -298,6 +327,7 @@ class VerificationNodesMixin:
 
         return {
             "verification": {
+                "release_status": "engineering_review_required",
                 "conclusion": conclusion,
                 "message": message,
                 "checks": checks,
@@ -315,6 +345,7 @@ class VerificationNodesMixin:
 
     @staticmethod
     def _topological_verify(route: list[dict[str, Any]]) -> dict[str, Any]:
+        """校验工序阶段合法性、阶段间全局先后关系以及工序级环/倒序冲突。"""
         for op in route:
             try:
                 ProcessStage(op.get("stage", "inspection"))
@@ -325,6 +356,7 @@ class VerificationNodesMixin:
                 }
 
         all_known_stages = {s.value for s in ProcessStage}
+        # 由阶段依赖规则建图（post 依赖 pre），先对阶段做拓扑排序以求得全局先后序。
         stage_graph: dict[str, set[str]] = {s: set() for s in all_known_stages}
         for pre, post in STAGE_DEPENDENCY_RULES:
             stage_graph[post].add(pre)
@@ -351,6 +383,7 @@ class VerificationNodesMixin:
             if s not in stage_global_order:
                 stage_global_order[s] = 999
 
+        # 工序级有向边 = 同阶段前一工序 + 所有“阶段更靠前”的工序；据此再做一次环检测。
         edges: dict[int, set[int]] = {op["operation_no"]: set() for op in route}
         stage_ops: dict[str, list[int]] = {}
         for op in route:
@@ -422,6 +455,7 @@ class VerificationNodesMixin:
         conclusion: str,
         missing: list[str],
     ) -> dict[str, Any]:
+        """调用 LLM 对校验结果做补充评审，输出风险项与改进建议等工程意见。"""
         route = state["process_route"]
         route_desc = "\n".join(
             f"  {op['operation_no']}. {op['name']} ({op.get('stage', '-')})"
@@ -464,6 +498,7 @@ class VerificationNodesMixin:
 
     @traced("repair", ["process_route", "verification", "geometry"])
     def repair(self, state: WorkflowState) -> dict[str, Any]:
+        """按校验问题先用规则修复路线，再让 LLM 复核修正；两种修复均失败时保留当前路线。"""
         repair_count = state.get("repair_count", 0)
         self.progress(state, 90, "repair", f"Repairing process route ({repair_count + 1} attempt).")
 
@@ -522,6 +557,7 @@ class VerificationNodesMixin:
         choices: dict[str, str],
         verification: dict[str, Any],
     ) -> list[dict[str, Any]]:
+        """依据校验问题在既定阶段锚点后补插缺失工序（热处理/中心孔修复/表面处理/精磨等）。"""
         issues = verification.get("validation_issues", [])
 
         # Feature placement is determined by the central rule engine.  Rebuild
@@ -665,19 +701,10 @@ class VerificationNodesMixin:
         retry_count: int,
         rag_context: str = "",
     ) -> Optional[list[dict[str, Any]]]:
-        route_desc = "\n".join(
-            f"  {op['operation_no']}. {op['name']} ({op['stage']})"
-            + (" [Conditional]" if op.get("conditional") else "")
-            + (f" [Feature: {op['feature_id']}]" if op.get("feature_id") else "")
-            for op in route
-        )
-        feature_desc = (
-            "\n".join(
-                f"  - {f['feature_id']}: {FEATURE_NAME.get(f['feature_type'], f['feature_type'])}, pos {f['global_position_mm']}mm"
-                + (" [high-precision]" if f.get("high_precision") else "")
-                for f in geometry.get("features", [])
-            )
-            or "  None"
+        """调用 LLM 依据校验反馈整体重生成一条修复后的工艺路线（整条替换而非打补丁）。"""
+        route_desc = json.dumps(route, ensure_ascii=False)
+        feature_desc = json.dumps(
+            {"features": geometry.get("features", []), "request": request}, ensure_ascii=False
         )
         issues_desc = (
             "\n".join(

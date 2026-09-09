@@ -343,9 +343,8 @@ class TestStageAndCoverageConsistency:
         # The deburr stage must be present
         assert ProcessStage.deburr.value in {op["stage"] for op in route}
 
-    def test_main_bore_feature_covered_by_blank_boring(self):
-        """The hollow blank's main bore is covered by blank-stage rough/finish boring: Rough/Finish Boring
-        must carry the bore's feature_id, otherwise Feature Coverage would falsely report the main bore as uncovered."""
+    def test_finished_bore_is_planned_without_stock_derived_boring(self):
+        """Finished-bore coverage must not invent rough bore sizes from stock ID."""
         bore = {
             "feature_id": "F3",
             "feature_type": "bore",
@@ -364,16 +363,11 @@ class TestStageAndCoverageConsistency:
         geom = _make_geometry(req)
         geom["features"] = [bore]
         route = build_route(req, geom, {})
-        boring_ops = [op for op in route if op["name"] in ("Rough Boring", "Finish Boring")]
-        assert len(boring_ops) == 2, (
-            f"Expected Rough+Finish Boring, got {[op['name'] for op in boring_ops]}"
-        )
-        for op in boring_ops:
-            assert op.get("feature_id") == "F3", (
-                f"{op['name']} should carry main bore feature_id F3, got {op.get('feature_id')}"
-            )
-        # Do not duplicate feature-level boring operations
-        assert "Bore" not in [op["name"] for op in route]
+        boring_ops = [op for op in route if op.get("feature_id") == "F3"]
+        assert boring_ops
+        assert not any("26.0 mm" in op["description"] for op in boring_ops)
+        assert all(op["name"] not in ("Rough Boring", "Finish Boring") for op in route)
+        assert boring_ops[0]["dimensions"][0]["after_mm"] == 25
 
 
 class TestCarburizedGearShaftRoute:
@@ -817,7 +811,7 @@ class TestSurfaceHardenedShaftRoute:
         names = [op["name"] for op in route]
         assert "Lapping & Polishing" not in names
 
-    def test_hollow_nitrided_shaft_has_deep_hole_chain(self):
+    def test_hollow_nitrided_shaft_does_not_drill_existing_stock_bore(self):
         bore = {
             "feature_id": "F5",
             "feature_type": "bore",
@@ -843,9 +837,8 @@ class TestSurfaceHardenedShaftRoute:
         geom["features"] = [bore]
         route = build_route(req, geom, {})
         names = [op["name"] for op in route]
-        assert "Deep Hole Drilling" in names  # L/D = 100/10 = 10 > 5
-        assert "Rough Boring" in names
-        assert "Finish Boring" in names
+        assert "Deep Hole Drilling" not in names  # The bore already exists in the stock.
+        assert any(op.get("feature_id") == "F5" for op in route)
 
 
 class TestKnowledgeBaseAlignment:

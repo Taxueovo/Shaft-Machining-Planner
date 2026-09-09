@@ -19,6 +19,7 @@ class SelectionNodesMixin:
 
     @traced("resource_selection", ["process_route", "request", "geometry"])
     def resource_selection(self, state: WorkflowState) -> dict[str, Any]:
+        """查询机床/刀具库并逐工序做规则匹配，汇总整体能力与部分覆盖情况，随后可选 LLM 排序。"""
         self.progress(
             state, 75, "resource_selection", "Querying resources and matching per operation."
         )
@@ -38,6 +39,7 @@ class SelectionNodesMixin:
         }
         machine_processes = processes - {"Heat Treatment"}
         tool_processes = machine_processes
+        # 若含齿轮/花键/蜗杆特征，取其最大模数作为滚齿/磨齿类机床能力筛选的输入。
         required_module = max(
             [
                 float(feature[key])
@@ -99,6 +101,8 @@ class SelectionNodesMixin:
 
         # -- Match resources per operation --
         machine_candidates = machine.get("active_matches", [])
+        # 逐工序判定资源状态：无需校验的工序与热处理视为 not_applicable，命中库内工序
+        # 取“机床+刀具”结论，库内未覆盖的工序标记 not_covered，未达标计入 partial。
         operation_resources, partial, tool_calls = [], 0, []
 
         t0 = datetime.now(timezone.utc)
@@ -169,7 +173,7 @@ class SelectionNodesMixin:
         )
 
         llm_analysis = None
-        if llm_available() and operation_resources:
+        if llm_available() and operation_resources and not state.get("skip_advisory_llm"):
             try:
                 self.store.update(
                     state["job_id"],
@@ -201,6 +205,7 @@ class SelectionNodesMixin:
         machine_candidates: list[dict[str, Any]],
         tool_calls: list[dict[str, Any]],
     ) -> dict[str, Any]:
+        """调用 LLM 对候选机床与逐工序匹配结果做综合评估，产出供工程师参考的排序建议。"""
         machine_desc = (
             "\n".join(
                 f"  - {m['designation']} ({m['manufacturer']}), length {m['turning_length_mm']}mm, rod {m.get('max_turning_diameter_rod_mm', '-')}mm"

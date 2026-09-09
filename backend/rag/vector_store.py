@@ -50,6 +50,7 @@ if HAS_CHROMADB:
         """
 
         def __call__(self, input_texts: list[str]) -> list[list[float]]:
+            """把一批文本交给统一的 embedding 入口编码为向量。"""
             from .embedding import embed
 
             return embed(input_texts)
@@ -115,6 +116,7 @@ class VectorStoreManager:
     """
 
     def __init__(self, persist_dir: Optional[str] = None):
+        """初始化 ChromaDB 持久化客户端；embedding 服务可用时用专用模型，否则回退内置默认。"""
         if not HAS_CHROMADB:
             raise RuntimeError("chromadb is not installed. Run: pip install chromadb>=0.5")
 
