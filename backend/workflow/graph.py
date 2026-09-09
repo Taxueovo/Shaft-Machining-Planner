@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Any, Optional
 
-from langgraph.checkpoint.memory import InMemorySaver
+import sqlite3
+from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
 from models.workflow import WorkflowState
@@ -13,7 +14,9 @@ from repositories import MachineRepository, ToolRepository
 from providers import HeatTreatmentProvider
 from agents import AgentRegistry, Guardrails, Orchestrator, PromptManager
 from agents import ALL_AGENTS
+from agents.specialists import SpecialistAgent, SCOPES, ReviewCoordinatorAgent
 
+from .task_scheduler import TaskSchedulerMixin
 from .tool_registry import ToolRegistry
 from .job_store import JobStore
 from .nodes import (
@@ -27,14 +30,16 @@ logger = logging.getLogger(__name__)
 
 
 class Workflow(
+    TaskSchedulerMixin,
     PlanningNodesMixin,
     ProcessNodesMixin,
     SelectionNodesMixin,
     VerificationNodesMixin,
 ):
-    """LangGraph workflow: 10-node process planning pipeline."""
+    """Route proposal, parallel specialist review, coordination and bounded repair."""
 
     def __init__(self, store: JobStore) -> None:
+        """初始化各领域依赖（仓储/规则引擎/LLM 代理）并编译整条 LangGraph 流程。"""
         self.store = store
         self.machine_repo = MachineRepository()
         self.tool_repo = ToolRepository()
@@ -49,6 +54,10 @@ class Workflow(
         for agent_cls in ALL_AGENTS:
             self.agent_registry.register(agent_cls(self))
 
+        for name in SCOPES:
+            self.agent_registry.register(SpecialistAgent(self, name))
+
+        self.agent_registry.register(ReviewCoordinatorAgent())
         self._register_prompt_templates()
 
         self.guardrails.add_rule(lambda s: "request" not in s and "Missing input request" or None)
@@ -65,6 +74,7 @@ class Workflow(
 
         self.guardrails.add_rule(_validate_geometry_rule)
 
+        # 闭包工厂：为每个 agent 名生成语义一致的图节点（先过守卫、再执行、失败即抛错）。
         def _make_agent_node(agent_name: str):
             def node(state: WorkflowState) -> dict[str, Any]:
                 # Guardrail layer: fail fast on state-integrity violations instead of
@@ -72,9 +82,19 @@ class Workflow(
                 errors = self.guardrails.check_all(dict(state))
                 if errors:
                     raise RuntimeError(f"Guardrail violation: {'; '.join(errors)}")
+                from models.workflow import ExecutionTrace
+
+                entry = ExecutionTrace.start(
+                    agent_name,
+                    self.agent_registry.get(agent_name).capabilities().required_state_keys,
+                )
                 result = self.orchestrator.execute_with_recovery(agent_name, state)
                 if not result.success:
                     raise RuntimeError(result.error or f"{agent_name} execution failed")
+                if "execution_trace" not in result.state_updates:
+                    ExecutionTrace.finish(entry, list(result.state_updates), result.tool_calls)
+                    entry["duration_ms"] = result.metadata.get("duration_ms", 0)
+                    result.state_updates["execution_trace"] = [entry]
                 return result.state_updates
 
             node.__name__ = agent_name
@@ -85,32 +105,45 @@ class Workflow(
         builder.add_node("feature_analysis", _make_agent_node("feature_analysis"))
         builder.add_node("heat_treatment_planning", _make_agent_node("heat_treatment_planning"))
         builder.add_node("precision_choice", _make_agent_node("precision_choice"))
-        builder.add_node("process_planning", _make_agent_node("process_planning"))
-        builder.add_node("resource_selection", _make_agent_node("resource_selection"))
         builder.add_node("verification", _make_agent_node("verification"))
         builder.add_node("repair", _make_agent_node("repair"))
-
-        # Linear backbone + precision choice branch
+        for name in (
+            "plan_tasks",
+            "execute_task",
+            "collect_tasks",
+            "engineering_input",
+            "finish_tasks",
+        ):
+            builder.add_node(name, getattr(self, name))
         builder.add_edge(START, "task_planning")
         builder.add_edge("task_planning", "feature_analysis")
-        # Precision choice (user_choices are required before route planning)
         builder.add_edge("feature_analysis", "heat_treatment_planning")
         builder.add_edge("heat_treatment_planning", "precision_choice")
-        builder.add_edge("precision_choice", "process_planning")
-        # Resource matching: includes machine query, tool query, process matching
-        builder.add_edge("process_planning", "resource_selection")
-        # Verification -> repair -> replan -> verify again: after repair, return to
-        # process_planning with the failure reasons for replanning
-        builder.add_edge("resource_selection", "verification")
+        builder.add_edge("precision_choice", "plan_tasks")
+        builder.add_conditional_edges(
+            "plan_tasks", self.dispatch_tasks, ["execute_task", "engineering_input", "finish_tasks"]
+        )
+        builder.add_edge("execute_task", "collect_tasks")
+        builder.add_edge("collect_tasks", "plan_tasks")
+        builder.add_edge("engineering_input", "plan_tasks")
+        builder.add_conditional_edges(
+            "finish_tasks", lambda s: s["task_action"], {"failed": END, "verify": "verification"}
+        )
         builder.add_conditional_edges(
             "verification",
             self._route_after_verification,
             {"pass": END, "repair": "repair", "failed": END},
         )
-        builder.add_edge("repair", "process_planning")
-        self.graph = builder.compile(checkpointer=InMemorySaver())
+        builder.add_edge("repair", "plan_tasks")
+        # Checkpoints share the local job database, including its file permissions.
+        self.checkpoint_connection = sqlite3.connect(store.db_path, check_same_thread=False)
+        saver = SqliteSaver(self.checkpoint_connection)
+        saver.setup()
+        store._secure_files()
+        self.graph = builder.compile(checkpointer=saver).with_config({"recursion_limit": 128})
 
     def _register_prompt_templates(self) -> None:
+        """注册各节点使用的提示词模板（工艺修正/资源排序/校验评审/修复）。"""
         self.prompt_manager.register(
             name="process_planning",
             system=(
@@ -119,7 +152,7 @@ class Workflow(
                 "Requirements:\n"
                 '1. Output JSON: {"patches": [...]}\n'
                 "2. Each patch: action (insert/update/remove), target_operation_no, operation details\n"
-                "3. Mandatory operations cannot be deleted: Blanking, Face Turning, Center Drilling, Rough Turning, Semi-finish Turning, Finish Turning, Final Inspection\n"
+                "3. Preserve mandatory operations already present: Blanking, Face Turning, Center Drilling (solid shafts) or Prepare Workholding (hollow shafts), Rough Turning, Semi-finish Turning, Finish Turning, Final Inspection\n"
                 "4. stage values: blank/datum/rough/semi_finish/feature_before_heat/"
                 "pre_heat_treatment/heat_treatment/datum_recovery/finish/"
                 "feature_after_heat/precision_finish/precision_feature/"

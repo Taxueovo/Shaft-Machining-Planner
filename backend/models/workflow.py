@@ -10,8 +10,9 @@ from typing import Annotated, Any, Literal, Optional, TypedDict
 
 from pydantic import BaseModel, Field, model_validator
 
+from models.tasks import merge_task_results
 from models.input import ShaftSegment, FeatureInput, GlobalRequirements
-from rules import get_material_properties, is_feature_high_precision
+from rules.geometry import validate_manufacturing_geometry
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,7 @@ class PlanningRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_request(self) -> "PlanningRequest":
+        """模型级校验：段/特征 ID 唯一、毛坯与成品几何自洽，保留图纸热处理要求。"""
         segment_ids = [item.segment_id for item in self.segments]
         if len(segment_ids) != len(set(segment_ids)):
             raise ValueError("Segment IDs must be unique.")
@@ -53,15 +55,7 @@ class PlanningRequest(BaseModel):
             if self.blank_inner_diameter_mm >= self.blank_diameter_mm:
                 raise ValueError("Inner diameter must be less than outer diameter.")
 
-        material_props = get_material_properties(self.material)
-        has_high_precision = any(is_feature_high_precision(f) for f in self.features)
-        if has_high_precision and self.global_requirements.heat_treatment == "none":
-            recommended_heat = material_props.get("recommended_heat_treatment", "quench_temper")
-            self.global_requirements.heat_treatment = recommended_heat
-            logger.info(
-                "High-precision feature detected, auto-setting heat treatment to %s.",
-                recommended_heat,
-            )
+        validate_manufacturing_geometry(self.model_dump())
         return self
 
 
@@ -76,6 +70,8 @@ def _merge_traces(
     existing: list[dict[str, Any]],
     new: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    """合并执行轨迹：作为 LangGraph reducer，将各节点写入的 trace 追加进 workflow state。"""
+    # 以 (节点名, 开始时间) 为唯一键去重，防止重试/重放时同一次执行被重复记录
     seen = {(e.get("node"), e.get("start_time")) for e in existing}
     merged = list(existing)
     for entry in new:
@@ -89,6 +85,18 @@ def _merge_traces(
 class WorkflowState(TypedDict, total=False):
     """LangGraph workflow state definition."""
 
+    task_plan: dict[str, Any]
+    worker_results: Annotated[dict[str, Any], merge_task_results]
+    planner_calls: int
+    scheduler_waves: int
+    task_action: str
+    ready_tasks: list[str]
+    pending_engineering: list[dict[str, Any]]
+    engineering_answers: dict[str, str]
+    deferred_tasks: list[str]
+    planner_events: list[dict[str, Any]]
+    tasks_repair_count: int
+    task_execution: dict[str, Any]
     job_id: str
     request: dict[str, Any]
     plan: dict[str, Any]
@@ -102,7 +110,13 @@ class WorkflowState(TypedDict, total=False):
     verification: dict[str, Any]
     retry_count: int
     repair_count: int
+    # LangGraph reducer：route_hashes 用加合并累积历史路由哈希，execution_trace 用 _merge_traces 去重合并各节点轨迹
     route_hashes: Annotated[list[str], operator.add]
+    machining_review: dict[str, Any]
+    quality_review: dict[str, Any]
+    heat_review: dict[str, Any]
+    agent_collaboration: dict[str, Any]
+    release_status: str
     status: str
     execution_trace: Annotated[list[dict[str, Any]], _merge_traces]
 
@@ -112,6 +126,7 @@ class ExecutionTrace:
 
     @staticmethod
     def start(node_name: str, state_keys: list[str]) -> dict[str, Any]:
+        """创建一条 running 状态的执行记录，并快照该节点将要读取的输入键清单。"""
         return {
             "node": node_name,
             "input_keys": state_keys,
@@ -131,6 +146,7 @@ class ExecutionTrace:
         tool_calls: list[dict[str, Any]] | None = None,
         error: str | None = None,
     ) -> dict[str, Any]:
+        """结束一条执行记录：补齐耗时、输出键与工具调用，并按是否出错标注状态。"""
         end = datetime.now(timezone.utc)
         start = datetime.fromisoformat(entry["start_time"])
         entry["end_time"] = end.isoformat()
@@ -150,6 +166,7 @@ class ExecutionTrace:
         result_summary: str,
         duration_ms: float,
     ) -> None:
+        """向执行记录的工具调用列表追加一次 LLM 工具调用（含参数摘要与耗时）。"""
         tool_calls.append(
             {
                 "tool": name,
@@ -170,6 +187,7 @@ def traced(node_name: str, input_keys: list[str] | None = None):
             entry = ExecutionTrace.start(node_name, keys)
             try:
                 result = func(self, state)
+                # 约定：节点可在返回 dict 中通过 _tool_calls 附带工具调用明细，先取出再写入 trace
                 extra_tool_calls = result.pop("_tool_calls", [])
                 ExecutionTrace.finish(entry, list(result.keys()), tool_calls=extra_tool_calls)
                 result["execution_trace"] = [entry]

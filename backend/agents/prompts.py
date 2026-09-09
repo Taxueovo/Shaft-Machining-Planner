@@ -12,9 +12,11 @@ class PromptManager:
         self._templates: dict[str, dict[str, str]] = {}
 
     def register(self, name: str, system: str = "", user: str = "", version: str = "1.0") -> None:
+        """按名称登记一条提示模板，system 与 user 文案可分别指定。"""
         self._templates[name] = {"system": system, "user": user, "version": version}
 
     def get(self, name: str, variables: dict[str, Any] | None = None) -> dict[str, str]:
+        """取模板并将 {占位符} 替换为变量值；模板未登记时抛出 KeyError。"""
         if name not in self._templates:
             raise KeyError(f"Unknown prompt template: {name}")
         template = self._templates[name]
@@ -23,16 +25,19 @@ class PromptManager:
         for key in ("system", "user"):
             text = template[key]
             for var_name, var_value in vars_.items():
+                # 模板占位符采用花括号 {变量名} 写法，逐项做纯文本替换
                 text = text.replace(f"{{{var_name}}}", str(var_value))
             result[key] = text
         return result
 
     def list_templates(self) -> list[dict[str, str]]:
+        """返回全部已登记模板的名称与版本清单。"""
         return [{"name": name, "version": tpl["version"]} for name, tpl in self._templates.items()]
 
     def render_messages(
         self, name: str, variables: dict[str, Any] | None = None
     ) -> list[dict[str, str]]:
+        """渲染模板并组装为对话消息列表；空 system/user 段落不产生对应消息。"""
         rendered = self.get(name, variables)
         messages = []
         if rendered["system"]:

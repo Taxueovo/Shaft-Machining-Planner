@@ -29,6 +29,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+from models.tasks import EngineeringAnswersRequest
 from models.workflow import PlanningRequest
 from models.input import ChoicesRequest
 from models.case import CaseSearchRequest
@@ -149,6 +150,8 @@ def get_job(job_id: str) -> dict[str, Any]:
         "current_step": job["current_step"],
         "message": job["message"],
         "pending_choices": job["pending_choices"],
+        "pending_engineering": job.get("pending_engineering", []),
+        "task_execution": job.get("task_execution"),
         "error": job["error"],
         "result_ready": job["result"] is not None,
     }
@@ -163,6 +166,17 @@ def submit_choices(job_id: str, request: ChoicesRequest) -> dict[str, Any]:
     except ValueError as error:
         raise HTTPException(status_code=409, detail=str(error)) from error
     return {"job_id": job_id, "status": "running", "message": "Choices submitted."}
+
+
+@app.post("/api/v1/jobs/{job_id}/engineering")
+def submit_engineering(job_id: str, request: EngineeringAnswersRequest) -> dict[str, Any]:
+    try:
+        service.resume_engineering(job_id, request)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Task not found.") from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {"job_id": job_id, "status": "running"}
 
 
 @app.get("/api/v1/jobs/{job_id}/result")
@@ -191,14 +205,19 @@ def export_process_card(job_id: str) -> dict[str, Any]:
 def download_process_card(job_id: str) -> FileResponse:
     """Download an already generated process card without exposing its filesystem path."""
     project_root = Path(__file__).resolve().parent.parent
-    file_path = project_root / "output" / f"process_card_{job_id}.xlsx"
+    try:
+        job = service.store.get(job_id)
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Task not found.") from error
+    revision = job.get("route_revision", 0)
+    file_path = project_root / "output" / f"process_card_{job_id}_r{revision}.xlsx"
     if not file_path.is_file():
         raise HTTPException(
             status_code=404, detail="Generate the process card before downloading it."
         )
     return FileResponse(
         path=file_path,
-        filename=f"process_card_{job_id}.xlsx",
+        filename=file_path.name,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     )
 
@@ -233,7 +252,7 @@ def preview_route(request_data: dict[str, Any]) -> dict[str, Any]:
 
     This endpoint stays lightweight: it does not create jobs, call the LLM, or enter human-in-the-loop choice or auto-repair.
     """
-    from rules import get_material_properties, is_feature_high_precision, is_high_precision
+    from rules import is_feature_high_precision, is_high_precision
     from rules.engine import build_route
     from models.process import ResourceStatus
     from providers import HeatTreatmentProvider
@@ -321,9 +340,6 @@ def preview_route(request_data: dict[str, Any]) -> dict[str, Any]:
     # Build the request and geometry dicts required by build_route
     global_req = request_data.get("global_requirements", {})
     heat_treatment = global_req.get("heat_treatment", "none")
-    # Consistent with the formal request model: when heat treatment is unspecified for high-precision features, use the material recommendation.
-    if heat_treatment == "none" and any(feature["high_precision"] for feature in features):
-        heat_treatment = get_material_properties(material).get("recommended_heat_treatment", "none")
     req = {
         "material": material,
         "blank_diameter_mm": blank_dia,
@@ -356,6 +372,12 @@ def preview_route(request_data: dict[str, Any]) -> dict[str, Any]:
         "features": features,
         "warnings": warnings,
     }
+    try:
+        from models.workflow import PlanningRequest
+
+        PlanningRequest.model_validate(req)
+    except ValueError as exc:
+        return {"route": [], "warnings": [f"Invalid manufacturing input: {exc}"]}
     heat_treatment_decision = HeatTreatmentProvider().recommend(req, geo)
     req["heat_treatment_plan"] = heat_treatment_decision
     warnings.extend(heat_treatment_decision["trace"]["warnings"])

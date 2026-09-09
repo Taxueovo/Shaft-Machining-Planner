@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+{# 任务执行页骨架：执行状态进度、HITL 人工决策、结果展示三块内容均由 job.js 异步填充。 #}
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,6 +16,7 @@
   </div>
 </header>
 <main class="shell">
+  {# 执行状态区：任务进度与当前步骤由 job.js 轮询更新；默认隐藏面板按任务阶段决定是否展示 #}
   <section class="panel">
     <div class="heading"><div><h2>Execution Status</h2></div><span id="status-badge" class="badge neutral">Loading</span></div>
     <div class="progress"><div id="progress-bar"></div></div>
@@ -22,14 +24,20 @@
     <p id="status-message" class="muted">Fetching task status...</p>
   </section>
 
+  {# HITL（人在回路）面板：高精度特征的加工时机需人工确认后再继续，默认隐藏按需展示 #}
   <section id="choice-panel" class="panel hidden">
     <div class="heading"><div><b class="warn">HITL</b><h2>High-Precision Feature Timing</h2></div></div>
     <form id="choice-form"><div id="choice-list" class="feature-stack"></div><button class="button primary" type="submit">Submit Choices & Continue</button></form>
   </section>
 
+  <section id="task-board" class="panel hidden"></section>
+  <section id="engineering-panel" class="panel hidden"></section>
+
   <section id="error-panel" class="panel hidden"><div id="error-message" class="alert danger"></div></section>
+  {# 结果区：规划完成后由 job.js 渲染工艺路线与结果，可能包含 3D 轴模型画布 #}
   <div id="result-container" class="stack hidden"></div>
 </main>
+{# 向 job.js 注入任务 ID 与静态版本；importmap 把 three 指向本地库，供 3D 预览以模块方式加载 #}
 <script nonce="{{ request.state.csp_nonce }}">window.SHAFTPLANNER_JOB_ID={{ job_id | tojson }};window.STATIC_VERSION="{{ static_version }}";</script>
 <script nonce="{{ request.state.csp_nonce }}" type="importmap">
 { "imports": { "three": "/static/three.module.min.js" } }

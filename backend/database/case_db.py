@@ -26,6 +26,7 @@ class CaseDB:
     """Case database - JSON file storage."""
 
     def __init__(self, file_path: Optional[Path] = None):
+        """初始化案例库；未指定 file_path 时使用项目默认的 data/cases.json。"""
         self._file_path = file_path or CASES_FILE
         self._cases: Optional[list[Case]] = None
         self._lock = threading.RLock()
@@ -55,6 +56,7 @@ class CaseDB:
         self._file_path.parent.mkdir(parents=True, exist_ok=True)
         data = {"cases": [case.model_dump(mode="json") for case in self._cases]}
 
+        # 先写同目录临时文件再原子替换，避免写入中途失败留下残缺的 JSON
         with tempfile.NamedTemporaryFile(
             "w",
             encoding="utf-8",
@@ -142,6 +144,7 @@ class CaseDB:
             return self._create_locked(case)
 
     def _create_locked(self, case: Case) -> Case:
+        """锁内执行新增：校验 ID 唯一、写入时间戳并持久化。"""
         cases = self._load()
 
         # Check if ID already exists
@@ -166,6 +169,7 @@ class CaseDB:
             return self._update_locked(case_id, updates)
 
     def _update_locked(self, case_id: str, updates: dict) -> Case:
+        """锁内执行更新：仅应用模型上真实存在的字段，并刷新 updated_at。"""
         cases = self._load()
         case = next((c for c in cases if c.case_id == case_id), None)
 
@@ -190,6 +194,7 @@ class CaseDB:
             self._delete_locked(case_id)
 
     def _delete_locked(self, case_id: str) -> None:
+        """锁内执行删除；case_id 不存在时抛 ValueError，避免静默失败。"""
         cases = self._load()
         original_count = len(cases)
         cases = [c for c in cases if c.case_id != case_id]

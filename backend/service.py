@@ -13,7 +13,7 @@ import time
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from copy import deepcopy
+from copy import copy, deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +21,7 @@ from langgraph.types import Command
 
 from models.workflow import PlanningRequest
 from models.input import ChoicesRequest
+from models.tasks import EngineeringAnswersRequest
 from workflow import JobStore, Workflow
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ HEARTBEAT_TIMEOUT = int(os.getenv("HEARTBEAT_TIMEOUT", "30"))
 # In-memory, in-process, cleared on restart; during demos re-submitting the same shaft
 # returns results immediately.
 # Disable/tune via .env: JOB_CACHE_ENABLED=false / JOB_CACHE_TTL_SECONDS / JOB_CACHE_MAX_ENTRIES.
-JOB_CACHE_ENABLED = os.getenv("JOB_CACHE_ENABLED", "true").strip().lower() in (
+JOB_CACHE_ENABLED = os.getenv("JOB_CACHE_ENABLED", "false").strip().lower() in (
     "1",
     "true",
     "yes",
@@ -122,6 +123,7 @@ class PlanningService:
         self.store = JobStore()
         self.workflow = Workflow(self.store)
         self.job_cache = JobCache()
+        self.job_cache.enabled = self.job_cache.enabled and JOB_CACHE_ENABLED
         # Bound the worker pool to a small fixed range regardless of host core count,
         # so concurrent LangGraph workflow execution stays predictable on shared machines.
         max_workers = min(max(2, os.cpu_count() or 4), 8)
@@ -200,19 +202,12 @@ class PlanningService:
         )
 
     def _has_checkpoint(self, job_id: str) -> bool:
-        """Whether the workflow checkpointer still holds a checkpoint for this thread.
-
-        The checkpointer is in-memory, so a server restart drops it even though the
-        SQLite job store survives. Without this guard, resume() would silently restart
-        the workflow from scratch, re-interrupt at precision_choice, and leave the job
-        stuck in "running".
-        """
+        """Require a durable checkpoint before resuming a paused task."""
         try:
             checkpointer = self.workflow.graph.checkpointer
             return checkpointer.get_tuple({"configurable": {"thread_id": job_id}}) is not None
         except Exception:
-            # If we cannot inspect the checkpointer, do not block a legitimate resume.
-            return True
+            return False
 
     def resume(self, job_id: str, choices: ChoicesRequest) -> None:
         current = self.store.get(job_id)
@@ -220,8 +215,7 @@ class PlanningService:
             raise ValueError("Task is not in waiting for user choice state.")
         if not self._has_checkpoint(job_id):
             message = (
-                "The server restarted while this job was waiting for your choice and its "
-                "in-memory state was lost. Please create a new job."
+                "No recoverable workflow checkpoint exists for this job. Please create a new job."
             )
             self.store.update(
                 job_id, status="failed", progress=100, current_step="failed", message=message
@@ -231,6 +225,25 @@ class PlanningService:
             job_id, status="running", message="Choices received, continuing.", pending_choices=[]
         )
         self.executor.submit(self._invoke, job_id, Command(resume=choices.model_dump(mode="json")))
+
+    def resume_engineering(self, job_id: str, answers: EngineeringAnswersRequest) -> None:
+        with self.store.lock:
+            current = self.store.get(job_id)
+            if current["status"] != "waiting_engineering_input":
+                raise ValueError("Task is not waiting for engineering information.")
+            pending = {q["task_id"] for q in current.get("pending_engineering", [])}
+            provided = {a.task_id for a in answers.answers}
+            if not provided <= pending or (not answers.defer and provided != pending):
+                raise ValueError("Answers must cover the pending tasks only.")
+            if not self._has_checkpoint(job_id):
+                raise ValueError("No recoverable workflow checkpoint exists for this job.")
+            self.store.update(
+                job_id,
+                status="running",
+                pending_engineering=[],
+                message="Engineering information received, continuing.",
+            )
+        self.executor.submit(self._invoke, job_id, Command(resume=answers.model_dump(mode="json")))
 
     def customize_route(self, job_id: str, operations: list[Any]) -> list[dict[str, Any]]:
         """Save the user-customized process route (adjustment stage before the process card is generated).
@@ -245,16 +258,96 @@ class PlanningService:
         if len(numbers) != len(set(numbers)):
             raise ValueError("operation_no must be unique.")
         payload = [op.model_dump(mode="json") for op in operations]
-        self.store.update(job_id, custom_route=payload)
+        from agents.specialists import SpecialistAgent, SCOPES, coordinate_reviews
+
+        candidate = deepcopy(job["result"])
+        candidate.pop("task_execution", None)
+        candidate.pop("worker_results", None)
+        candidate.update(
+            job_id=job_id,
+            request=job["request"],
+            process_route=payload,
+            route_hashes=[],
+            repair_count=3,
+            skip_advisory_llm=True,
+        )
+
+        # A detached workflow prevents validation progress/failure writes from changing
+        # the live job. Publish the edited snapshot only after all checks succeed.
+        class ReviewStore:
+            def update(self, *args, **kwargs):
+                pass
+
+        reviewer = copy(self.workflow)
+        reviewer.store = ReviewStore()
+        from rules.geometry import dimension_route_errors
+        from agents.guardrails import Guardrails
+
+        structural = Guardrails.validate_route(payload) + dimension_route_errors(payload)
+        topology = reviewer._topological_verify(payload)
+        if structural or not topology["passed"]:
+            raise ValueError(
+                "Customized route failed revalidation: "
+                + "; ".join(structural + ([] if topology["passed"] else [topology["message"]]))
+            )
+        candidate.update(reviewer.resource_selection(candidate))
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            futures = [
+                pool.submit(SpecialistAgent(reviewer, name).execute, candidate) for name in SCOPES
+            ]
+            reviews = [future.result() for future in futures]
+        for report in reviews:
+            candidate.update(report.state_updates)
+        candidate.update(coordinate_reviews(candidate))
+        candidate.update(reviewer.verification(candidate))
+        if candidate["verification"]["conclusion"] == "failed":
+            raise ValueError(
+                "Customized route failed revalidation: "
+                + "; ".join(
+                    c["message"] for c in candidate["verification"]["checks"] if not c["passed"]
+                )
+            )
+        candidate["process_route"] = payload
+        with self.store.lock:
+            current = self.store.get(job_id)
+            if current.get("route_revision", 0) != job.get("route_revision", 0):
+                raise ValueError("Route changed during review; reload and retry.")
+            history = current.get("route_history", []) + [
+                {
+                    "revision": current.get("route_revision", 0),
+                    "result": current.get("custom_result") or current["result"],
+                }
+            ]
+            self.store.update(
+                job_id,
+                custom_route=payload,
+                custom_result=candidate,
+                route_history=history,
+                route_revision=job.get("route_revision", 0) + 1,
+                status="completed",
+                current_step="completed",
+                message="Edited route revalidated; engineering review required.",
+            )
         return payload
 
     def reset_custom_route(self, job_id: str) -> None:
         """Clear the customized route and restore the original route generated by the workflow."""
-        job = self.store.get(job_id)
-        if job["result"] is None:
-            raise ValueError("Task result not ready.")
-        # JobStore only has a merge-style update; None means "not customized", and all readers fall back to the original route
-        self.store.update(job_id, custom_route=None)
+        with self.store.lock:
+            job = self.store.get(job_id)
+            if job["result"] is None:
+                raise ValueError("Task result not ready.")
+            history = job.get("route_history", [])
+            if job.get("custom_result"):
+                history = history + [
+                    {"revision": job.get("route_revision", 0), "result": job["custom_result"]}
+                ]
+            self.store.update(
+                job_id,
+                custom_route=None,
+                custom_result=None,
+                route_history=history,
+                route_revision=job.get("route_revision", 0) + 1,
+            )
 
     def _invoke(
         self, job_id: str, graph_input: dict[str, Any] | Command, cache_key: str | None = None
@@ -289,6 +382,8 @@ class PlanningService:
                 "message": message,
                 "current_step": current_step,
                 "pending_choices": [],
+                "pending_engineering": [],
+                "task_execution": result.get("task_execution"),
             }
             if final_status in {"resource_mismatch", "failed", "completed"}:
                 update_values["progress"] = 100
@@ -334,7 +429,7 @@ class PlanningService:
         if job["result"] is None:
             raise ValueError("Task result not ready.")
 
-        result = job["result"]
+        result = job.get("custom_result") or job["result"]
         request_data = job.get("request") or {}
         # The user-customized route takes priority; operation_no is the stable resource key, so resources still follow the operation after reordering
         route = job.get("custom_route") or result.get("process_route", [])
@@ -394,7 +489,7 @@ class PlanningService:
         # Title
         # ═══════════════════════════════════════
         ws.merge_cells("A1:H1")
-        ws["A1"] = "Shaft Machining Planner - Process Card"
+        ws["A1"] = "shaftmachiningplanner - DRAFT - Engineering Review Required"
         ws["A1"].font = title_font
         ws["A1"].alignment = Alignment(horizontal="center")
 
@@ -407,6 +502,8 @@ class PlanningService:
         r += 1
         info = [
             ("Job ID", job_id),
+            ("Route Revision", job.get("route_revision", 0)),
+            ("Release Status", "DRAFT - Not approved for production"),
             ("Material", request_data.get("material", "-")),
             ("Blank Type", request_data.get("blank_type", "solid")),
             (
@@ -615,7 +712,11 @@ class PlanningService:
                     op_no,
                     op.get("name", ""),
                     op.get("stage", ""),
-                    op.get("description", ""),
+                    op.get("description", "")
+                    + "".join(
+                        f"\n{d['object_id']} ({d['surface']}): {d.get('before_mm') if d.get('before_mm') is not None else 'unknown'} -> {d['after_mm']} mm"
+                        for d in op.get("dimensions", [])
+                    ),
                     machine_cell,
                     tool_cell,
                     status_cell,
@@ -633,7 +734,8 @@ class PlanningService:
         project_root = Path(__file__).resolve().parent.parent
         output_dir = project_root / "output"
         output_dir.mkdir(exist_ok=True)
-        file_path = output_dir / f"process_card_{job_id}.xlsx"
+        revision = job.get("route_revision", 0)
+        file_path = output_dir / f"process_card_{job_id}_r{revision}.xlsx"
         wb.save(file_path)
         logger.info("Process card exported: %s", file_path)
 
@@ -777,12 +879,16 @@ class PlanningService:
             raise ValueError("Task not yet completed.")
         if job["result"] is None:
             raise ValueError("Task result is being written, please retry later.")
-        result = job["result"]
+        result = job.get("custom_result") or job["result"]
         return {
             "job_id": job_id,
             "status": job["status"],
             "message": job["message"],
             "error": job["error"],
+            "route_revision": job.get("route_revision", 0),
+            "release_status": "engineering_review_required",
+            "agent_collaboration": result.get("agent_collaboration"),
+            "task_execution": result.get("task_execution"),
             "plan": result.get("plan"),
             "geometry": result.get("geometry"),
             "capability": result.get("capability"),

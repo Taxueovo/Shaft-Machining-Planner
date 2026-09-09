@@ -47,6 +47,7 @@ class IndexBuilder:
     """Index builder - orchestrates the scan -> chunk -> index pipeline."""
 
     def __init__(self):
+        """初始化构建器，持有共享的向量库管理器实例。"""
         from .vector_store import VectorStoreManager
 
         self.store = VectorStoreManager()
@@ -120,6 +121,7 @@ class IndexBuilder:
         prev = state.get(state_key, {})
         current: dict[str, tuple[int, int]] = {}
         changed: list[Path] = []
+        # 用 (mtime_ns, size) 指纹与上次构建状态比对，找出需要重建索引的源文件
         for file_path in files:
             st = file_path.stat()
             sig = (st.st_mtime_ns, st.st_size)
@@ -176,6 +178,7 @@ class IndexBuilder:
 
         changed_names = {f.name for f in changed}
         unchanged = {name: sig for name, sig in current.items() if name not in changed_names}
+        # 只推进成功索引文件的指纹；失败文件不写入，下次运行会被当作变更自动重试
         updated = {name: current[name] for name in ok if name in current}
         state[state_key] = {**unchanged, **updated}
         self._save_state(state)
@@ -291,6 +294,7 @@ _builder: Optional[IndexBuilder] = None
 
 
 def _get_builder() -> IndexBuilder:
+    """返回进程级单例的 IndexBuilder（惰性创建）。"""
     global _builder
     if _builder is None:
         _builder = IndexBuilder()

@@ -28,6 +28,7 @@ FEATURE_NAME = {
     "crank_pin": "Crank Pin",
 }
 
+# 各特征类型的主加工方法：用于确定对应特征工序归属的加工资源类别（knurl 滚花由后续工序自行实现，无固定映射）
 FEATURE_PROCESS = {
     "keyway": "Indexable Milling",
     "hole": "Drilling",
@@ -70,6 +71,8 @@ SURFACE_NAME = {
 # Material machining properties
 # ============================================================
 
+# iso_category 取值含义：P 碳钢/合金钢、M 不锈钢、H 高硬度钢、N 有色金属（铝/铜等）；
+# cutting_speed_factor / feed_factor 为相对 45 钢基准的切削速度与进给修正系数
 MATERIAL_PROPERTIES: dict[str, dict[str, Any]] = {
     "45": {
         "iso_category": "P",
@@ -246,6 +249,7 @@ def get_material_properties(material: str) -> dict[str, Any]:
     for key, props in MATERIAL_PROPERTIES.items():
         if key.upper() == material_upper:
             return props
+    # 精确匹配失败时再做一次子串模糊匹配（如 "45 steel" -> "45"），避免轻微命名差异被误判为未知材料
     for key, props in MATERIAL_PROPERTIES.items():
         if len(key) >= 2 and (key.upper() in material_upper or material_upper in key.upper()):
             return props
@@ -263,6 +267,7 @@ def get_material_properties(material: str) -> dict[str, Any]:
 def is_high_precision(
     upper: Optional[float], lower: Optional[float], roughness: Optional[float]
 ) -> bool:
+    """是否为高精度要求：上下偏差绝对值均不超过 0.02mm，或表面粗糙度 Ra<=0.8（用于决定是否走精密加工链）。"""
     values = [abs(v) for v in (upper, lower) if v is not None]
     return (bool(values) and max(values) <= 0.02) or (roughness is not None and roughness <= 0.8)
 
@@ -275,6 +280,7 @@ def is_feature_high_precision(feature: Any) -> bool:
     """
 
     def value(name: str) -> Any:
+        """按 dict 或对象两种形态统一取特征字段值，缺失时返回 None。"""
         return feature.get(name) if isinstance(feature, dict) else getattr(feature, name, None)
 
     if is_high_precision(
@@ -292,6 +298,7 @@ def requires_grinding(
     upper: Optional[float], lower: Optional[float], roughness: Optional[float]
 ) -> bool:
     """Whether grinding is required: tolerance <=0.01mm or roughness Ra <=0.4."""
+    # 磨削触发阈值（0.01mm / Ra0.4）比高精度判定（0.02mm / Ra0.8）更严格：仅当确需磨削时才插入磨削工序
     values = [abs(v) for v in (upper, lower) if v is not None]
     return (bool(values) and max(values) <= 0.01) or (roughness is not None and roughness <= 0.4)
 
@@ -300,6 +307,7 @@ def requires_grinding(
 # Feature machining timing classification
 # ============================================================
 
+# 特征类型是否支持“热处理前粗加工 + 热处理后精加工”的工序拆分；false 的类型只能单次加工到尺寸
 FEATURE_SUPPORTS_SPLIT = {
     "keyway": True,
     "hole": True,
@@ -319,6 +327,7 @@ FEATURE_SUPPORTS_SPLIT = {
     "crank_pin": False,
 }
 
+# 校验用：各特征类型在工艺路线中必须被覆盖到的加工资源集合（供 coverage/工艺校验层使用，见 verification.py）
 FEATURE_REQUIRED_PROCESS = {
     "keyway": {"Indexable Milling"},
     "hole": {"Drilling"},

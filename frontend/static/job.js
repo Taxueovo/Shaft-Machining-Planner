@@ -1,3 +1,12 @@
+// ============================================================
+// 文件职责：作业进度 / 结果页(/jobs/{job_id})的交互逻辑。
+//  - 轮询 /api/jobs/{job_id}，驱动状态徽标、进度条、当前步骤与错误面板；
+//  - 状态为 waiting_user_choice 时渲染"特征加工时机"选择卡并随表单统一提交；
+//  - 终态(completed / resource_mismatch / failed)结果就绪后拉取 /result，
+//    分面板渲染几何、条件特征、工序路线与资源、执行轨迹，并惰性 import 3D 模型模块；
+//  - 支持"Customize Route"：在线增删 / 上下移 / 拖拽排序工序，保存或重置自定义路线。
+// 后端 job 对象状态字段的含义与取值见 setBadge / poll 的注释。
+// ============================================================
 (() => {
   // Shutdown button
   const shutdownBtn = document.getElementById("shutdown-btn");
@@ -23,11 +32,14 @@
   let rendered = false, timer = null;
   // Process route customization state: customRoute takes priority over originalRoute; operation_no is the stable resource key
   let customRoute = null, originalRoute = [], routeResourceMap = {}, routeScopeNote = "";
+  // editOps：编辑模式下的工序数组副本(带稳定资源键 operation_no)；dragIndex：正在拖拽的行下标，-1 表示当前无拖拽。
   let editOps = [], dragIndex = -1;
 
+  // 按 job.status 映射为徽标文案与 CSS 样式类；未识别状态兜底显示原文并标记为 neutral。
   function setBadge(status) {
     const map = {
       queued:["Queued","neutral"], running:["Running","neutral"],
+      waiting_engineering_input:["Engineering input","warning"],
       waiting_user_choice:["Waiting","warning"], completed:["Completed","success"],
       resource_mismatch:["Mismatch","danger"], failed:["Failed","danger"]
     };
@@ -36,11 +48,14 @@
     $("status-badge").className = `badge ${cls}`;
   }
 
+  // 在页面顶部错误面板显示 message；该面板会在后续轮询状态恢复正常后自动隐藏(见 poll)。
   function showError(message) {
     $("error-message").textContent = message;
     $("error-panel").classList.remove("hidden");
   }
 
+  // 渲染"等待用户选择"特征卡片：后端 pending_choices 中每项含 feature_id 与若干 options，
+  // 默认选中 recommended 对应项；卡片集齐后统一由 choice-form 提交各特征的加工时机。
   function showChoices(items) {
     $("choice-list").innerHTML = items.map(item => `
       <div class="feature-card" data-id="${esc(item.feature_id)}">
@@ -86,6 +101,8 @@
   const panel = (title, content, badge="") => `
     <section class="panel"><div class="heading"><div><h2>${esc(title)}</h2></div>${badge}</div>${content}</section>`;
 
+  // 生成"可用设备"对照表 HTML(items 为资源能力检查返回的 active_matches)；
+  // 无匹配项时输出空状态占位。
   function machineTable(items) {
     if (!items.length) return `<div class="empty">No matching machines.</div>`;
     return `<div class="table-wrap"><table>
@@ -100,7 +117,12 @@
       </tr>`).join("")}</tbody></table></div>`;
   }
 
+  // 终态结果渲染入口(每作业仅执行一次)：按 payload 分支组装各 panel 后一次性写入
+  // #result-container。展示优先级为 custom_route(用户自定义) > process_route(引擎原始)；
+  // operation_no 是贯穿路线与资源映射(operation_resources)的稳定键。渲染完成后
+  // 触发 3D 模型绘制与"Customize Route / Generate Process Card"按钮绑定。
   function renderResult(payload) {
+    renderTasks(payload.task_execution);
     if (rendered) return;
     rendered = true;
 
@@ -137,6 +159,24 @@
       verify.conclusion === "conditional_pass" ? "warning" : "danger";
 
     const html = [];
+
+    const collaboration = payload.agent_collaboration || {};
+    const reviewNames = {machining_review: "Machining & Workholding", quality_review: "Quality & Inspection", heat_review: "Heat Treatment"};
+    const reviewModes = {rules_only: "Rules review", model_review: "Model review", degraded: "Model unavailable — rules review", not_applicable: "Not applicable"};
+    html.push(panel("Engineering Release",
+      `<div class="alert warning">Draft — engineering review required. Route revision: ${esc(payload.route_revision || 0)}.</div>`));
+    if ((collaboration.reports || []).length) {
+      html.push(panel("Independent Specialist Reviews",
+        (collaboration.reports || []).map(report => `<details>
+          <summary>${esc(reviewNames[report.agent] || report.agent)} · ${esc(reviewModes[report.mode] || report.mode)} · ${(report.findings || []).length} findings</summary>
+          <p>${esc(report.summary)}</p>
+          ${(report.findings || []).map(f => `<div class="alert ${f.severity === "error" ? "danger" : "warning"}">
+            <strong>${esc(f.code)}</strong>: ${esc(f.message)}<br>${esc(f.recommendation)}
+            <br><small>${esc(f.source)} · Evidence: ${esc((f.evidence_ids || []).join(", "))}</small></div>`).join("")}
+          <p>Tool calls: ${esc((report.tool_calls || []).map(t => t.tool).join(", ") || "None")}</p>
+          ${report.error ? `<p>${esc(report.error)}</p>` : ""}
+        </details>`).join("") + (collaboration.degraded || []).map(x => `<p>${esc(x)}</p>`).join("")));
+    }
 
     html.push(panel(
       "Verification Result",
@@ -225,6 +265,8 @@
     bindRouteButtons();
   }
 
+  // 触发后端导出 Excel 工序卡(process-card/export)，成功后在本页给出下载链接；
+  // 请求期间禁用触发按钮并显示"生成中"占位，失败时展示错误信息。
   async function generateProcessCard(btn) {
     const container = document.getElementById("process-card-container");
     if (!container) return;
@@ -253,6 +295,8 @@
   const MANDATORY_OPS = ["Blanking","Face Turning","Center Drilling","Rough Turning",
     "Semi-finish Turning","Finish Turning","Final Inspection"];
 
+  // 依据某工序的资源映射(routeResourceMap 按 operation_no 查得)生成推荐
+  // 机床 / 刀具的设备块 HTML；无任何推荐时返回空串(不渲染设备区)。
   const opDeviceHtml = res => {
     const machines = res.machine_recommendations || [];
     const tools = res.tool_recommendations || [];
@@ -303,6 +347,8 @@
     bindRouteButtons();
   }
 
+  // 编辑模式下单行的 HTML：名称 / 阶段(下拉含全部 ROUTE_STAGES)/ 描述输入 + 资源只读文本 +
+  // 上移 / 下移 / 删除按钮；整行 draggable 以支持拖拽排序。
   function editRowHtml(op, idx) {
     const res = routeResourceMap[op.operation_no] || {};
     const machines = res.machine_recommendations || [];
@@ -342,6 +388,9 @@
     </div>`;
   }
 
+  // 把编辑表格当前各行的用户改动同步回 editOps；operation_no / process_category 等
+  // 关键字段从旧条目沿用，保证与后端资源的对应关系不因排序或改名而丢失。
+  // 在排序、保存等任何需要基于最新 DOM 值的操作前都必须先调用本函数。
   function syncEditOpsFromDom() {
     const rows = document.querySelectorAll("#route-panel-inner .route-edit-row");
     editOps = Array.from(rows).map((tr, i) => {
@@ -373,6 +422,9 @@
     bindEditorEvents();
   }
 
+  // 为路线编辑器绑定事件：行内按钮(↑ / ↓ / ✕)采用事件委托，另有新增 / 保存 / 重置 / 取消；
+  // 以及基于 HTML5 拖拽的行排序 —— 拖拽结束(drop)才真正改序并整体重渲染，保证
+  // DOM 顺序与 editOps 数组顺序始终一致。
   function bindEditorEvents() {
     const tbody = document.querySelector("#route-panel-inner .route-edit-table tbody");
     if (!tbody) return;
@@ -457,6 +509,8 @@
     });
   }
 
+  // 保存自定义路线：先做非空 / 工序号唯一性校验，再 POST 到 /process-route/customize；
+  // 成功后以服务端返回的 operations 作为权威 customRoute 并刷新只读展示面板。
   async function saveCustomRoute() {
     syncEditOpsFromDom();
     if (!editOps.length) { showError("Route cannot be empty."); return; }
@@ -474,7 +528,7 @@
       const data = await resp.json();
       if (!resp.ok) throw new Error(JSON.stringify(data.detail || data));
       customRoute = data.operations || editOps;
-      rerenderRoutePanel();
+      window.location.reload();
     } catch (err) {
       showError(`Save custom route failed: ${err.message}`);
     } finally {
@@ -482,6 +536,8 @@
     }
   }
 
+  // 重置自定义路线：DELETE /process-route/customization 后清空 customRoute，
+  // 展示面板回退为引擎最初生成的原始路线(originalRoute)。
   async function resetCustomRoute() {
     if (!confirm("Reset the process route to the original generated route? Your custom changes will be discarded.")) return;
     const resetBtn = document.getElementById("route-reset");
@@ -491,12 +547,58 @@
       const data = await resp.json();
       if (!resp.ok) throw new Error(JSON.stringify(data.detail || data));
       customRoute = null;
-      rerenderRoutePanel();
+      window.location.reload();
     } catch (err) {
       showError(`Reset route failed: ${err.message}`);
     } finally {
       if (resetBtn) { resetBtn.disabled = false; resetBtn.textContent = "Reset to Original"; }
     }
+  }
+
+  // 单次轮询 job 状态并刷新进度 UI，随后按状态分流：
+  //  waiting_user_choice → 交给 showChoices 等待用户输入；终态且 result_ready → 拉取
+  //  /result 并调用 renderResult；其余情况(含接口出错 / 结果尚未就绪)调度下一次轮询。
+  //  终态但结果未就绪是短暂过渡，会放慢到 2s 轮询，避免对后端 800ms 高频轰炸。
+  function renderTasks(board) {
+    const container = $("task-board");
+    if (!board?.plan) { container.classList.add("hidden"); return; }
+    const rows = board.plan.tasks.map(task => {
+      const result = board.results?.[task.task_id];
+      return `<tr><td>${esc(task.worker)}</td><td>${esc(task.objective)}</td>
+        <td>${esc(task.depends_on.join(", ") || "—")}</td>
+        <td>${esc(result?.status || "pending")}</td><td>${esc(result?.summary || "")}</td></tr>`;
+    }).join("");
+    const latest = board.events?.at(-1);
+    container.innerHTML = `<h2>Planner–Worker Tasks</h2><p>${esc(board.plan.rationale)}</p>
+      <p class="muted">Planner: ${esc(board.mode)} · Reused results: ${esc(latest?.reused?.length || 0)}</p>
+      <div class="table-wrap"><table><thead><tr><th>Worker</th><th>Objective</th><th>Dependencies</th><th>Status</th><th>Outcome</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    container.classList.remove("hidden");
+  }
+
+  function showEngineering(questions) {
+    const container = $("engineering-panel");
+    container.innerHTML = `<h2>Engineering Information Required</h2>
+      <p>Answers will be recorded as unverified engineering inputs. You may defer and retain a draft.</p>
+      <form>${questions.map((q, i) => `<label for="engineering-${i}">${esc(q.objective)}<p>${esc(q.question)}</p></label>
+        <textarea id="engineering-${i}" maxlength="3000" required style="width:100%;min-height:90px"></textarea>`).join("")}
+        <button class="button primary" type="submit">Submit & Continue</button>
+        <button class="button ghost" type="button" data-defer>Defer to Engineering Review</button></form>`;
+    container.classList.remove("hidden");
+    const submit = async defer => {
+      const buttons = container.querySelectorAll("button");
+      buttons.forEach(button => button.disabled = true);
+      try {
+        const answers = defer ? [] : questions.map((q, i) => ({task_id:q.task_id, answer:$( `engineering-${i}` ).value.trim()}));
+        const response = await fetch(`/api/jobs/${jobId}/engineering`, {
+          method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({answers, defer})});
+        const data = await response.json();
+        if (!response.ok) throw new Error(JSON.stringify(data.detail || data));
+        container.classList.add("hidden");
+        schedule(500);
+      } catch (error) { showError(error.message); buttons.forEach(button => button.disabled = false); }
+    };
+    container.querySelector("form").addEventListener("submit", event => {event.preventDefault(); submit(false);});
+    container.querySelector("[data-defer]").addEventListener("click", () => submit(true));
   }
 
   async function poll() {
@@ -515,6 +617,8 @@
         $("error-panel").classList.add("hidden"); // clear a stale error once it is gone
       }
 
+      renderTasks(data.task_execution);
+      if (data.status === "waiting_engineering_input") return showEngineering(data.pending_engineering || []);
       if (data.status === "waiting_user_choice") return showChoices(data.pending_choices || []);
       if (["completed","resource_mismatch","failed"].includes(data.status) && data.result_ready) {
         const r = await fetch(`/api/jobs/${jobId}/result`);
@@ -537,6 +641,7 @@
     }
   }
 
+  // 调度下一轮轮询：先清掉未触发的旧定时器再排程，防止并发回调造成请求叠加。
   function schedule(ms) { clearTimeout(timer); timer = setTimeout(poll, ms); }
   poll();
 })();

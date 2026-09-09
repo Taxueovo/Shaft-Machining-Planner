@@ -1,3 +1,10 @@
+"""Shaft Machining Planner 前端服务（FastAPI 应用入口）。
+
+页面路由负责渲染 Jinja 模板；/api/* 路径统一转发到本地后端服务
+（BACKEND_URL），转发时附加 x-local-api-token 头用于本地鉴权。
+前端刻意只面向本机回环地址运行，作为本地演示/工具入口。
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -92,6 +99,7 @@ class LocalOriginMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """应用生命周期：启动时创建到后端的共享 HTTP 客户端，进程退出时关闭。"""
     app.state.backend = httpx.AsyncClient(
         base_url=BACKEND_URL,
         timeout=90.0,
@@ -101,6 +109,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Shaft Machining Planner Frontend", version="1.0.0", lifespan=lifespan)
+# 中间件按注册顺序由外向内执行：StaticCacheMiddleware 先写入 csp_nonce，
+# 后执行的 LocalOriginMiddleware 组装 CSP 响应头时才能读到该随机值，顺序不可互换。
 app.add_middleware(StaticCacheMiddleware)
 app.add_middleware(LocalOriginMiddleware)
 templates = Jinja2Templates(directory=str(FRONTEND_DIR / "templates"))
@@ -114,6 +124,7 @@ app.mount(
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request) -> HTMLResponse:
+    """首页：启动时探测后端 /health，把连接状态传给模板渲染顶部横幅。"""
     backend_ok = False
     detail = ""
     try:
@@ -135,6 +146,7 @@ async def index(request: Request) -> HTMLResponse:
 
 @app.get("/jobs/{job_id}", response_class=HTMLResponse)
 async def job_page(request: Request, job_id: str) -> HTMLResponse:
+    """任务详情页：仅输出页面骨架，运行数据由前端脚本异步拉取并渲染。"""
     return templates.TemplateResponse(
         request=request,
         name="job.html",
@@ -148,12 +160,19 @@ async def forward(
     path: str,
     payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """把前端请求代理到后端，并统一转换为 HTTP 错误。
+
+    - 始终附带 x-local-api-token 头（本地服务间鉴权）；
+    - 后端返回的 4xx/5xx 尽量透传其 detail；
+    - 无法连通后端时统一返回 503。
+    """
     try:
         response = await request.app.state.backend.request(
             method,
             path,
             json=payload,
             headers={"x-local-api-token": LOCAL_API_TOKEN},
+            timeout=300.0 if path.endswith("/process-route/customize") else 90.0,
         )
         response.raise_for_status()
         return response.json()
@@ -176,6 +195,12 @@ async def forward(
 def with_query(request: Request, path: str) -> str:
     """Preserve browser query parameters when proxying GET requests."""
     return f"{path}?{request.url.query}" if request.url.query else path
+
+
+# ============================================================
+# 工艺规划相关 API 代理：任务(jobs)、工艺路线、材料、刀具等
+# 全部 1:1 透传至后端 /api/v1/*，鉴权与错误映射统一收敛于 forward()
+# ============================================================
 
 
 @app.post("/api/jobs")
@@ -215,6 +240,7 @@ async def export_process_card(request: Request, job_id: str) -> dict[str, Any]:
 
 @app.get("/api/jobs/{job_id}/process-card/download")
 async def download_process_card(request: Request, job_id: str) -> Response:
+    """流式转发后端生成的工艺卡片 Excel，避免整份文件驻留内存。"""
     stream_context = request.app.state.backend.stream(
         "GET",
         f"/api/v1/jobs/{job_id}/process-card/download",
@@ -243,6 +269,13 @@ async def download_process_card(request: Request, job_id: str) -> Response:
         chunks(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers=headers,
+    )
+
+
+@app.post("/api/jobs/{job_id}/engineering")
+async def submit_engineering(request: Request, job_id: str) -> dict[str, Any]:
+    return await forward(
+        request, "POST", f"/api/v1/jobs/{job_id}/engineering", await request.json()
     )
 
 
@@ -330,6 +363,7 @@ async def case_detail_page(request: Request, case_id: str) -> HTMLResponse:
 
 @app.get("/custom", response_class=HTMLResponse)
 async def custom_planning_page(request: Request) -> HTMLResponse:
+    """自定义工艺规划页：先探测后端健康状态，用于控制表单能否提交。"""
     backend_ok = False
     detail = ""
     try:

@@ -45,6 +45,7 @@ class BaseAgent(ABC):
     """
 
     def __init__(self, name: str) -> None:
+        """初始化代理：记录唯一名称，并预置执行统计字段供运行审计使用。"""
         self.name = name
         self._execution_count = 0
         self._last_execution: Optional[dict[str, Any]] = None
@@ -70,15 +71,9 @@ class BaseAgent(ABC):
     def validate_output(self, result: AgentResult) -> Optional[str]:
         """Validate output against schema constraints. Returns None if passed."""
         cap = self.capabilities()
-        if cap.output_schema:
-            try:
-
-                class _Output(BaseModel):
-                    __annotations__ = {k: Any for k in cap.produces_state_keys}
-
-                _Output(**result.state_updates)
-            except Exception as exc:
-                return f"{self.name} output validation failed: {exc}"
+        missing = [key for key in cap.produces_state_keys if key not in result.state_updates]
+        if missing:
+            return f"{self.name} missing required outputs: {', '.join(missing)}"
         return None
 
     def safe_execute(self, state: dict[str, Any]) -> AgentResult:
@@ -96,6 +91,7 @@ class BaseAgent(ABC):
         except Exception as exc:
             from langgraph.errors import GraphInterrupt
 
+            # GraphInterrupt 是 LangGraph 的中断控制信号（如等待人工介入），须原样向上抛出而非按失败处理
             if isinstance(exc, GraphInterrupt):
                 raise
             duration = (time.monotonic() - t0) * 1000
@@ -113,7 +109,8 @@ class BaseAgent(ABC):
         output_error = self.validate_output(result)
         if output_error:
             logger.warning("Output validation warning for %s: %s", self.name, output_error)
-            result.metadata["output_warning"] = output_error
+            result.success = False
+            result.error = output_error
 
         self._execution_count += 1
         self._last_execution = {

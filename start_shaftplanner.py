@@ -78,12 +78,14 @@ def _wait_all(targets: list[tuple[str, str]], timeout: float = 60) -> None:
 def _start(
     processes: list[tuple[str, subprocess.Popen]], name: str, cmd: list[str], cwd: Path, env: dict
 ) -> None:
+    """在新进程中拉起一个服务，并把 (名称, 进程) 记入列表，供统一就绪等待与退出清理。"""
     print(f"[Shaft Machining Planner] Starting {name} ...")
     proc = subprocess.Popen(cmd, cwd=str(cwd), env=env)
     processes.append((name, proc))
 
 
 def main() -> None:
+    """一键启动入口：按后端优先顺序拉起后端/前端服务，等待就绪后按需打开浏览器，并阻塞到任一进程退出统一清理。"""
     # Windows console/redirection defaults to cp1252 which cannot print non-ASCII characters; force UTF-8
     for stream in (sys.stdout, sys.stderr):
         try:
@@ -107,6 +109,7 @@ def main() -> None:
     # Child-process environment: make sure local (127.0.0.1) requests bypass the corporate proxy
     env = dict(os.environ)
     token_was_supplied = bool(env.get("LOCAL_API_TOKEN"))
+    # 未预先提供 LOCAL_API_TOKEN 时生成随机令牌，子进程据此与前端做本地鉴权
     env.setdefault("LOCAL_API_TOKEN", secrets.token_urlsafe(32))
     no_proxy = [
         p for p in ("127.0.0.1", "localhost") if p not in (env.get("NO_PROXY") or "").split(",")
@@ -127,6 +130,7 @@ def main() -> None:
         # 1. peagent backend :8001
         backend_was_running = _ready(PE_BACKEND_HEALTH, 2)
         frontend_was_running = _ready(PE_FRONTEND_URL, 2)
+        # 后端已在运行但不知其 LOCAL_API_TOKEN，且未显式提供令牌时，新起的前端将无法鉴权，故直接终止并提示
         if backend_was_running and not frontend_was_running and not token_was_supplied:
             raise RuntimeError(
                 "A backend is already running, but its LOCAL_API_TOKEN is unknown. "
@@ -176,6 +180,7 @@ def main() -> None:
         print("  Press Ctrl+C or close this window to stop all services")
         print("=" * 60)
 
+        # 服务就绪后再延时打开浏览器，避免在页面首屏加载完成前弹出
         if not args.no_browser:
             threading_delay = 1.5
             timer = __import__("threading").Timer(

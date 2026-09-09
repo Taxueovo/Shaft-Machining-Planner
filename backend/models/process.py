@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ProcessStage(str, Enum):
@@ -81,9 +81,37 @@ MANDATORY_OPERATION_NAMES = {
 }
 
 
+def required_operation_names(request: dict[str, Any]) -> set[str]:
+    required = set(MANDATORY_OPERATION_NAMES)
+    if request.get("blank_type") == "hollow":
+        required.discard("Center Drilling")
+        required.add("Prepare Workholding")
+    return required
+
+
+class OperationDimension(BaseModel):
+    """Diameter transition for a named surface; unknown incoming sizes remain null."""
+
+    model_config = ConfigDict(allow_inf_nan=False, extra="forbid")
+    object_id: str = Field(min_length=1, max_length=80)
+    surface: str = Field(pattern="^(internal|external)$")
+    before_mm: Optional[float] = Field(default=None, gt=0)
+    after_mm: float = Field(gt=0)
+
+    @model_validator(mode="after")
+    def material_removal(self):
+        if self.before_mm is not None:
+            if self.surface == "internal" and self.after_mm < self.before_mm:
+                raise ValueError("Cutting cannot reduce an internal diameter.")
+            if self.surface == "external" and self.after_mm > self.before_mm:
+                raise ValueError("Cutting cannot increase an external diameter.")
+        return self
+
+
 class ProcessOperation(BaseModel):
     """Single operation model."""
 
+    dimensions: list[OperationDimension] = Field(default_factory=list, max_length=100)
     operation_no: int = Field(ge=1)
     name: str = Field(min_length=1, max_length=120)
     stage: ProcessStage
@@ -105,6 +133,7 @@ class RouteCustomizeRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_unique_operation_no(self) -> "RouteCustomizeRequest":
+        """模型级校验：operation_no 作为每个工步的资源映射键，必须全局唯一。"""
         numbers = [op.operation_no for op in self.operations]
         if len(numbers) != len(set(numbers)):
             raise ValueError("operation_no must be unique.")

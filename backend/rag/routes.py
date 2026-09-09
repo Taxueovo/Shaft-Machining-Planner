@@ -49,6 +49,7 @@ def _init() -> bool:
 
 
 def _check_available():
+    """确保 RAG 服务已可用，否则抛出 503 响应。"""
     if not _init():
         raise HTTPException(
             status_code=503,
@@ -57,6 +58,7 @@ def _check_available():
 
 
 def _scan_spec_files() -> list[dict]:
+    """扫描规范源目录，返回文件名与大小列表供管理面板展示。"""
     from .config import SPECS_DIR, SPEC_EXTENSIONS
 
     if not SPECS_DIR.exists():
@@ -69,6 +71,7 @@ def _scan_spec_files() -> list[dict]:
 
 
 def _scan_case_files() -> list[dict]:
+    """扫描案例源目录，返回文件名与大小列表供管理面板展示。"""
     from .config import CASES_DIR, CASE_EXTENSIONS
 
     if not CASES_DIR.exists():

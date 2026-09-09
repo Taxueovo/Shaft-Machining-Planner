@@ -25,6 +25,7 @@ class TaxonomyDB:
     """Taxonomy tree database - JSON file storage."""
 
     def __init__(self, file_path: Optional[Path] = None):
+        """初始化分类树数据库；未指定 file_path 时使用项目默认的 data/taxonomy.json。"""
         self._file_path = file_path or TAXONOMY_FILE
         self._tree: Optional[TaxonomyTree] = None
         self._lock = threading.RLock()
@@ -52,6 +53,7 @@ class TaxonomyDB:
             return
 
         self._file_path.parent.mkdir(parents=True, exist_ok=True)
+        # 先写同目录临时文件再原子替换，避免写入中途失败留下残缺的 JSON
         with tempfile.NamedTemporaryFile(
             "w",
             encoding="utf-8",
@@ -101,6 +103,7 @@ class TaxonomyDB:
             self._add_node_locked(node)
 
     def _add_node_locked(self, node: TaxonomyNode) -> None:
+        """锁内执行新增：校验 ID 与父节点均存在后追加并落盘。"""
         tree = self._load()
 
         # Check if ID already exists
@@ -121,6 +124,7 @@ class TaxonomyDB:
             self._update_node_locked(node_id, updates)
 
     def _update_node_locked(self, node_id: str, updates: dict) -> None:
+        """锁内执行更新：仅应用节点上真实存在的字段并落盘。"""
         tree = self._load()
         node = tree.get_node(node_id)
 
@@ -141,6 +145,7 @@ class TaxonomyDB:
             self._delete_node_locked(node_id, recursive)
 
     def _delete_node_locked(self, node_id: str, recursive: bool = False) -> None:
+        """锁内执行删除；默认禁止删除仍有子节点的节点，recursive=True 时连后代一并删除。"""
         tree = self._load()
         node = tree.get_node(node_id)
 

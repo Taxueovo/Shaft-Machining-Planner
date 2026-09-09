@@ -115,6 +115,7 @@ class HybridRetriever:
     """
 
     def __init__(self, store: Optional[VectorStoreManager] = None):
+        """创建混合检索器；BM25 与 reranker 均惰性加载，并登记到全局弱引用集合。"""
         self.store = store or VectorStoreManager()
         self._bm25 = None  # lazy loading
         self._reranker = None  # lazy loading
@@ -129,6 +130,7 @@ class HybridRetriever:
 
     @property
     def bm25_available(self) -> bool:
+        """BM25 是否可用（首次访问时探测，结果缓存后复用）。"""
         if self._bm25_available is None:
             try:
                 from .bm25_index import BM25IndexManager
@@ -141,6 +143,7 @@ class HybridRetriever:
 
     @property
     def reranker_available(self) -> bool:
+        """Cross-Encoder 重排器是否可用（首次访问时探测，结果缓存后复用）。"""
         if self._reranker_available is None:
             try:
                 from .reranker import reranker_available
@@ -151,6 +154,7 @@ class HybridRetriever:
         return self._reranker_available
 
     def _ensure_bm25(self):
+        """确保 BM25 索引已构建：首次使用时从向量库同步，加锁防止并发重复构建。"""
         if self._bm25 is not None or not self.bm25_available:
             return
         # Double-checked locking: two concurrent requests must not both build the index.
@@ -330,6 +334,7 @@ _retriever: Optional[HybridRetriever] = None
 
 
 def _get_retriever() -> HybridRetriever:
+    """返回进程级单例的 HybridRetriever（惰性创建）。"""
     global _retriever
     if _retriever is None:
         _retriever = HybridRetriever()

@@ -8,6 +8,12 @@
  * If RAG is unavailable (chromadb not installed / embedding not configured),
  * the page shows a clear message and hides all action panels.
  */
+// 文件职责：RAG 知识库管理页(/rag)的前端逻辑，仅在 /rag 页面加载。
+// 统一经前端代理 /api/rag/... 转发到后端 /api/v1/rag/...：
+//   - loadStatus()：启动时检查 RAG 可用性并展示两个通道(specs / cases)的索引状态；
+//   - buildIndex / clearIndex：构建或清空指定通道的向量索引；
+//   - doSearch：语义检索并按通道渲染 Top-K 结果；loadChunks：分通道浏览已入库 chunk。
+// 若 chromadb 未安装或未配置嵌入模型，RAG 判为不可用，页面提示并隐藏全部操作面板。
 (function () {
   "use strict";
 
@@ -51,6 +57,8 @@
 
   /* ─── Core API ─── */
 
+  // 统一请求封装：路径自动拼接 /api/rag 前缀；非 2xx 响应抛错(detail 优先)，
+  // 成功则返回解析后的 JSON。
   async function api(path, opts) {
     const res = await fetch("/api/rag" + path, opts);
     const data = await res.json();
@@ -58,6 +66,8 @@
     return data;
   }
 
+  // 查询 /status 判断 RAG 是否可用：不可用或请求失败则切换为"不可用"视图；
+  // 可用则更新两通道的文档数、来源文件数、文件列表及嵌入模型标识，并处理 0 计数的高亮。
   async function loadStatus() {
     try {
       const data = await api("/status", {});
@@ -95,6 +105,8 @@
 
   /* ─── Build ─── */
 
+  // 构建指定通道的向量索引(channel 为 specs / cases / all)，期间禁用对应按钮防重复提交；
+  // 完成后刷新状态并重新浏览全部通道的 chunks。
   window.buildIndex = async function (channel) {
     if (!confirm("Build " + channel + " index? Existing data will be replaced.")) return;
 
@@ -121,6 +133,7 @@
 
   /* ─── Clear ─── */
 
+  // 清空指定通道(channel)的向量索引(不可恢复)；随后刷新状态并把 chunks 列表清空。
   window.clearIndex = async function (channel) {
     if (!confirm("Clear " + channel + " index? This cannot be undone!")) return;
     try {
@@ -135,6 +148,8 @@
 
   /* ─── Search ─── */
 
+  // 以输入框关键字调 /search 检索 top_k=5 条并渲染结果：specs 通道显示层级路径
+  // (hierarchy_path)，cases 通道显示零件名与案例号；附命中分数与总命中数提示。
   window.doSearch = async function () {
     const q = searchInput.value.trim();
     if (!q) return;
@@ -176,6 +191,8 @@
 
   /* ─── Chunks ─── */
 
+  // 拉取指定通道最近入库的 chunks(limit=15)并以 <details> 折叠展示其内容；
+  // specs 与 cases 的元数据字段来源不同，分别取层级路径 / 零件名·材料 + 案例号。
   window.loadChunks = async function (channel) {
     chunksContent.innerHTML = '<p class="muted">Loading...</p>';
     try {

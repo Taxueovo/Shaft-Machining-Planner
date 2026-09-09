@@ -114,7 +114,7 @@ def test_workflow_hitl_choice_and_resume(service):
             }
         ],
         global_requirements={
-            "heat_treatment": "none",
+            "heat_treatment": "quench_temper",
             "surface_treatment": "none",
             "batch_quantity": 1,
         },

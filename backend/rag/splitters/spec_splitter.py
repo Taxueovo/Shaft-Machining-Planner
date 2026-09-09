@@ -90,6 +90,7 @@ def _split_long_subsection(
     overlap = ""
 
     def flush() -> None:
+        """将缓冲区落盘为一个 SpecChunk；过小的尾块直接丢弃，落盘后从缓冲区末尾截取 overlap 衔接下一块。"""
         nonlocal buffer, overlap
         if len(buffer.strip()) < SPEC_MIN_CHUNK_SIZE:
             buffer = ""  # drop a too-small tail; reset state so overlap is not stale
@@ -239,6 +240,7 @@ def _fallback_chunk_by_size(
                 overlap_text = buffer[-overlap:] if len(buffer) > overlap else ""
                 buffer = (overlap_text + "\n\n" + para).strip()
             else:
+                # 缓冲区长度仍不足最小块时，继续合并而非切分，避免产生过小碎片
                 buffer = (buffer + "\n\n" + para).strip()
 
     if len(buffer) >= min_size:

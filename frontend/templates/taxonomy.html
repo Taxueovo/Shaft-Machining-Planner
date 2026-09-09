@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+{# 轴类预设库（分类树浏览）：左侧按类型浏览分类，右侧查看该分类下的工艺案例并可一键进入自定义规划。 #}
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -59,6 +60,7 @@
     <div class="stat-card"><div class="label">Industries</div><div class="value" id="stat-industries">-</div></div>
   </div>
 
+  {# 左栏为轴类型分类树（支持展开收起与 URL ?category= 直达），右栏展示选中分类的案例 #}
   <div class="taxonomy-layout">
     <div class="tree-panel">
       <h3 style="margin:0 0 16px">Classification Tree</h3>
@@ -81,6 +83,7 @@
         </div>
       </div>
 
+      {# 兜底提示：所选分类无匹配案例时展示，引导用户去父分类或转自定义规划 #}
       <div id="no-case-message" class="no-case-message" style="display:none">
         <h3>No Matching Cases Found</h3>
         <p>We don't have a case that matches your requirements yet. You can:</p>

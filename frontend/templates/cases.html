@@ -1,5 +1,6 @@
 <!doctype html>
 <html lang="en">
+{# 案例库列表页：按关键字/行业/材料过滤，结果以卡片网格展示，点击卡片进入详情。 #}
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -41,6 +42,7 @@
   </div>
 </header>
 <main class="shell">
+  {# 顶部统计卡：总数/行业数/材料数，脚本初始化时用 /api/cases 与 /api/cases/filters 填充 #}
   <div class="stats">
     <div class="stat-card"><div class="label">Total Cases</div><div class="value" id="stat-total">-</div></div>
     <div class="stat-card"><div class="label">Industries</div><div class="value" id="stat-industries">-</div></div>
@@ -55,6 +57,7 @@
   </div>
   <div id="case-feedback" class="search-feedback" role="status" aria-live="polite"></div>
 
+  {# 结果卡片网格：卡片内 data-href 由 app.js 的事件委托处理，点击跳转到详情页 #}
   <div id="case-grid" class="case-grid">
     <div class="empty-state">Loading cases...</div>
   </div>

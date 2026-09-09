@@ -91,7 +91,7 @@ Implemented:
   rule-based Verification
 - RAG (process handbook + case base) injected into the planning workflow
 
-Not implemented: cost calculation, Word/PDF export, ERP/MES integration and
+Not implemented: full manufacturing cost calculation, Word/PDF export, ERP/MES integration and
 multi-user support. Local job state is restart-safe in SQLite.
 
 ## 3. Installation
@@ -250,3 +250,100 @@ python -m pytest backend/tests -q
 python scripts/verify_public_sources.py
 python scripts/release_audit.py
 ```
+
+## Planner–worker execution and engineering review
+
+After geometry, treatment planning and any processing-timing decision, a Planner
+proposes a validated task DAG. It selects from seven registered roles: route
+proposal, resource matching, machining review, quality review, heat review,
+workholding analysis and alternative-resource analysis. The first five are mandatory.
+Hollow/slender/precision parts add workholding analysis; resource gaps trigger
+additional capacity analysis. The configured model can adjust pending task objectives,
+dependencies, tool permissions and whether missing information should pause planning.
+Invalid plans fall back to an explicit deterministic plan; the UI exposes that mode.
+
+```mermaid
+flowchart TD
+    Input[Validated inputs and processing choices] --> Planner[Planner: propose or update task DAG]
+    Planner --> Scheduler[Validate dependencies, permissions and budgets]
+    Scheduler --> Workers[Dispatch ready workers in parallel]
+    Workers --> Ledger[Structured results and isolated artifacts]
+    Ledger --> Planner
+    Scheduler -->|Missing blocking input| Human[Engineering answers or explicit deferral]
+    Human --> Planner
+    Scheduler -->|Required tasks finished| Review[Coordinate reviews and verify]
+    Review -->|Repairable errors| Repair[Bounded route repair]
+    Repair --> Planner
+    Review --> Draft[Draft for engineering review]
+```
+
+The scheduler is deterministic: at most four workers run per wave, with sixteen
+waves per job, four Planner model requests and one retry after a task execution
+failure. Contracts cannot grant tools outside a worker's registered capabilities.
+Workers return structured status, artifacts, missing information and a tool log;
+a single collector publishes only output fields owned by the relevant role.
+Completed contracts cannot be rewritten by the Planner. Input, route, dependency
+results and configured resource-workbook fingerprints invalidate stale results.
+After repair, the repaired route is preserved and affected downstream tasks rerun.
+Acceptance criteria guide model work; deterministic route/resource checks and
+mandatory review coverage remain the actual completion gates.
+
+SQLite LangGraph checkpoints persist in `JOB_DB_FILE` alongside jobs (0600 local
+file permissions). Pending precision choices and engineering questions can resume
+after a process restart. `:memory:` is intentionally ephemeral. This release does
+not automatically recover jobs interrupted mid-execution, migrate checkpoints from
+the former static graph, or provide a distributed queue/multi-server lease system.
+The worker tools are read-only or produce local proposals; resuming execution must
+not be extended to irreversible tools without an idempotency mechanism.
+
+`GET /api/v1/jobs/{job_id}` includes `task_execution` and `pending_engineering`.
+`POST /api/v1/jobs/{job_id}/engineering` accepts either
+`{"answers":[{"task_id":"workholding","answer":"Fixture information..."}]}` or
+`{"defer":true}`. The server validates the pending IDs before resuming. Workholding
+and capacity answers remain explicitly unverified statements; receiving an answer
+never marks an asset/supplier qualified or releases a route for production.
+The task board shows objectives, dependencies, outcomes and reused results.
+Manual route edits invalidate the old task board and trigger independent re-review.
+
+Each specialist has an independent context, a structured output contract, at most
+three model turns and four read-only tool requests. Available tools inspect the
+current route, query turning-machine capabilities, query grades for a process
+already in the route, or retrieve reference knowledge. Part dimensions and material
+for resource queries come from validated input, not model-invented query arguments.
+Model findings must cite supplied/retrieved evidence IDs and existing operation
+numbers. These references establish traceability, not proof that a model's
+engineering interpretation is correct. Model timeout/schema/tool-budget failures
+retain deterministic findings and are explicitly reported as degraded reviews.
+The 20-second timeout applies per specialist model request, not to the whole job;
+reference retrieval and provider format fallback can add time.
+
+`LLM_PROVIDER=rules` runs deterministic specialist checks without model calls.
+Configured `remote` or loopback `local` providers enable model reviews through the
+existing model configuration. Review roles use the configured model with separate
+contexts; this does not automatically switch the backend model to the model used
+by your coding assistant. Install the updated locked dependencies, including
+`langgraph-checkpoint-sqlite`; rule mode requires no model credentials. Whole-job caching is off by default (`JOB_CACHE_ENABLED=false`); enabling it
+is a demo convenience and may reuse results against changed knowledge/resources.
+
+Manufacturing input validation preserves explicit `heat_treatment=none`, checks
+finite dimensions, tolerance ordering, full feature extents, stock envelopes, and
+bore/wall consistency. Stock ID is never treated as a finished-bore target. Hollow
+shafts require confirmation of workholding rather than automatic center drilling.
+Explicit operation diameter transitions are validated for material-removal direction
+and continuity; intermediate sizes and complete fixture/inspection plans are still
+engineering inputs, not inferred validated production data.
+
+Manual route edits are re-matched and re-reviewed in a detached candidate state.
+Invalid edits leave the live result untouched. Accepted edits increment the route
+revision and archive the preceding result; resetting also archives the edited
+result. The result API and Excel export use the reviewed edited snapshot. Export
+filenames include the route revision, and cards are visibly marked **DRAFT — not
+approved for production**. The UI shows specialist findings, evidence references,
+review mode, and execution traces. There is no production-approval/signature
+workflow yet; completed planning is not a manufacturing release.
+
+Regression tests cover invalid geometry, absence of invented heat treatment/bore
+operations, independent parallel review, bounded tool use, invalid model evidence,
+stale reports, rejected/accepted edits, and preservation of repaired routes.
+Model behavior in tests is simulated; real-provider review quality and actual shop
+capability require separate commissioning against approved drawings and routes.

@@ -41,6 +41,7 @@ def _feature_summary(features: list[dict[str, Any]]) -> str:
 
     parts = []
     for f in features:
+        # 将 feature_type 代号映射为可读名称，并附带位置与高精度标记，使查询措辞与索引文本口径一致
         label = FEATURE_NAME.get(f.get("feature_type"), f.get("feature_type", ""))
         position = f.get("global_position_mm", "")
         high_precision = " [high-precision]" if f.get("high_precision") else ""
@@ -76,6 +77,7 @@ def build_rag_query(
 
     global_req = request.get("global_requirements", {})
 
+    # 拼接为单条自然语言检索查询：字段措辞与分块索引文本中的标签保持一致，提高关键词匹配命中率
     parts = [
         f"Material {request.get('material', '')}",
         f"Blank diameter φ{request.get('blank_diameter_mm', '')}mm",

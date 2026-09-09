@@ -76,6 +76,7 @@ def estimate_material_cost(
         inner_r = inner_dia_mm / 2
         volume_mm3 = math.pi * (outer_r**2 - inner_r**2) * length_mm
     else:
+        # 中空料若未给出内径，则退化为按实心料（实心圆柱）估算体积
         volume_mm3 = math.pi * outer_r**2 * length_mm
 
     # Convert to weight (kg)

@@ -69,6 +69,7 @@ CASE_EXTENSIONS = {".json"}
 
 
 def _scan_spec_files() -> list[Path]:
+    """扫描规范库目录，返回受支持扩展名的源文件列表（按名称排序）。"""
     if not SPECS_DIR.exists():
         return []
     return sorted(
@@ -77,6 +78,7 @@ def _scan_spec_files() -> list[Path]:
 
 
 def _scan_case_files() -> list[Path]:
+    """扫描案例库目录，返回 JSON 源文件列表；跳过以点开头的隐藏文件（如 .DS_Store）。"""
     if not CASES_DIR.exists():
         return []
     return sorted(
@@ -95,6 +97,7 @@ class RAGCli:
     """RAG management console - interactive, menu-driven."""
 
     def __init__(self):
+        """初始化索引构建器与混合检索器；未安装 Rich 时 console 置空并回退为普通输出。"""
         self.builder = IndexBuilder()
         self.retriever = HybridRetriever(store=self.builder.store)
 
@@ -106,12 +109,14 @@ class RAGCli:
     # ── Rendering helpers ──
 
     def _print(self, *args, **kwargs):
+        """统一打印入口：优先走 Rich 控制台，未安装 Rich 时回退到内置 print。"""
         if self.console:
             self.console.print(*args, **kwargs)
         else:
             print(*args)
 
     def _rule(self, title: str):
+        """打印分隔标题条（Rich 横线，或纯文本包裹的等号块），用于界面分区。"""
         if self.console:
             self.console.rule(f"[bold cyan]{title}")
         else:
@@ -120,15 +125,19 @@ class RAGCli:
             print(f"{'=' * 60}")
 
     def _ok(self, msg: str):
+        """以绿色对勾样式输出成功信息。"""
         self._print(f"  [green]✓[/] {msg}" if HAS_RICH else f"  ✓ {msg}")
 
     def _warn(self, msg: str):
+        """以黄色感叹号样式输出告警信息。"""
         self._print(f"  [yellow]![/] {msg}" if HAS_RICH else f"  ! {msg}")
 
     def _err(self, msg: str):
+        """以红色叉号样式输出错误信息。"""
         self._print(f"  [red]✗[/] {msg}" if HAS_RICH else f"  ✗ {msg}")
 
     def _info(self, msg: str):
+        """以暗色（次要）样式输出提示信息。"""
         self._print(f"  [dim]{msg}[/]" if HAS_RICH else f"  {msg}")
 
     # ── 1. Dashboard ──
@@ -513,9 +522,11 @@ class RAGCli:
                 self._warn(f"Invalid option: '{choice}'. Enter 0-8")
 
     def _clear_screen(self):
+        """清屏：Windows 使用 cls，其余平台使用 clear。"""
         os.system("cls" if os.name == "nt" else "clear")
 
     def _print_header(self):
+        """打印应用标题横幅（Rich 面板或纯文本等号框）。"""
         if HAS_RICH:
             title = Panel(
                 "[bold white]Shaft Machining Planner RAG Management Console[/]\n"
@@ -531,6 +542,7 @@ class RAGCli:
             print("=" * 60)
 
     def _print_menu(self):
+        """打印交互式主菜单（Rich 表格或纯文本）。"""
         print()
         if HAS_RICH:
             menu = Table(box=box.SIMPLE_HEAVY, show_header=False, padding=(0, 2))

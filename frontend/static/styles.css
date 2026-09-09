@@ -28,11 +28,13 @@ body{margin:0;font-family:"Segoe UI","Helvetica Neue",Arial,system-ui,sans-serif
 button{font:inherit;cursor:pointer}
 input,select{font:inherit;height:42px;width:100%;border:1px solid var(--line-strong);border-radius:var(--radius-input);padding:10px 11px;background:#fff;color:var(--ink);outline:none;transition:border-color .15s,box-shadow .15s}
 input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(36,86,209,.12)}
+/* 顶栏与下方内容列都以 1220px 为基准水平居中，超出部分的左右留白随视口伸缩，保证两侧内容对齐 */
 .topbar{min-height:62px;padding:12px max(24px,calc((100vw - 1220px)/2));display:flex;align-items:center;justify-content:space-between;background:linear-gradient(120deg,#1b2330,#2d3f5c);color:#fff;border-bottom:1px solid #0f1520}
 .brand{font-size:26px;font-weight:800;letter-spacing:.5px}.brand.link{color:#fff;text-decoration:none}
 .subtitle{margin-top:3px;color:#c7d2ea;font-size:14px}
 .brand-row{display:flex;align-items:center;gap:12px;margin-top:3px}
 .brand-row .subtitle{margin-top:0}
+/* 后端连接状态指示灯：加 .ok 类后小圆点变绿，默认红色表示离线 */
 .service{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#c7d2ea}
 .service i{width:7px;height:7px;border-radius:50%;background:#f04438;flex-shrink:0}
 .service.ok i{background:#32d583}
@@ -99,6 +101,7 @@ tr:last-child td{border-bottom:none}
 .choice{border:1px solid var(--line);border-radius:var(--radius-sm);padding:13px;margin-top:9px;background:#fff}
 .choice label{display:flex;align-items:flex-start;gap:10px}
 .choice input{width:auto;margin-top:3px}
+/* 窄屏适配：多列栅格/结果表退化为单列，避免横向滚动溢出 */
 @media(max-width:900px){.grid.two,.grid.three,.grid.four,.result-grid{grid-template-columns:1fr}.submit-row{align-items:stretch;flex-direction:column}.operation{grid-template-columns:54px 1fr}.operation>div:last-child{grid-column:1/-1}.shaft-3d{min-height:260px}}
 .shaft-3d{width:100%;height:360px;border-radius:var(--radius-sm);border:1px solid var(--line);background:#f8f9fb;overflow:hidden;cursor:grab}
 .shaft-3d:active{cursor:grabbing}
@@ -108,6 +111,7 @@ tr:last-child td{border-bottom:none}
 .route-edit-table th,.route-edit-table td{border-bottom:1px solid var(--line);padding:8px 9px;vertical-align:middle}
 .route-edit-table input,.route-edit-table select{height:34px;padding:6px 8px;min-width:0}
 .route-edit-row{cursor:default}
+/* 拖拽调序反馈：.dragging 为当前被拖行（半透明），.drag-over 指示可放置的目标行 */
 .route-edit-row.dragging{opacity:.5;background:#f4f6fb}
 .route-edit-row.drag-over{outline:2px dashed var(--primary);outline-offset:-2px;background:var(--primary-soft)}
 .drag-handle{cursor:grab;color:#94a3b8;font-size:16px;text-align:center;user-select:none}

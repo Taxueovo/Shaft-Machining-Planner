@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import json
 from typing import Any, Optional
 
 from langgraph.types import interrupt
@@ -26,7 +27,9 @@ class ProcessNodesMixin:
 
     @traced("precision_choice", ["geometry", "request"])
     def precision_choice(self, state: WorkflowState) -> dict[str, Any]:
+        """确定高精度特征的加工时机：不可拆分的自动决策，可拆分的挂起等待人工选择。"""
         self.progress(state, 20, "precision_choice", "Checking high-precision features.")
+        # 无热处理时不存在“分时加工”的取舍，直接返回空选择。
         if state["request"]["global_requirements"]["heat_treatment"] == "none":
             return {"pending_choices": [], "user_choices": {}}
 
@@ -36,6 +39,7 @@ class ProcessNodesMixin:
             if not feature["high_precision"] or feature["processing_timing"] != "undecided":
                 continue
             feature_type = feature["feature_type"]
+            # 不支持“粗加工前+精加工后”拆分的特征类型：整特征放热处理前加工，自动决策、无需询问。
             if not FEATURE_SUPPORTS_SPLIT.get(feature_type, False):
                 auto_choices[feature["feature_id"]] = "before_heat_treatment"
                 continue
@@ -62,6 +66,7 @@ class ProcessNodesMixin:
         if not pending:
             return {"pending_choices": [], "user_choices": auto_choices}
 
+        # 将任务标记为等待用户选择并挂起图执行（interrupt），用户提交后由此恢复继续。
         self.store.update(
             state["job_id"],
             status="waiting_user_choice",
@@ -82,6 +87,7 @@ class ProcessNodesMixin:
 
     @traced("process_planning", ["request", "geometry", "user_choices", "heat_treatment_decision"])
     def process_planning(self, state: WorkflowState) -> dict[str, Any]:
+        """产出最终工艺路线：规则引擎先生成基础路线，LLM 只做受约束修正，失败自动回退。"""
         # In the repair loop, retry_count is never incremented; the actual loop counter
         # is repair_count. Use repair_count to trigger the Replan Hint so that replanning
         # carries the failure reasons from the previous verification.
@@ -100,6 +106,7 @@ class ProcessNodesMixin:
         )
         verification = state.get("verification")
         route_request = {**request, "heat_treatment_plan": state.get("heat_treatment_decision", {})}
+        # 规则路线是“必须保留的骨架”；LLM 只允许打受约束的补丁，任一步失败都回退到该路线。
         base_route = build_route(route_request, geometry, choices)
 
         if llm_available():
@@ -110,13 +117,25 @@ class ProcessNodesMixin:
                     current_step="process_planning",
                     message="Retrieving reference process cases (RAG)...",
                 )
-                rag_context = build_rag_context(
-                    request,
-                    geometry,
-                    choices,
-                    heat_decision,
-                    top_k=3,
-                    max_chars=3000,
+                if (
+                    hasattr(self, "task_tool_budget")
+                    and "retrieve_references" in state["_worker_contract"]["allowed_tools"]
+                ):
+                    self.task_tool_budget.record("retrieve_references", {"top_k": 3})
+                rag_context = (
+                    build_rag_context(
+                        request,
+                        geometry,
+                        choices,
+                        heat_decision,
+                        top_k=3,
+                        max_chars=3000,
+                    )
+                    if "retrieve_references"
+                    in state.get("_worker_contract", {}).get(
+                        "allowed_tools", ["retrieve_references"]
+                    )
+                    else ""
                 )
                 self.store.update(
                     state["job_id"],
@@ -131,6 +150,7 @@ class ProcessNodesMixin:
                     retry_count,
                     base_route,
                     rag_context,
+                    task_contract=state.get("_worker_contract"),
                 )
                 if patched:
                     return {"process_route": patched}
@@ -151,27 +171,13 @@ class ProcessNodesMixin:
         retry_count: int,
         base_route: list[dict[str, Any]],
         rag_context: str = "",
+        task_contract: Optional[dict[str, Any]] = None,
     ) -> Optional[list[dict[str, Any]]]:
-        segments, features = request["segments"], geometry.get("features", [])
+        """拼装过程规划提示词调用 LLM，返回修正后的路线；无需修正或输出非法则返回 None。"""
         global_req = request["global_requirements"]
-
-        segment_desc = "\n".join(
-            f"  - {s['segment_id']}: {s['diameter_mm']}mm x {s['length_mm']}mm" for s in segments
-        )
-        feature_desc = (
-            "\n".join(
-                f"  - {f['feature_id']}: {FEATURE_NAME.get(f['feature_type'], f['feature_type'])}, pos {f['global_position_mm']}mm"
-                + (" [high-precision]" if f.get("high_precision") else "")
-                for f in features
-            )
-            or "  None"
-        )
-        base_route_desc = "\n".join(
-            f"  {op['operation_no']}. {op['name']} ({op['stage']})"
-            + (f" [{op.get('process_category') or '-'}]" if op.get("process_category") else "")
-            + (" [conditional]" if op.get("conditional") else "")
-            for op in base_route
-        )
+        segment_desc = json.dumps(request["segments"], ensure_ascii=False)
+        feature_desc = json.dumps(geometry.get("features", []), ensure_ascii=False)
+        base_route_desc = json.dumps(base_route, ensure_ascii=False)
 
         retry_context = ""
         if retry_count > 0 and verification:
@@ -209,7 +215,15 @@ class ProcessNodesMixin:
             },
         )
 
-        result = chat_json(messages, temperature=0.2)
+        if task_contract:
+            messages.append(
+                {
+                    "role": "user",
+                    "content": "Planner task contract (subject to route safety constraints): "
+                    + json.dumps(task_contract),
+                }
+            )
+        result = chat_json(messages, temperature=0.2, timeout_seconds=20)
         if not isinstance(result, dict):
             return None
         patches = result.get("patches", [])
@@ -221,6 +235,7 @@ class ProcessNodesMixin:
     def _apply_route_patches(
         base_route: list[dict[str, Any]], patches: list[dict[str, Any]]
     ) -> Optional[list[dict[str, Any]]]:
+        """把 LLM 补丁(删除/插入/更新)作用到基础路线并重排编号；校验失败整体回退为 None。"""
         route = [dict(op) for op in base_route]
         route_by_no = {op["operation_no"]: op for op in route}
         insertions: list[tuple[int, dict[str, Any]]] = []
@@ -232,9 +247,8 @@ class ProcessNodesMixin:
                 patch.get("operation", {}),
             )
             if action == "remove":
-                if (
-                    target_no in route_by_no
-                    and route_by_no[target_no]["name"] not in MANDATORY_OPERATION_NAMES
+                if target_no in route_by_no and route_by_no[target_no]["name"] not in (
+                    MANDATORY_OPERATION_NAMES | {"Prepare Workholding"}
                 ):
                     del route_by_no[target_no]
             elif action == "insert" and op_data:
@@ -246,6 +260,7 @@ class ProcessNodesMixin:
                     "process_category": op_data.get("process_category"),
                     "feature_id": op_data.get("feature_id"),
                     "conditional": op_data.get("conditional", False),
+                    "dimensions": op_data.get("dimensions", []),
                 }
                 try:
                     ProcessStage(new_op["stage"])
@@ -254,7 +269,8 @@ class ProcessNodesMixin:
                 insertions.append((target_no or 0, new_op))
             elif action == "update" and target_no in route_by_no and op_data:
                 if (
-                    route_by_no[target_no]["name"] in MANDATORY_OPERATION_NAMES
+                    route_by_no[target_no]["name"]
+                    in (MANDATORY_OPERATION_NAMES | {"Prepare Workholding"})
                     and "name" in op_data
                     and op_data["name"] != route_by_no[target_no]["name"]
                 ):
@@ -266,10 +282,12 @@ class ProcessNodesMixin:
                     "process_category",
                     "feature_id",
                     "conditional",
+                    "dimensions",
                 ):
                     if key in op_data:
                         route_by_no[target_no][key] = op_data[key]
 
+        # 先按现有编号排序，再在各目标工序之后插入新工序，最后统一重排为连续编号。
         result = sorted(route_by_no.values(), key=lambda op: op["operation_no"])
         for after_no, new_op in insertions:
             insert_idx = len(result)
