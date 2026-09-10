@@ -1,6 +1,6 @@
 # 基础运行依赖：服务、数据处理、模型客户端及持久化工作流；精确版本见对应锁文件。
 fastapi>=0.115,<1
-uvicorn[standard]>=0.30,<1
+uvicorn[standard]>=0.52.4,<1
 jinja2>=3.1,<4
 httpx>=0.27,<1
 pydantic>=2.8,<3
