@@ -1,3 +1,4 @@
+# 把输入要求转换为可解释的热处理决策，保留缺失参数和工程确认事项。
 """Reviewed heat-treatment planning knowledge for shaft process routes."""
 
 from __future__ import annotations
@@ -7,6 +8,7 @@ from typing import Any
 from rules.constants import HEAT_NAME, get_material_properties
 
 
+# 把明确输入转换为保守的热处理建议，不把缺失规格当作已确认。
 class HeatTreatmentProvider:
     """Convert requirements into an explainable, conservative HT decision.
 

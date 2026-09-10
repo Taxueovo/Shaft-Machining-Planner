@@ -1,3 +1,4 @@
+# 校验公开设备和刀具样例的来源及证据字段，辅助维护数据可追溯性。
 """Audit public workbook provenance without changing engineering values.
 
 Automatic scraping is intentionally excluded: a human must compare manufacturer

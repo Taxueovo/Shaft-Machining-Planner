@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shaft Machining Planner - PE Agent - Case Detail</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
+{# 当前页面的局部样式：补充公共样式中的布局、状态和窄屏显示规则。 #}
   <style>
     .case-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
     .case-header h1 { margin: 0; font-size: 24px; }
@@ -52,6 +53,7 @@
   </div>
 </main>
 
+{# 页面脚本使用响应生成的 nonce；动态数据由模板安全编码后注入。 #}
 <script nonce="{{ request.state.csp_nonce }}">
 (function() {
   const caseId = {{ case_id | tojson }};
@@ -60,6 +62,7 @@
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 
+  // 读取地址栏案例标识对应的详情，处理加载失败状态。
   async function loadCase() {
     try {
       const res = await fetch(`/api/cases/${encodeURIComponent(caseId)}`);
@@ -71,6 +74,7 @@
     }
   }
 
+  // 把案例基本信息、几何和工艺路线渲染到详情页。
   function renderCase(c) {
     const content = document.getElementById('content');
     // 模板字符串中的 ${c.xxx ? ... : ''} 依字段是否存在，决定是否渲染对应区块
@@ -167,6 +171,7 @@
     `;
   }
 
+  // 跳转到带案例标识的定制表单，以当前案例作为新规划起点。
   window.copyCase = function() {
     alert('Copy functionality coming soon!');
   };
@@ -174,6 +179,7 @@
   loadCase();
 })();
 </script>
+{# 页面脚本使用响应生成的 nonce；动态数据由模板安全编码后注入。 #}
 <script nonce="{{ request.state.csp_nonce }}">
 document.getElementById("shutdown-btn").addEventListener("click", async () => {
   if (!confirm("Confirm shutdown of Shaft Machining Planner - PE Agent system?")) return;

@@ -188,6 +188,7 @@ FEATURE_KEYWORDS: dict[str, list[str]] = {
 FEATURE_PENALTY: float = 0.3  # 每个缺失关键特征的扣分
 
 
+# 将同一特征的多个别名归并为唯一匹配集合，避免重复计数。
 def _match_feature_aliases(query: str) -> set[frozenset[str]]:
     """Return the set of matched feature keyword-sets, deduplicated across aliases."""
     q = query.lower()

@@ -154,6 +154,7 @@ function renderShaft3D(containerId, geometry) {
   // ── Render loop (paused while the tab is hidden to stop burning GPU) ──
   var rafId = null;
   var running = true;
+  // 运行标志开启时更新控制器并绘制下一帧；页面可见性事件负责暂停和恢复。
   function loop() {
     if (!running) return;
     rafId = requestAnimationFrame(loop);
@@ -181,6 +182,7 @@ function renderShaft3D(containerId, geometry) {
 }
 
 /** Create a text sprite */
+// 用画布生成尺寸文字贴图，创建面向相机的标注精灵。
 function makeSprite(text, color) {
   var canvas = document.createElement("canvas");
   var ctx = canvas.getContext("2d");

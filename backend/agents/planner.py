@@ -1,3 +1,4 @@
+# 根据零件及执行反馈提出任务依赖图；模型计划必须通过确定性合同校验。
 """Planner proposes a task DAG; validation and scheduling stay outside the model."""
 
 from __future__ import annotations
@@ -7,9 +8,11 @@ from copy import deepcopy
 from models.tasks import TaskContract, TaskPlan
 from llm_client import chat_json, llm_available
 
+# 模型规划调用次数与调度波次数分别限额，防止反馈循环持续调用模型。
 MAX_PLANNER_CALLS = 4
 
 
+# 为已登记角色生成默认任务合同，设置目标、依赖、工具预算及验收说明。
 def make_task(worker, dependencies=(), *, blocking=False, requires_success=True):
     objectives = {
         "process_planning": "Propose a route consistent with the validated drawing and treatment requirements.",
@@ -34,6 +37,7 @@ def make_task(worker, dependencies=(), *, blocking=False, requires_success=True)
     )
 
 
+# 构造必需的路线、资源和审查任务，并按空心、细长或高精度条件追加装夹分析。
 def baseline_plan(state):
     tasks = [make_task("process_planning")]
     tasks += [
@@ -43,6 +47,7 @@ def baseline_plan(state):
     req, geometry = state["request"], state["geometry"]
     min_dia = min(s["diameter_mm"] for s in req["segments"])
     # A task-selection heuristic, not an assertion of machining feasibility.
+    # 长径比阈值只用于决定是否增加分析任务，不能据此认定装夹方案已可用。
     needs_setup = (
         req.get("blank_type") == "hollow"
         or geometry["total_length_mm"] / min_dia > 12
@@ -57,11 +62,13 @@ def baseline_plan(state):
     )
 
 
+# 先按资源缺口补充规则任务，再尝试模型计划；非法计划或模型失败时保留确定性回退。
 def propose_plan(state, current, results, call_count):
     """Keep completed work immutable; add failure-directed tasks before optional model planning."""
     fallback = TaskPlan.model_validate(deepcopy(current)) if current else baseline_plan(state)
     by_worker = {t.worker: t for t in fallback.tasks}
     resource = next((r for r in results.values() if r["worker"] == "resource_selection"), None)
+    # 资源缺口触发替代资源与装夹分析；依赖结果不满足时也允许诊断任务读取它。
     if resource and resource["status"] == "infeasible":
         rid = by_worker["resource_selection"].task_id
         for role in ("alternative_resources", "workholding"):
@@ -114,6 +121,7 @@ def propose_plan(state, current, results, call_count):
             existing = {task.task_id: task for task in fallback.tasks}
             proposed = {task.task_id: task for task in candidate.tasks}
             # Mandatory baseline IDs and coverage cannot be renamed to defeat the ledger.
+            # 已经执行过的合同不可修改或重命名，避免通过换任务标识规避结果复用约束。
             for tid, task in existing.items():
                 if tid not in proposed or proposed[tid].worker != task.worker:
                     raise ValueError("Planner omitted or renamed an established task")

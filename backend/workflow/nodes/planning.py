@@ -1,3 +1,4 @@
+# 完成任务摘要、特征定位和热处理决策，为后续路线生成准备结构化输入。
 """Planning nodes: task planning, feature analysis."""
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from rules import (
 )
 
 
+# 提供任务分析、几何解析和热处理决策等前置节点。
 class PlanningNodesMixin:
     """Mixin for task planning and feature analysis nodes."""
 
@@ -200,6 +202,7 @@ class PlanningNodesMixin:
             }
         }
 
+    # 在路线生成前形成可追溯的热处理决策，供后续工序规则读取。
     @traced("heat_treatment_planning", ["request", "geometry"])
     def heat_treatment_planning(self, state: WorkflowState) -> dict[str, Any]:
         """Create a traceable heat-treatment decision before route generation."""

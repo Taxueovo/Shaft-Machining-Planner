@@ -1,6 +1,8 @@
+# 回归测试：覆盖任务状态跨存储实例的持久化。
 from workflow.job_store import JobStore
 
 
+# 重新创建存储实例，验证已保存任务仍能读取。
 def test_job_store_persists_across_instances(tmp_path, monkeypatch):
     database = tmp_path / "jobs.sqlite3"
     monkeypatch.setenv("JOB_DB_FILE", str(database))

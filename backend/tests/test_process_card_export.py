@@ -1,3 +1,4 @@
+# 回归测试：覆盖工艺卡设备列、定制路线顺序和公式注入防护。
 """Process card export regression tests: every operation should show its matched machine/tool/status."""
 
 import uuid
@@ -10,6 +11,7 @@ from service import PlanningService
 from workflow import JobStore
 
 
+# 构造关闭知识库回写的服务，导出测试不能污染真实案例数据。
 def _service_without_rag() -> PlanningService:
     """Build a service that does not write to the real RAG case library (export tests must not touch rag/data)."""
     service = object.__new__(PlanningService)
@@ -18,6 +20,7 @@ def _service_without_rag() -> PlanningService:
     return service
 
 
+# 构造包含机床、刀具匹配的工作流结果样例。
 def _make_result() -> dict:
     """Build a result close to real workflow output (including matched machines/tools)."""
     machine = {
@@ -118,11 +121,14 @@ def _make_result() -> dict:
     }
 
 
+# 读取已生成的 Excel 工艺卡，供单元格及行内容断言使用。
 def _read_card(path) -> pd.DataFrame:
     return pd.read_excel(path, sheet_name="Process Card", header=None)
 
 
+# 覆盖工艺卡逐工序的机床、刀具和状态列。
 class TestProcessCardEquipmentColumns:
+    # 验证设备列读取逐工序匹配结果，防止导出丢失已有推荐。
     def test_machine_tool_status_columns_show_matched_resources(self, tmp_path):
         """Regression: Machine/Tool/Status columns should read machine_recommendations /
         tool_recommendations / verification_status (previously read non-existent machine/tool/status keys, producing all "-")."""
@@ -167,6 +173,7 @@ class TestProcessCardEquipmentColumns:
         finally:
             path.unlink(missing_ok=True)
 
+    # 验证设备信息随工序展示，不额外生成独立车床候选区。
     def test_no_standalone_turning_machine_candidates_section(self, tmp_path):
         """Regression: no standalone Turning Machine Candidates section (equipment is now shown under each operation)."""
         service = _service_without_rag()
@@ -184,6 +191,7 @@ class TestProcessCardEquipmentColumns:
             path.unlink(missing_ok=True)
 
 
+# 从工艺卡中提取路线及设备区域的行，排除表头和其他区块。
 def _route_rows(path):
     """Extract rows of the Process Route & Equipment section from the process card."""
     df = _read_card(path)
@@ -192,7 +200,9 @@ def _route_rows(path):
     return rows[rows[0].notna()].astype(str)
 
 
+# 覆盖定制路线的导出顺序、资源关联及文本安全。
 class TestCustomRouteExport:
+    # 验证看似公式的工序文本以普通文字写入 Excel。
     def test_formula_like_operation_text_is_exported_as_literal_text(self):
         service = _service_without_rag()
         job_id = uuid.uuid4().hex[:12]
@@ -214,6 +224,7 @@ class TestCustomRouteExport:
         finally:
             path.unlink(missing_ok=True)
 
+    # 验证按用户顺序导出且编号连续，同时保留原工序资源关联。
     def test_custom_route_reorders_operations_and_keeps_resources(self, tmp_path):
         """Custom route exports in user order with sequential Op# numbering; machine/tool/status still
         associate by original operation_no (the stable resource key)."""
@@ -261,6 +272,7 @@ class TestCustomRouteExport:
         finally:
             path.unlink(missing_ok=True)
 
+    # 验证重置定制后导出恢复原始路线顺序。
     def test_reset_custom_route_falls_back_to_original(self, tmp_path):
         """After custom_route is cleared (reset), the process card falls back to the workflow-generated original order."""
         service = _service_without_rag()
@@ -276,7 +288,9 @@ class TestCustomRouteExport:
             path.unlink(missing_ok=True)
 
 
+# 覆盖服务层定制、重置和路线就绪状态要求。
 class TestCustomizeRouteService:
+    # 验证服务的定制保存与重置行为。
     def test_customize_and_reset_route_methods(self):
         # Full-workflow edit/revalidation/reset coverage lives in test_production_reviews.
         # A historical result can still be reset without pretending it was revalidated.
@@ -295,6 +309,7 @@ class TestCustomizeRouteService:
         assert job["custom_route"] is None and job["custom_result"] is None
         assert job["route_revision"] == 1
 
+    # 验证尚无生成路线时不能定制工序。
     def test_customize_route_requires_generated_route(self):
         """Customization is not allowed when result is not ready (no process_route)."""
         import pytest

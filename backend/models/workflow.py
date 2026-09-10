@@ -1,3 +1,4 @@
+# 定义规划请求、图状态及执行轨迹，明确并行节点输出的合并方式。
 """Workflow data models: PlanningRequest, WorkflowState, ExecutionTrace."""
 
 from __future__ import annotations
@@ -5,16 +6,21 @@ from __future__ import annotations
 import functools
 import logging
 import operator
+import json
+from uuid import uuid4
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Annotated, Any, Literal, Optional, TypedDict
 
 from pydantic import BaseModel, Field, model_validator
+from langgraph.errors import GraphInterrupt
 
 from models.tasks import merge_task_results
 from models.input import ShaftSegment, FeatureInput, GlobalRequirements
 from rules.geometry import validate_manufacturing_geometry
 
 logger = logging.getLogger(__name__)
+_trace_active = ContextVar("trace_active", default=False)
 
 
 # ============================================================
@@ -22,6 +28,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 
+# 约束规划输入，确保毛坯、轴段、特征和全局要求相互一致。
 class PlanningRequest(BaseModel):
     """Process planning request."""
 
@@ -82,6 +89,7 @@ def _merge_traces(
     return merged
 
 
+# 定义图节点共享状态；带合并器的字段可接收并行节点增量。
 class WorkflowState(TypedDict, total=False):
     """LangGraph workflow state definition."""
 
@@ -121,14 +129,18 @@ class WorkflowState(TypedDict, total=False):
     execution_trace: Annotated[list[dict[str, Any]], _merge_traces]
 
 
+# 记录节点开始、结束、输入输出键和工具调用，供结果页面追溯。
 class ExecutionTrace:
     """Execution trace utility class."""
 
     @staticmethod
-    def start(node_name: str, state_keys: list[str]) -> dict[str, Any]:
+    def start(node_name: str, state_keys: list[str], inputs=None) -> dict[str, Any]:
         """创建一条 running 状态的执行记录，并快照该节点将要读取的输入键清单。"""
         return {
+            "trace_id": uuid4().hex,
             "node": node_name,
+            "inputs": ExecutionTrace.snapshot(inputs),
+            "outputs": None,
             "input_keys": state_keys,
             "start_time": datetime.now(timezone.utc).isoformat(),
             "end_time": None,
@@ -140,11 +152,31 @@ class ExecutionTrace:
         }
 
     @staticmethod
+    def snapshot(value):
+        """Detached JSON snapshot; omit trace history to prevent recursive growth."""
+
+        def clean(item):
+            if isinstance(item, BaseModel):
+                return clean(item.model_dump(mode="json"))
+            if isinstance(item, dict):
+                return {
+                    str(k): clean(v)
+                    for k, v in item.items()
+                    if k not in {"execution_trace", "_tool_calls"}
+                }
+            if isinstance(item, (list, tuple)):
+                return [clean(v) for v in item]
+            return item
+
+        return json.loads(json.dumps(clean(value), ensure_ascii=False, default=str))
+
+    @staticmethod
     def finish(
         entry: dict[str, Any],
         output_keys: list[str],
         tool_calls: list[dict[str, Any]] | None = None,
         error: str | None = None,
+        outputs=None,
     ) -> dict[str, Any]:
         """结束一条执行记录：补齐耗时、输出键与工具调用，并按是否出错标注状态。"""
         end = datetime.now(timezone.utc)
@@ -152,8 +184,9 @@ class ExecutionTrace:
         entry["end_time"] = end.isoformat()
         entry["duration_ms"] = round((end - start).total_seconds() * 1000)
         entry["output_keys"] = output_keys
+        entry["outputs"] = ExecutionTrace.snapshot(outputs)
         if tool_calls is not None:
-            entry["tool_calls"] = tool_calls
+            entry["tool_calls"] = ExecutionTrace.snapshot(tool_calls)
         entry["status"] = "error" if error else "success"
         entry["error"] = error
         return entry
@@ -177,24 +210,58 @@ class ExecutionTrace:
         )
 
 
+# 为工作流节点附加执行轨迹，同时保留原函数的调用元信息。
 def traced(node_name: str, input_keys: list[str] | None = None):
     """Workflow node execution tracing decorator."""
 
+    # 捕获节点名称与输入要求，生成实际包裹目标函数的装饰器。
     def decorator(func):
+        # 调用原节点并合并执行轨迹；失败时记录错误后继续向上抛出。
         @functools.wraps(func)
         def wrapper(self, state: WorkflowState) -> dict[str, Any]:
+            if _trace_active.get():
+                return func(self, state)
             keys = input_keys or list(state.keys())
-            entry = ExecutionTrace.start(node_name, keys)
+            entry = ExecutionTrace.start(node_name, keys, state)
+            job_id = state.get("job_id") or state.get("snapshot", {}).get("job_id")
+            store = getattr(self, "store", None)
+
+            def persist():
+                if store is not None and job_id and hasattr(store, "save_trace"):
+                    store.save_trace(job_id, entry)
+
+            persist()
+            token = _trace_active.set(True)
             try:
                 result = func(self, state)
                 # 约定：节点可在返回 dict 中通过 _tool_calls 附带工具调用明细，先取出再写入 trace
                 extra_tool_calls = result.pop("_tool_calls", [])
-                ExecutionTrace.finish(entry, list(result.keys()), tool_calls=extra_tool_calls)
+                for child in result.get("execution_trace", []):
+                    extra_tool_calls.extend(child.get("tool_calls", []))
+                ExecutionTrace.finish(
+                    entry, list(result.keys()), tool_calls=extra_tool_calls, outputs=result
+                )
+                persist()
                 result["execution_trace"] = [entry]
                 return result
+            except GraphInterrupt:
+                ExecutionTrace.finish(entry, [])
+                entry["status"] = "interrupted"
+                persist()
+                raise
             except Exception as exc:
                 ExecutionTrace.finish(entry, [], error=str(exc))
+                persist()
                 raise
+            except BaseException as exc:
+                # Preserve cancellation/termination attempts before propagating them.
+                ExecutionTrace.finish(entry, [])
+                entry["status"] = "interrupted"
+                entry["error"] = type(exc).__name__
+                persist()
+                raise
+            finally:
+                _trace_active.reset(token)
 
         return wrapper
 

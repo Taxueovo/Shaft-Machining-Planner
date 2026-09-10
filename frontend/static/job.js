@@ -121,6 +121,15 @@
   // #result-container。展示优先级为 custom_route(用户自定义) > process_route(引擎原始)；
   // operation_no 是贯穿路线与资源映射(operation_resources)的稳定键。渲染完成后
   // 触发 3D 模型绘制与"Customize Route / Generate Process Card"按钮绑定。
+  function traceFailureDetails(payload) {
+    const trace = payload.execution_trace || payload.result?.execution_trace || [];
+    if (!trace.length) return "";
+    return panel("Agent Execution Trace", trace.map(t =>
+      `<details><summary>${esc(t.node)} — ${esc(t.status)}</summary>
+      <pre style="max-height:500px;overflow:auto">${esc(JSON.stringify(t, null, 2))}</pre></details>`
+    ).join(""));
+  }
+
   function renderResult(payload) {
     renderTasks(payload.task_execution);
     if (rendered) return;
@@ -128,6 +137,7 @@
 
     if (!payload.geometry && !payload.process_route && !payload.verification) {
       $("result-container").innerHTML = panel("Execution Result", `<div class="alert danger">${esc(payload.error || payload.message || "Result data is empty.")}</div>`);
+      $("result-container").innerHTML += traceFailureDetails(payload);
       $("result-container").classList.remove("hidden");
       return;
     }
@@ -143,6 +153,7 @@
          ).join("")}`,
         `<span class="badge danger">Terminated</span>`
       );
+      $("result-container").innerHTML += traceFailureDetails(payload);
       $("result-container").classList.remove("hidden");
       return;
     }
@@ -236,8 +247,11 @@
             <td><strong>${esc(t.node)}</strong></td>
             <td><span class="badge ${t.status === 'success' ? 'success' : 'danger'}">${esc(t.status)}</span></td>
             <td>${t.duration_ms != null ? esc(t.duration_ms) + ' ms' : '-'}</td>
-            <td class="muted">${esc((t.input_keys || []).join(', '))}</td>
-            <td class="muted">${esc((t.output_keys || []).join(', '))}</td>
+            <td class="muted">${esc((t.input_keys || []).join(', '))}
+              <details><summary>完整输入</summary><pre style="max-width:500px;max-height:400px;overflow:auto">${esc(JSON.stringify(t.inputs ?? null, null, 2))}</pre></details></td>
+            <td class="muted">${esc((t.output_keys || []).join(', '))}
+              <details><summary>完整输出</summary><pre style="max-width:500px;max-height:400px;overflow:auto">${esc(JSON.stringify(t.outputs ?? null, null, 2))}</pre></details>
+              ${t.error ? `<pre>${esc(t.error)}</pre>` : ''}</td>
             <td>${(t.tool_calls || []).map(tc =>
               `<div style="margin:2px 0"><span class="tag">${esc(tc.tool)}</span> <span class="muted">${esc(tc.duration_ms)}ms</span> <span class="muted">${esc(tc.result_summary)}</span></div>`
             ).join("") || '-'}</td>
@@ -251,6 +265,7 @@
 
     // Render the 3D shaft model from geometry. The Three.js module (~700 KB) is
     // imported lazily only now that a result is shown, not on page load.
+    // 延迟加载三维模块，在结果容器就绪后渲染轴体，避免阻塞主要结果。
     function doRender3D() {
       const container = $("shaft-3d-container");
       if (!container) return;
@@ -314,6 +329,7 @@
     return blocks.length ? `<div class="op-devices">${blocks.join("")}</div>` : "";
   };
 
+  // 渲染单道工序及其资源信息，使用工序标识关联资源。
   function opHtml(op, idx) {
     const res = routeResourceMap[op.operation_no] || {};
     return `<div class="operation">
@@ -323,6 +339,7 @@
     </div>`;
   }
 
+  // 组合工序列表和定制、导出按钮，供路线面板统一重绘。
   function routePanelInnerHtml(ops) {
     return `<div id="route-op-list">${ops.map(opHtml).join("")}</div>
       <div class="alert warning" style="margin-top:16px">${esc(routeScopeNote)}</div>
@@ -332,6 +349,7 @@
       </div>`;
   }
 
+  // 为当前路线面板重新绑定定制和导出按钮，适配面板替换。
   function bindRouteButtons() {
     const cardBtn = document.getElementById("gen-process-card-btn");
     if (cardBtn) cardBtn.addEventListener("click", () => generateProcessCard(cardBtn));
@@ -339,6 +357,7 @@
     if (customBtn) customBtn.addEventListener("click", enterEditMode);
   }
 
+  // 按当前有效路线重建展示面板并恢复按钮事件。
   function rerenderRoutePanel() {
     const inner = document.getElementById("route-panel-inner");
     if (!inner) return;
@@ -372,6 +391,7 @@
     </tr>`;
   }
 
+  // 组合工序编辑表和保存、取消等操作控件。
   function editorInnerHtml() {
     return `<table class="route-edit-table">
       <thead><tr><th></th><th>#</th><th>Operation</th><th>Stage</th><th>Description</th><th>Resources</th><th>Actions</th></tr></thead>
@@ -407,6 +427,7 @@
     });
   }
 
+  // 使用编辑数组重绘表格，再绑定拖拽和行操作事件。
   function rerenderEditor() {
     const inner = document.getElementById("route-panel-inner");
     if (!inner) return;
@@ -414,6 +435,7 @@
     bindEditorEvents();
   }
 
+  // 复制当前路线作为编辑草稿，保留已保存结果直到后端复核通过。
   function enterEditMode() {
     const inner = document.getElementById("route-panel-inner");
     if (!inner) return;
@@ -559,6 +581,7 @@
   //  waiting_user_choice → 交给 showChoices 等待用户输入；终态且 result_ready → 拉取
   //  /result 并调用 renderResult；其余情况(含接口出错 / 结果尚未就绪)调度下一次轮询。
   //  终态但结果未就绪是短暂过渡，会放慢到 2s 轮询，避免对后端 800ms 高频轰炸。
+  // 展示任务目标、依赖和当前结果，复用数量来自最近一次调度事件。
   function renderTasks(board) {
     const container = $("task-board");
     if (!board?.plan) { container.classList.add("hidden"); return; }
@@ -575,6 +598,7 @@
     container.classList.remove("hidden");
   }
 
+  // 渲染缺失工程信息问题；回答和明确暂缓走同一恢复接口，失败时允许重试。
   function showEngineering(questions) {
     const container = $("engineering-panel");
     container.innerHTML = `<h2>Engineering Information Required</h2>
@@ -601,6 +625,7 @@
     container.querySelector("[data-defer]").addEventListener("click", () => submit(true));
   }
 
+  // 轮询任务状态，按人工等待或终态分派界面，其余情况继续安排下一次请求。
   async function poll() {
     try {
       const response = await fetch(`/api/jobs/${jobId}`);

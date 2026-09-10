@@ -1,3 +1,4 @@
+# 公开数据审计：允许手动触发并定期核对来源及审核时效。
 name: Public data audit
 
 permissions:

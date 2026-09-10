@@ -1,3 +1,4 @@
+# 统一工序阶段、资源状态和路线模型，约束工序尺寸变化与定制输入。
 """Process Pydantic models."""
 
 from __future__ import annotations
@@ -8,6 +9,7 @@ from typing import Any, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+# 集中定义合法工序阶段，供路线生成、拓扑排序和验证共用。
 class ProcessStage(str, Enum):
     """Process stage enumeration - Single source for all stage values."""
 
@@ -81,6 +83,7 @@ MANDATORY_OPERATION_NAMES = {
 }
 
 
+# 根据实心或空心路线确定必需工序，空心件使用装夹准备而不是默认钻中心孔。
 def required_operation_names(request: dict[str, Any]) -> set[str]:
     required = set(MANDATORY_OPERATION_NAMES)
     if request.get("blank_type") == "hollow":
@@ -89,6 +92,7 @@ def required_operation_names(request: dict[str, Any]) -> set[str]:
     return required
 
 
+# 记录指定表面的加工前后直径；未知来料尺寸保持为空。
 class OperationDimension(BaseModel):
     """Diameter transition for a named surface; unknown incoming sizes remain null."""
 
@@ -98,6 +102,7 @@ class OperationDimension(BaseModel):
     before_mm: Optional[float] = Field(default=None, gt=0)
     after_mm: float = Field(gt=0)
 
+    # 验证显式去料方向：外圆不能越切越大，内孔不能越镗越小。
     @model_validator(mode="after")
     def material_removal(self):
         if self.before_mm is not None:
@@ -108,6 +113,7 @@ class OperationDimension(BaseModel):
         return self
 
 
+# 定义单道工序的阶段、资源类别、特征引用与显式尺寸变化。
 class ProcessOperation(BaseModel):
     """Single operation model."""
 
@@ -121,6 +127,7 @@ class ProcessOperation(BaseModel):
     conditional: bool = False
 
 
+# 约束人工提交的定制工序列表，供服务层进一步复核。
 class RouteCustomizeRequest(BaseModel):
     """User-customized process route request (route adjusted by the user before the process card is generated).
 
@@ -140,6 +147,7 @@ class RouteCustomizeRequest(BaseModel):
         return self
 
 
+# 区分资源满足、部分满足、不满足、未覆盖和不适用状态。
 class ResourceStatus(str, Enum):
     """Resource validation status."""
 
@@ -150,6 +158,7 @@ class ResourceStatus(str, Enum):
     unknown = "unknown"
 
 
+# 用错误码、严重程度和关联信息表达可追溯的验证问题。
 class ValidationIssue(BaseModel):
     """Validation issue structured output."""
 
@@ -161,6 +170,7 @@ class ValidationIssue(BaseModel):
     severity: str = "error"
 
 
+# 枚举高精度特征在热处理前、后或分阶段加工的策略。
 class FeatureProcessStrategy(str, Enum):
     """Feature processing strategy."""
 
@@ -169,12 +179,14 @@ class FeatureProcessStrategy(str, Enum):
     rough_before_heat_finish_after_heat = "rough_before_heat_finish_after_heat"
 
 
+# 规定模型路线响应的结构，避免自由文本直接进入工序列表。
 class LLMRouteOutput(BaseModel):
     """LLM process route output contract."""
 
     process_route: list[ProcessOperation]
 
 
+# 约束模型资源建议输出，实际能力仍由资源查询校验。
 class ResourceRecommendation(BaseModel):
     """LLM resource recommendation output contract."""
 

@@ -1,3 +1,4 @@
+# 回归测试：覆盖跨站写请求拦截和错误响应安全头。
 """Browser-facing loopback proxy security checks."""
 
 from fastapi.testclient import TestClient
@@ -5,6 +6,7 @@ from fastapi.testclient import TestClient
 from frontend.main import app
 
 
+# 验证跨站写请求在进入后端代理前即被拦截。
 def test_cross_site_mutation_is_rejected_before_proxying() -> None:
     with TestClient(app) as client:
         response = client.post(
@@ -16,6 +18,7 @@ def test_cross_site_mutation_is_rejected_before_proxying() -> None:
     assert response.status_code == 403
 
 
+# 验证错误响应同样携带浏览器安全头。
 def test_browser_security_headers_cover_error_responses() -> None:
     with TestClient(app) as client:
         response = client.get("/does-not-exist")

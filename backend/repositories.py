@@ -1,3 +1,4 @@
+# 读取本地机床和刀具工作簿，完成数值归一、材料解析与能力筛选。
 """Excel utility functions and resource repositories (machines, cutting tools)."""
 
 from __future__ import annotations
@@ -27,6 +28,7 @@ TOOL_SHEET = "Tool_Selection"
 # ============================================================
 
 
+# 把空值、日期及表格标量转成可序列化的普通 Python 值。
 def normalize_excel_value(value: Any) -> Any:
     if value is None:
         return None
@@ -47,6 +49,7 @@ def normalize_excel_value(value: Any) -> Any:
     return value
 
 
+# 兼容布尔、数值和文本形式的状态；无法解释的值返回空值。
 def parse_optional_bool(value: Any) -> Optional[bool]:
     if value is None:
         return None
@@ -70,6 +73,7 @@ def parse_optional_bool(value: Any) -> Optional[bool]:
     return None
 
 
+# 尝试读取可选数值，遇到空值或无效文本时返回空值。
 def to_float(value: Any) -> Optional[float]:
     if value is None:
         return None
@@ -84,6 +88,7 @@ def to_float(value: Any) -> Optional[float]:
         return None
 
 
+# 按给定单位把长度换算为毫米，不能识别的单位返回空值。
 def convert_length_to_mm(value: Any, unit: Any) -> Optional[float]:
     number = to_float(value)
     if number is None:
@@ -100,6 +105,7 @@ def convert_length_to_mm(value: Any, unit: Any) -> Optional[float]:
     return None
 
 
+# 按指定精度整理数值，整数结果以整数表示便于显示。
 def clean_number(value: Optional[float], digits: int = 3) -> Any:
     if value is None:
         return None
@@ -221,6 +227,7 @@ TOOL_COLUMN_MAPPING = {
 # ============================================================
 
 
+# 读取机床能力表并按工艺、尺寸、重量等要求筛选候选设备。
 class MachineRepository:
     required_columns = {
         "Designation",
@@ -247,9 +254,11 @@ class MachineRepository:
         "Max workpiece diameter (Unit)",
     }
 
+    # 读取对应工作簿并按修改时间复用缓存，避免每次查询重复解析 Excel。
     def load(self) -> pd.DataFrame:
         if not MACHINE_FILE.is_file():
             raise FileNotFoundError(f"Machine database not found: {MACHINE_FILE}")
+        # 文件修改时间变化后重新读取机床表；未变化时复用解析缓存。
         mtime = MACHINE_FILE.stat().st_mtime
         if MachineRepository._cache and MachineRepository._cache[0] == mtime:
             return MachineRepository._cache[1].copy()
@@ -261,6 +270,7 @@ class MachineRepository:
         MachineRepository._cache = (mtime, df)
         return df.copy()
 
+    # 按长度、直径和重量筛选车床，分别报告未标停与已标停的匹配记录。
     def search_turning(
         self,
         required_length_mm: float,
@@ -334,6 +344,7 @@ class MachineRepository:
         active.sort(key=lambda item: item["_fit_score"])
         stopped.sort(key=lambda item: item["_fit_score"])
 
+        # 将筛选后的表格记录转换为普通字典，并限制返回候选数量。
         def clean(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
             return [{k: v for k, v in item.items() if k != "_fit_score"} for item in items[:top_n]]
 
@@ -354,6 +365,7 @@ class MachineRepository:
             ),
         }
 
+    # 按具体工艺筛选机床，保留模数、高精度及其他能力限制。
     def search_process(
         self,
         process: str,
@@ -462,6 +474,7 @@ class MachineRepository:
         active.sort(key=lambda item: item["_fit_score"])
         stopped.sort(key=lambda item: item["_fit_score"])
 
+        # 将筛选后的表格记录转换为普通字典，并限制返回候选数量。
         def clean(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
             return [
                 {key: value for key, value in item.items() if key != "_fit_score"}
@@ -491,12 +504,15 @@ class MachineRepository:
 # ============================================================
 
 
+# 读取刀具等级表，按材料分类和加工类别筛选可用等级。
 class ToolRepository:
     _cache: tuple[float, pd.DataFrame] | None = None
 
+    # 读取对应工作簿并按修改时间复用缓存，避免每次查询重复解析 Excel。
     def load(self) -> pd.DataFrame:
         if not TOOL_FILE.is_file():
             raise FileNotFoundError(f"Tool database not found: {TOOL_FILE}")
+        # 刀具表使用独立缓存，避免机床更新和刀具更新相互混淆。
         mtime = TOOL_FILE.stat().st_mtime
         if ToolRepository._cache and ToolRepository._cache[0] == mtime:
             return ToolRepository._cache[1].copy()
@@ -523,6 +539,7 @@ class ToolRepository:
         ToolRepository._cache = (mtime, df)
         return df.copy()
 
+    # 把材料牌号、别名、ISO 类别或材料组转换成统一查询条件。
     @staticmethod
     def resolve_material(material: str) -> dict[str, Any]:
         text = str(material or "").strip()
@@ -558,6 +575,7 @@ class ToolRepository:
             f"Unrecognized material: {material}. Please enter common grade, ISO category or ISCAR material group."
         )
 
+    # 检查目标材料组与记录中的单值或区间是否匹配。
     @staticmethod
     def group_matches(excel_value: Any, query: str) -> bool:
         excel_text = str(excel_value).strip()
@@ -569,6 +587,7 @@ class ToolRepository:
             return number in numbers
         return excel_text.casefold() == query.casefold()
 
+    # 解析材料及工艺条件，筛选并返回匹配刀具等级和状态说明。
     def search(self, material: str, process: str, top_n: int = 3) -> dict[str, Any]:
         df = self.load()
         material_info = self.resolve_material(material)

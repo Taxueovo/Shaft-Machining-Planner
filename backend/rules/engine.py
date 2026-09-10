@@ -1,3 +1,4 @@
+# 按零件特征及热处理要求生成候选路线；生成结果仍需资源验证和工程审查。
 """Rule engine: process route generation."""
 
 from __future__ import annotations
@@ -50,6 +51,7 @@ _ALLOWANCE_FINISH_MM = [0.8, 1.0, 1.3, 1.4, 1.5, 1.5, 1.8, 2.0]
 _ALLOWANCE_BOUNDS_MM = [10, 18, 30, 50, 80, 120, 180, 260]
 
 
+# 按直径所在区间取得粗、精车余量；超出表格范围使用最高档值。
 def _allowance(diameter_mm: float, *, finish: bool) -> float:
     """Diameter-based rough/finish turning allowance (mm); values beyond the table use the top band."""
     table = _ALLOWANCE_FINISH_MM if finish else _ALLOWANCE_ROUGH_MM
@@ -64,6 +66,7 @@ def _allowance_text(diameter_mm: float, *, finish: bool) -> str:
     return f"{_allowance(diameter_mm, finish=finish):.1f} mm"
 
 
+# 取得热处理前的特征加工名称，区分普通加工和拆分加工策略。
 def _get_feature_operation(feature_type: str, is_split: bool) -> str:
     """Get the feature operation name before heat treatment."""
     return {
@@ -86,6 +89,7 @@ def _get_feature_operation(feature_type: str, is_split: bool) -> str:
     }[feature_type]
 
 
+# 取得热处理后硬精加工的工序名称。
 def _get_finish_operation(feature_type: str) -> str:
     """Get the hard-finishing operation name after heat treatment."""
     return {
@@ -107,6 +111,7 @@ def _get_finish_operation(feature_type: str) -> str:
     }[feature_type]
 
 
+# 取得成品定位基准形成后进行的最终特征工序及资源类别。
 def _get_post_finish_operation(
     feature_type: str, high_precision: bool
 ) -> tuple[str, Optional[str]]:
@@ -145,6 +150,7 @@ def _get_post_finish_operation(
     return (precision if high_precision else standard)[feature_type]
 
 
+# 映射热后硬精加工的资源类别；未支持类别保持显式未覆盖。
 def _hard_finish_process(feature_type: str) -> Optional[str]:
     """Resource category for hard finishing after heat treatment; processes not in the
     library are explicitly kept as not_covered (more honest than silently skipping)."""
@@ -166,6 +172,7 @@ def _hard_finish_process(feature_type: str) -> Optional[str]:
     }.get(feature_type)
 
 
+# 取得热处理前工序实际使用的资源类别。
 def _get_pre_heat_process(feature_type: str) -> Optional[str]:
     """Actual resource category for operations before heat treatment."""
     return {
@@ -175,6 +182,7 @@ def _get_pre_heat_process(feature_type: str) -> Optional[str]:
     }.get(feature_type, FEATURE_PROCESS[feature_type])
 
 
+# 生成轴向定位及孔数量、方向等描述，用于候选工序说明。
 def _feature_position_desc(feature: dict[str, Any]) -> str:
     """Feature position description: axial position + hole feature extras (hole count/direction)."""
     desc = f"global position {feature['global_position_mm']} mm"
@@ -189,6 +197,7 @@ def _feature_position_desc(feature: dict[str, Any]) -> str:
     return desc
 
 
+# 调用路线规则并修正空心件装夹与成品孔的显式尺寸，避免由毛坯孔径虚构加工目标。
 def build_route(
     request: dict[str, Any], geometry: dict[str, Any], choices: dict[str, str]
 ) -> list[dict[str, Any]]:
@@ -236,6 +245,7 @@ def build_route(
     return route
 
 
+# 按热处理和特征分派通用或专用路线规则，生成候选工序序列。
 def _build_route(
     request: dict[str, Any], geometry: dict[str, Any], choices: dict[str, str]
 ) -> list[dict[str, Any]]:
@@ -623,6 +633,7 @@ def _build_route(
     return operations
 
 
+# 生成渗碳淬火齿轮轴候选路线，安排热前加工及热后齿面、外圆精加工。
 def _build_carburized_gear_shaft_route(
     request: dict[str, Any],
     geometry: dict[str, Any],
@@ -933,6 +944,7 @@ def _build_carburized_gear_shaft_route(
 # ============================================================
 
 
+# 返回指定类型第一个特征的标识，未出现时返回空值。
 def _first_feature_id(geometry: dict[str, Any], feature_type: str) -> Optional[str]:
     """ID of the first feature of the given type (None if absent)."""
     for feature in geometry["features"]:
@@ -941,6 +953,7 @@ def _first_feature_id(geometry: dict[str, Any], feature_type: str) -> Optional[s
     return None
 
 
+# 追加软态特征工序，保证需在热处理前完成的齿形等特征进入相应阶段。
 def _append_soft_features(
     operations: list[dict[str, Any]],
     geometry: dict[str, Any],
@@ -1013,6 +1026,7 @@ def _append_soft_features(
     return split_features
 
 
+# 追加热后特征精加工，覆盖拆分加工及需要硬精加工的特征。
 def _append_hard_finish_features(
     operations: list[dict[str, Any]],
     geometry: dict[str, Any],
@@ -1041,6 +1055,7 @@ def _append_hard_finish_features(
         )
 
 
+# 在成品基准形成后追加最终特征加工，供检验前路线使用。
 def _append_post_finish_features(
     operations: list[dict[str, Any]],
     geometry: dict[str, Any],
@@ -1096,6 +1111,7 @@ def _append_post_finish_features(
             )
 
 
+# 生成凸轮轴候选路线，组织凸轮热处理及粗、精磨工序。
 def _build_camshaft_route(
     request: dict[str, Any],
     geometry: dict[str, Any],
@@ -1342,6 +1358,7 @@ def _build_camshaft_route(
     return operations
 
 
+# 生成曲轴候选路线，组织曲柄销精加工、圆角滚压及动平衡等工序。
 def _build_crankshaft_route(
     request: dict[str, Any],
     geometry: dict[str, Any],
@@ -1593,6 +1610,7 @@ def _build_crankshaft_route(
     return operations
 
 
+# 按蜗杆的渗碳、氮化或调质要求生成对应候选路线。
 def _build_worm_shaft_route(
     request: dict[str, Any],
     geometry: dict[str, Any],
@@ -2064,6 +2082,7 @@ def _build_worm_shaft_route(
     return operations
 
 
+# 生成氮化或感应淬火轴类路线，遵守表面硬化后的精加工顺序约束。
 def _build_surface_hardened_shaft_route(
     request: dict[str, Any],
     geometry: dict[str, Any],

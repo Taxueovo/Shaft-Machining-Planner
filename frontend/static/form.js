@@ -81,6 +81,7 @@
     }
   }
 
+  // 显示所选材料的分类和切削说明，帮助用户核对输入。
   function updateMaterialDesc() {
     const selected = materialSelect.options[materialSelect.selectedIndex];
     if (selected && selected.dataset.desc) {
@@ -1026,6 +1027,7 @@
   }
 
   // Clear case and reload page without case parameter
+  // 跳转到空白定制页面，清除地址栏中的案例复用状态。
   window.clearCase = function() {
     window.location.href = '/custom';
   };
@@ -1033,6 +1035,7 @@
   // ============ Save Case Functionality ============
   let taxonomyOptions = [];
 
+  // 读取分类树并填入保存案例对话框，保留节点层级关系。
   async function loadTaxonomyForDialog() {
     try {
       const response = await fetch('/api/taxonomy');

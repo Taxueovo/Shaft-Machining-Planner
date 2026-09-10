@@ -1,3 +1,4 @@
+# 校验毛坯包络、特征范围和空心壁厚，并检查显式直径变化的去料方向与连续性。
 """Input-only manufacturing geometry checks, shared by API and workflow."""
 
 from __future__ import annotations
@@ -6,7 +7,9 @@ import math
 from typing import Any
 
 
+# 校验输入尺寸有限性、毛坯覆盖、特征完整轴向范围及空心壁厚。
 def validate_manufacturing_geometry(request: dict[str, Any]) -> None:
+    # 检查可选数值是否有限，避免 NaN 或无穷值绕过几何比较。
     def finite(value):
         if isinstance(value, float) and not math.isfinite(value):
             raise ValueError("All dimensions must be finite.")
@@ -19,6 +22,7 @@ def validate_manufacturing_geometry(request: dict[str, Any]) -> None:
 
     finite(request)
     segments = request["segments"]
+    # 把轴段累积为全局轴向区间，便于检查相对定位及跨轴段的孔壁厚。
     spans = []
     cursor = 0.0
     blank_od = float(request["blank_diameter_mm"])
@@ -55,6 +59,7 @@ def validate_manufacturing_geometry(request: dict[str, Any]) -> None:
             pos = start + float(f["segment_offset_mm"])
         else:
             pos, end = float(f["global_position_mm"]), cursor
+        # 检查特征完整长度而非只有起点；孔、法兰和齿宽分别使用其专用长度字段。
         length = float(f.get(length_fields.get(f["feature_type"], "feature_length_mm")) or 0)
         if pos < 0 or pos > end or pos + length > end + 1e-9:
             raise ValueError(f"{fid}: feature extent exceeds valid axial range.")
@@ -72,11 +77,13 @@ def validate_manufacturing_geometry(request: dict[str, Any]) -> None:
             bore = f["bore_diameter_mm"]
             if bore < stock_id:
                 raise ValueError(f"{fid}: finished bore cannot be smaller than stock bore.")
+            # 成品孔穿过的每个轴段都必须有剩余壁厚，不能只比较起始轴段外径。
             affected = [d for a, b, d in spans if a < pos + length and b > pos]
             if affected and bore >= min(affected):
                 raise ValueError(f"{fid}: bore leaves no wall in an intersected segment.")
 
 
+# 逐表面检查显式直径去料方向和前后工序连续性，独立于模型意见。
 def dimension_route_errors(route: list[dict]) -> list[str]:
     """Validate explicit transitions and continuity independently of model reviews."""
     from models.process import ProcessOperation
@@ -89,6 +96,7 @@ def dimension_route_errors(route: list[dict]) -> list[str]:
             errors.append(f"Operation {operation.get('operation_no')}: {exc}")
             continue
         for dim in op.dimensions:
+            # 按对象和内外表面分别跟踪尺寸链，避免不同表面的工序相互混淆。
             key = (dim.object_id, dim.surface)
             previous = last.get(key)
             if previous is not None:

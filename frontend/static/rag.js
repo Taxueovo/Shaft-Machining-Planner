@@ -1,3 +1,4 @@
+// 知识库管理页：展示索引、管理构建与清理，并提供检索和分块查看。
 /**
  * Shaft Machining Planner RAG Management — frontend logic.
  *
@@ -231,11 +232,13 @@
 
   /* ─── UI Helpers ─── */
 
+  // 显示知识库可用面板并隐藏不可用提示。
   function showAvailable() {
     ragAvailable.classList.add("hidden");
     ragContent.classList.remove("hidden");
   }
 
+  // 显示知识库不可用提示，避免用户继续依赖缺失功能。
   function showUnavailable() {
     ragAvailable.classList.remove("hidden");
     ragContent.classList.add("hidden");
@@ -245,6 +248,7 @@
     }
   }
 
+  // 把源文件名、大小等信息填入列表，动态文字先转义。
   function renderFileList(el, files) {
     if (!el) return;
     if (files.length === 0) {
@@ -256,6 +260,7 @@
     }
   }
 
+  // 显示操作结果提示，并安排延迟隐藏。
   function toast(msg, type) {
     const el = document.createElement("div");
     el.className = "toast " + type;
@@ -264,8 +269,10 @@
     setTimeout(() => { el.remove(); }, 3000);
   }
 
+  // 仅在元素存在时写入纯文本，避免可选控件缺失引发异常。
   function setText(el, val) { if (el) el.textContent = val; }
 
+  // 对动态文本进行 HTML 转义，防止查询或案例内容被当作标记执行。
   function esc(value) {
     return String(value ?? "")
       .replaceAll("&", "&amp;")
@@ -275,5 +282,6 @@
       .replaceAll("'", "&#39;");
   }
 
+  // 按标识获取页面元素，供知识库界面绑定事件与更新状态。
   function getEl(id) { return document.getElementById(id); }
 })();

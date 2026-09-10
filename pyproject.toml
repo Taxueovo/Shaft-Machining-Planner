@@ -1,3 +1,4 @@
+# 代码检查配置：统一 Python 目标版本、行宽及 Ruff 规则，保留必要的导入顺序例外。
 [tool.ruff]
 line-length = 100
 target-version = "py310"

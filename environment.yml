@@ -1,3 +1,4 @@
+# Conda 开发环境入口：固定 Python 主版本，并通过 pip 加载项目依赖清单。
 name: shaftplanner
 channels:
   - conda-forge

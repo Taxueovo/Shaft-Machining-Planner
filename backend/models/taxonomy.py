@@ -1,3 +1,4 @@
+# 定义扁平存储的分类节点与树查询方法，支持路径及后代遍历。
 """Taxonomy tree data model."""
 
 from __future__ import annotations
@@ -6,6 +7,7 @@ from pydantic import BaseModel, Field
 from typing import Optional
 
 
+# 表示分类标识、名称及父节点等单节点属性。
 class TaxonomyNode(BaseModel):
     """Taxonomy tree node."""
 
@@ -16,19 +18,23 @@ class TaxonomyNode(BaseModel):
     icon: Optional[str] = Field(default=None, description="Icon name (optional)")
 
 
+# 保存分类节点集合，并提供父子、后代、路径和叶节点查询。
 class TaxonomyTree(BaseModel):
     """Taxonomy tree."""
 
     nodes: list[TaxonomyNode] = Field(default_factory=list)
 
+    # 按唯一标识查找分类节点，未找到时返回空值。
     def get_node(self, node_id: str) -> Optional[TaxonomyNode]:
         """Get node by ID."""
         return next((n for n in self.nodes if n.id == node_id), None)
 
+    # 筛选父节点标识匹配的直接子节点。
     def get_children(self, parent_id: Optional[str]) -> list[TaxonomyNode]:
         """Get direct children of a node."""
         return [n for n in self.nodes if n.parent_id == parent_id]
 
+    # 递归收集指定节点下的全部后代节点。
     def get_all_descendants(self, node_id: str) -> list[TaxonomyNode]:
         """Get all descendants of a node (recursive)."""
         descendants = []
@@ -38,6 +44,7 @@ class TaxonomyTree(BaseModel):
             descendants.extend(self.get_all_descendants(child.id))
         return descendants
 
+    # 沿父节点链回溯，再反转为从根到目标节点的路径。
     def get_path(self, node_id: str) -> list[TaxonomyNode]:
         """Get path from root to specified node."""
         path = []
@@ -48,6 +55,7 @@ class TaxonomyTree(BaseModel):
             current = self.get_node(current.parent_id) if current.parent_id else None
         return path
 
+    # 取得没有子节点的分类，用于最终案例归类。
     def get_leaves(self) -> list[TaxonomyNode]:
         """Get all leaf nodes (nodes without children)."""
         parent_ids = {n.parent_id for n in self.nodes if n.parent_id}

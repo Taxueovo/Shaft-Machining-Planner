@@ -1,3 +1,4 @@
+# 管理规范和案例两个 Chroma 集合，封装批量写入、查询、源文件删除和状态统计。
 """ChromaDB vector store manager.
 
 Manages two collections - specs (process handbook) and cases (case base).
@@ -40,7 +41,7 @@ logger = logging.getLogger(__name__)
 # (HAS_CHROMADB=False), referencing EmbeddingFunction directly would raise a
 # NameError and mask the real cause (see the check in __init__).
 if HAS_CHROMADB:
-
+    # 适配 Chroma 嵌入接口，将文本交给已配置的向量模型处理。
     class ShaftMachiningPlannerEmbeddingFunction(EmbeddingFunction):
         """Wrap the OpenAI-compatible embedding API as a ChromaDB embedding function.
 
@@ -56,6 +57,7 @@ if HAS_CHROMADB:
             return embed(input_texts)
 
 
+# 获取向量集合；嵌入函数配置不匹配时按实现策略重建集合。
 def _get_or_recreate_collection(
     client: Any,
     name: str,
@@ -102,6 +104,7 @@ def _get_or_recreate_collection(
 # ═══════════════════════════════════════════════════════════════
 
 
+# 统一管理规范和案例集合，支持批量更新、查询及按来源清理。
 class VectorStoreManager:
     """ChromaDB dual-collection manager.
 
@@ -137,6 +140,7 @@ class VectorStoreManager:
 
     # ── Collection lazy loading ──
 
+    # 按需获取规范集合，缺失时创建。
     @property
     def specs_collection(self) -> Any:
         """Specs collection (lazy-loaded, created if missing)."""
@@ -149,6 +153,7 @@ class VectorStoreManager:
             )
         return self._specs
 
+    # 按需获取案例集合，缺失时创建。
     @property
     def cases_collection(self) -> Any:
         """Cases collection (lazy-loaded, created if missing)."""
@@ -163,6 +168,7 @@ class VectorStoreManager:
 
     # ── Write ──
 
+    # 批量写入规范分块及元数据，使用稳定标识更新已有记录。
     def add_specs(self, chunks: list[SpecChunk]) -> int:
         """Batch-write spec chunks.
 
@@ -195,6 +201,7 @@ class VectorStoreManager:
         logger.info("Added %d spec chunks to ChromaDB", len(chunks))
         return len(chunks)
 
+    # 批量写入案例分块及元数据，使用稳定标识更新已有记录。
     def add_cases(self, chunks: list[CaseChunk]) -> int:
         """Batch-write case chunks."""
         if not chunks:
@@ -227,6 +234,7 @@ class VectorStoreManager:
 
     # ── Retrieval ──
 
+    # 检索规范通道，返回带来源和得分的规范候选。
     def search_specs(self, query_text: str, top_k: int = 5) -> list[SearchResult]:
         """Search the specs collection."""
         if self.specs_collection.count() == 0:
@@ -240,6 +248,7 @@ class VectorStoreManager:
 
         return _to_search_results(results, Channel.SPECS, query_text)
 
+    # 检索案例通道，返回带来源和得分的案例候选。
     def search_cases(self, query_text: str, top_k: int = 5) -> list[SearchResult]:
         """Search the cases collection."""
         if self.cases_collection.count() == 0:
@@ -253,6 +262,7 @@ class VectorStoreManager:
 
         return _to_search_results(results, Channel.CASES, query_text)
 
+    # 同时检索规范和案例两个通道，并保留各自结果。
     def search_all(
         self, query_text: str, top_k_per_channel: int = 5
     ) -> tuple[list[SearchResult], list[SearchResult]]:
@@ -287,6 +297,7 @@ class VectorStoreManager:
         )
         return spec_results, case_results
 
+    # 使用已计算的查询向量检索单个集合，避免双通道重复向量化。
     def _query_embedded(
         self,
         col: Any,
@@ -307,6 +318,7 @@ class VectorStoreManager:
 
     # ── Status ──
 
+    # 查询单集合文档数量及状态，处理集合不可用情况。
     def get_collection_status(self, collection_name: str) -> dict[str, Any]:
         """Get the status of a single collection."""
         if collection_name == COLLECTION_SPECS:
@@ -328,6 +340,7 @@ class VectorStoreManager:
             "exists": count > 0 or True,  # get_or_create guarantees existence
         }
 
+    # 返回规范集合全部文档，供关键词索引同步。
     def get_all_spec_chunks(self) -> list[dict[str, Any]]:
         """Return all documents from the specs collection (for BM25 index sync)."""
         if self.specs_collection.count() == 0:
@@ -344,6 +357,7 @@ class VectorStoreManager:
             )
         ]
 
+    # 返回案例集合全部文档，供关键词索引同步。
     def get_all_case_chunks(self) -> list[dict[str, Any]]:
         """Return all documents from the cases collection (for BM25 index sync)."""
         if self.cases_collection.count() == 0:
@@ -360,6 +374,7 @@ class VectorStoreManager:
             )
         ]
 
+    # 删除来自指定源文件的分块，支持源文件更新时先清理旧内容。
     def delete_by_source(self, source_file: str, channel: Channel) -> int:
         """Delete all chunks that came from a given source file (idempotent upsert support).
 
@@ -381,6 +396,7 @@ class VectorStoreManager:
             logger.info("Deleted %d chunks for source %s", len(ids), source_file)
         return len(ids)
 
+    # 清空指定规范或案例集合，拒绝未登记的集合名称。
     def clear(self, collection_name: Optional[str] = None) -> None:
         """Clear a collection.
 
@@ -414,6 +430,7 @@ class VectorStoreManager:
 # ── Helper functions ──
 
 
+# 将 Chroma 的嵌套查询返回值转换为统一检索结果列表。
 def _to_search_results(
     chroma_result: dict[str, Any],
     channel: Channel,
@@ -447,6 +464,7 @@ def _to_search_results(
     return results
 
 
+# 将向量距离映射到相似度分数，供结果展示及排序使用。
 def _distance_to_score(distance: float) -> float:
     """Convert a ChromaDB distance into a 0-1 similarity score.
 

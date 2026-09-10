@@ -1,3 +1,4 @@
+# 回归测试：覆盖案例组合筛选、分页计数和修复规则一致性。
 """Regression tests for case-library APIs and route repair scheduling."""
 
 import json
@@ -8,6 +9,7 @@ from rules import build_route
 from workflow.nodes.verification import VerificationNodesMixin
 
 
+# 构造带指定特征的最小规划请求，用于隔离特征规则测试。
 def _request_with_feature(feature: dict) -> dict:
     return {
         "material": "45",
@@ -22,6 +24,7 @@ def _request_with_feature(feature: dict) -> dict:
     }
 
 
+# 构造与测试请求对应的几何结果，避免依赖完整工作流。
 def _geometry_with_feature(feature: dict) -> dict:
     return {
         "total_length_mm": 100,
@@ -42,6 +45,7 @@ def _geometry_with_feature(feature: dict) -> dict:
     }
 
 
+# 验证修复沿用当前路线引擎的特征拆分及精度规则。
 def test_feature_repair_reuses_current_route_engine() -> None:
     """A feature repair must use the same split/precision rules as initial planning."""
     feature = {
@@ -72,6 +76,7 @@ def test_feature_repair_reuses_current_route_engine() -> None:
     ]
 
 
+# 验证总数在分页前按筛选结果统计，不受页大小影响。
 def test_filtered_count_is_not_limited_by_page_size(tmp_path) -> None:
     """The list API's total must reflect filtering before pagination."""
     file_path = tmp_path / "cases.json"
@@ -95,6 +100,7 @@ def test_filtered_count_is_not_limited_by_page_size(tmp_path) -> None:
     assert db.count(request) == 3
 
 
+# 验证关键词、行业和材料条件共同收窄案例结果。
 def test_case_search_applies_keyword_industry_and_material_filters(tmp_path) -> None:
     """Library filters must narrow the result set together."""
     file_path = tmp_path / "cases.json"

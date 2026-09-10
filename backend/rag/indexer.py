@@ -1,3 +1,4 @@
+# 协调文件扫描、分块和索引写入，以文件指纹支持增量更新。
 """Index builder.
 
 Orchestrates the index build pipeline:
@@ -43,6 +44,7 @@ logger = logging.getLogger(__name__)
 _STATE_FILE = DATA_DIR / "index_state.json"
 
 
+# 协调源文件扫描、分块和向量写入，维护每个通道的增量构建状态。
 class IndexBuilder:
     """Index builder - orchestrates the scan -> chunk -> index pipeline."""
 
@@ -54,6 +56,7 @@ class IndexBuilder:
 
     # ── Build-state helpers ──
 
+    # 读取按通道存储的文件指纹，确定哪些源文件需要重建。
     def _load_state(self) -> dict[str, dict[str, tuple[int, int]]]:
         """Load the per-channel file fingerprint state. Returns {"specs": {name: [mtime, size]}, ...}."""
         default: dict[str, dict[str, tuple[int, int]]] = {"specs": {}, "cases": {}}
@@ -69,6 +72,7 @@ class IndexBuilder:
             logger.warning("Failed to read index state (%s); rebuilding from scratch.", exc)
             return default
 
+    # 以临时文件替换方式保存构建状态，降低中途写入造成损坏的风险。
     def _save_state(self, state: dict[str, dict[str, tuple[int, int]]]) -> None:
         """Atomically persist the build state."""
         try:
@@ -89,6 +93,7 @@ class IndexBuilder:
         except Exception as exc:
             logger.warning("Failed to persist index state: %s", exc)
 
+    # 比较文件指纹，仅重建变化来源，并同步已删除来源的分块。
     def _build_channel(
         self,
         channel: Channel,
@@ -195,6 +200,7 @@ class IndexBuilder:
 
     # ── Specs index ──
 
+    # 扫描规范目录并调用规范分块器执行增量索引构建。
     def build_spec_index(self, specs_dir: Optional[Path] = None) -> int:
         """Build the specs (process handbook) index incrementally.
 
@@ -220,6 +226,7 @@ class IndexBuilder:
 
     # ── Cases index ──
 
+    # 扫描案例目录并调用案例分块器执行增量索引构建。
     def build_case_index(self, cases_dir: Optional[Path] = None) -> int:
         """Build the cases (case base) index incrementally.
 
@@ -245,6 +252,7 @@ class IndexBuilder:
 
     # ── Build all ──
 
+    # 依次构建规范和案例通道，并汇总各通道结果。
     def build_all(self) -> int:
         """Build both channel indexes in one step."""
         spec_count = self.build_spec_index()
@@ -259,6 +267,7 @@ class IndexBuilder:
         self._sync_bm25()
         return total
 
+    # 使存活检索器的关键词缓存失效，下一次检索从更新后的向量库同步。
     def _sync_bm25(self) -> None:
         """Invalidate live retrievers' cached BM25 indexes after a build.
 
@@ -276,6 +285,7 @@ class IndexBuilder:
 
     # ── Status query ──
 
+    # 汇总当前组件的运行或索引状态，供上层展示。
     def get_status(self) -> IndexStatus:
         """Get the dual-channel index status."""
         specs_info = self.store.get_collection_status(COLLECTION_SPECS)
@@ -301,11 +311,13 @@ def _get_builder() -> IndexBuilder:
     return _builder
 
 
+# 触发规范和案例通道的索引构建，返回构建统计。
 def build_index() -> int:
     """Build both channel indexes in one step."""
     return _get_builder().build_all()
 
 
+# 读取索引状态，供管理界面或调用方检查。
 def get_index_status() -> IndexStatus:
     """Get the index status."""
     return _get_builder().get_status()

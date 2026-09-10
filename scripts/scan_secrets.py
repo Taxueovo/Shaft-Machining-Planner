@@ -1,3 +1,4 @@
+# 扫描文本中的凭据特征，仅报告命中文件位置而不打印秘密值。
 """Small dependency-free release guard for accidentally committed credentials."""
 
 from __future__ import annotations

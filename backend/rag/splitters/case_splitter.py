@@ -1,3 +1,4 @@
+# 将不同 JSON 案例结构转换为文本块，尽量保持单个案例的结构完整性。
 """Case base splitter.
 
 Reads structured case JSON and indexes each part case as one complete chunk.
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 _SEPARATOR = "─" * 24
 
 
+# 把字典或字符串形式的特征转换成统一文本，供案例分块共用。
 def _feature_to_string(f: Any) -> str:
     """Normalize a single feature into a string (accepts dict or str); shared by textualization and CaseChunk."""
     if isinstance(f, str):
@@ -43,12 +45,14 @@ def _feature_to_string(f: Any) -> str:
     return str(f)
 
 
+# 批量归一案例特征，过滤或转换不一致的输入形式。
 def _features_to_strings(case: dict[str, Any]) -> list[str]:
     """Normalize case features into a list of strings (dict or str both supported)."""
     features: list = case.get("main_features", []) or case.get("features", [])
     return [_feature_to_string(f) for f in features]
 
 
+# 将结构化案例转换为向量化文本，跳过没有内容的字段。
 def _case_to_text(case: dict[str, Any]) -> str:
     """Textualize structured case data for embedding; empty fields are omitted."""
     lines = [
@@ -56,6 +60,7 @@ def _case_to_text(case: dict[str, Any]) -> str:
         "",
     ]
 
+    # 只有字段有内容时才追加标签和文本，避免空字段干扰向量化。
     def add(label: str, value: Any) -> None:
         if value not in (None, ""):
             lines.append(f"{label}: {value}")
@@ -101,6 +106,7 @@ def _case_to_text(case: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+# 兼容单案例、列表和包装对象等 JSON 结构，提取案例集合。
 def _extract_cases_from_data(data: Any) -> list[dict[str, Any]]:
     """Extract the list of cases from various JSON formats."""
     if isinstance(data, list):
@@ -119,6 +125,7 @@ def _extract_cases_from_data(data: Any) -> list[dict[str, Any]]:
     return []
 
 
+# 读取案例 JSON 并生成保留案例关联信息的分块列表。
 def split_case(source_path: str, content: str) -> list[CaseChunk]:
     """Main entry point for chunking case library JSON.
 

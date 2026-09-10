@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shaft Machining Planner - PE Agent - Case Library</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
+{# 当前页面的局部样式：补充公共样式中的布局、状态和窄屏显示规则。 #}
   <style>
     .filter-bar { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
     .filter-bar select, .filter-bar input { min-width: 150px; }
@@ -63,18 +64,21 @@
   </div>
 </main>
 
+{# 页面脚本使用响应生成的 nonce；动态数据由模板安全编码后注入。 #}
 <script nonce="{{ request.state.csp_nonce }}">
 (function() {
   const esc = value => String(value ?? '')
     .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 
+  // 更新案例列表的状态提示，区分普通消息和错误。
   function setFeedback(message = '', isError = false) {
     const feedback = document.getElementById('case-feedback');
     feedback.textContent = message;
     feedback.classList.toggle('error', isError);
   }
 
+  // 尽量读取接口返回的错误详情，兼容非预期响应格式。
   async function readError(response) {
     try {
       const body = await response.json();
@@ -85,6 +89,7 @@
   }
 
   // Load filters
+  // 从后端取得材料和行业筛选项并填充下拉框。
   async function loadFilters() {
     try {
       const res = await fetch('/api/cases/filters');
@@ -110,6 +115,7 @@
   }
 
   // Load cases
+  // 根据当前分类或筛选条件查询案例，刷新列表和状态提示。
   window.loadCases = async function() {
     try {
       const keyword = document.getElementById('search-input').value.trim();
@@ -138,6 +144,7 @@
   };
 
   // Render cases
+  // 把案例摘要渲染为可选择列表或卡片，并处理空结果。
   function renderCases(cases) {
     const grid = document.getElementById('case-grid');
 
@@ -181,6 +188,7 @@
   loadCases();
 })();
 </script>
+{# 页面脚本使用响应生成的 nonce；动态数据由模板安全编码后注入。 #}
 <script nonce="{{ request.state.csp_nonce }}">
 document.getElementById("shutdown-btn").addEventListener("click", async () => {
   if (!confirm("Confirm shutdown of Shaft Machining Planner - PE Agent system?")) return;

@@ -1,3 +1,4 @@
+# 启动后端服务并准备运行路径，供独立运行或统一启动器调用。
 from __future__ import annotations
 import os
 import ipaddress

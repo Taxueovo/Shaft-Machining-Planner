@@ -1,3 +1,4 @@
+# 定义轴段、特征和全局要求，校验尺寸、公差与特征必填参数。
 """Input Pydantic models."""
 
 from __future__ import annotations
@@ -7,6 +8,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
+# 禁止无穷大和非数值浮点输入，作为尺寸模型的共同约束。
 class FiniteModel(BaseModel):
     model_config = ConfigDict(allow_inf_nan=False)
 
@@ -24,6 +26,7 @@ class ShaftSegment(FiniteModel):
     surface_area_mm2: Optional[float] = Field(default=None, gt=0)
     segment_type: Optional[str] = None
 
+    # 确认上下偏差顺序合法，防止公差区间颠倒。
     @model_validator(mode="after")
     def validate_tolerance(self):
         if (

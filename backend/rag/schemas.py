@@ -1,3 +1,4 @@
+# 定义知识分块、检索结果和索引状态，使用稳定内容标识支持去重与追溯。
 """RAG module data models.
 
 Defines the core data structures such as Chunk and SearchResult.
@@ -14,6 +15,7 @@ from typing import Any, Optional
 from pydantic import BaseModel, Field
 
 
+# 按内容及来源字段生成确定性标识，保证相同分块可稳定去重。
 def make_chunk_id(kind: str, source_file: str, content: str) -> str:
     """Deterministic content-hash chunk id.
 
@@ -45,6 +47,7 @@ class Channel(str, enum.Enum):
 # ── Specs chunk ──
 
 
+# 保存规范正文、章节层级与来源信息，供检索和证据引用。
 class SpecChunk(BaseModel):
     """Process handbook text block - semantically split by chapter -> section -> process step description."""
 
@@ -74,6 +77,7 @@ class SpecChunk(BaseModel):
         description="Additional metadata",
     )
 
+    # 在模型创建后补充稳定分块标识及相应派生元数据。
     def model_post_init(self, __context) -> None:
         """Automatically build hierarchy_path and a deterministic chunk_id."""
         if not self.hierarchy_path:
@@ -86,6 +90,7 @@ class SpecChunk(BaseModel):
 # ── Cases chunk ──
 
 
+# 保存一个案例的文本及结构化元数据，保持案例信息关联。
 class CaseChunk(BaseModel):
     """Case base text block - one part case kept structurally complete."""
 
@@ -108,6 +113,7 @@ class CaseChunk(BaseModel):
         description="Additional metadata",
     )
 
+    # 在模型创建后补充稳定分块标识及相应派生元数据。
     def model_post_init(self, __context) -> None:
         """Automatically build a deterministic chunk_id from case id + content."""
         if not self.chunk_id:
@@ -120,6 +126,7 @@ class CaseChunk(BaseModel):
 # ── Search results ──
 
 
+# 描述单条召回结果的文本、来源、分数和通道信息。
 class SearchResult(BaseModel):
     """A single search result."""
 
@@ -140,6 +147,7 @@ class SearchResult(BaseModel):
     )
 
 
+# 组织双通道检索结果及本次检索的相关统计。
 class RetrievalResponse(BaseModel):
     """Full dual-channel retrieval response."""
 
@@ -155,6 +163,7 @@ class RetrievalResponse(BaseModel):
 # ── Index status ──
 
 
+# 记录单个集合的名称、文档数量和可用状态。
 class CollectionStatus(BaseModel):
     """Status of a single collection."""
 
@@ -163,6 +172,7 @@ class CollectionStatus(BaseModel):
     exists: bool = Field(default=False, description="Whether the collection exists")
 
 
+# 汇总规范与案例两个集合的索引状态。
 class IndexStatus(BaseModel):
     """Dual-channel index status."""
 

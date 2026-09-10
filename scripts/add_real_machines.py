@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# 维护示例机床能力数据；工作簿修改需重新进行公开数据审核。
 # -*- coding: utf-8 -*-
 """
 Write real production machines into data/machines.xlsx (covering all process categories of the engine).

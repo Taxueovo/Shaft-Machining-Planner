@@ -1,3 +1,4 @@
+# 回归测试：覆盖公开工作簿的来源字段和无公式约束。
 """Release checks for the source-attributed public capability samples."""
 
 from pathlib import Path
@@ -16,6 +17,7 @@ ALLOWED_SOURCE_HOSTS = {
 }
 
 
+# 检查公开工作簿来源字段和单元格，拒绝公式及不应公开的数据结构。
 def _assert_safe_workbook(path: Path, data_sheet: str, source_header: str) -> None:
     workbook = load_workbook(path, data_only=False, read_only=True)
     assert data_sheet in workbook.sheetnames
@@ -39,9 +41,11 @@ def _assert_safe_workbook(path: Path, data_sheet: str, source_header: str) -> No
             )
 
 
+# 验证公开机床样例具备来源且不含公式。
 def test_public_machine_data_is_attributed_and_formula_free() -> None:
     _assert_safe_workbook(ROOT / "data" / "machines.xlsx", "Export", "Capability source URL")
 
 
+# 验证公开刀具样例具备来源且不含公式。
 def test_public_tool_data_is_attributed_and_formula_free() -> None:
     _assert_safe_workbook(ROOT / "data" / "tools.xlsx", "Tool_Selection", "Source URL")

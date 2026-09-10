@@ -1,3 +1,4 @@
+# 连接智能体注册表、护栏和提示模板，按登记顺序执行失败回退。
 """Orchestrator: enhanced scheduler with dynamic routing and error recovery."""
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from .prompts import PromptManager
 logger = logging.getLogger(__name__)
 
 
+# 按注册表执行智能体及其回退链；动态任务依赖由任务调度器另行管理。
 class Orchestrator:
     """Enhanced scheduler - supports dynamic routing, error recovery and agent orchestration."""
 
