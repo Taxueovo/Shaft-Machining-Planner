@@ -1,3 +1,4 @@
+# 统一登记资源查询和路线工具，提供参数入口及调用记录。
 """Tool registry: manages registration and invocation of callable tools."""
 
 from __future__ import annotations
@@ -8,6 +9,7 @@ from repositories import MachineRepository, ToolRepository
 from rules import FEATURE_PROCESS, build_route, is_high_precision
 
 
+# 集中登记可调用工具，统一执行入口和调用追踪字段。
 class ToolRegistry:
     """Tool registry managing machine query, tool query, process route generation, and other tools."""
 

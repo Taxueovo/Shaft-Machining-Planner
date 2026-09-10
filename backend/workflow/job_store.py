@@ -1,3 +1,4 @@
+# 以线程锁和 SQLite 保存任务状态，使用深拷贝隔离调用方对内部记录的修改。
 """Thread-safe SQLite-backed job storage for restart-safe local planning."""
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 
+# 维护内存任务映射及 SQLite 副本，以线程锁串行化持久化修改。
 class JobStore:
     """Small persistent store; payloads never leave the local machine."""
 
@@ -122,6 +124,21 @@ class JobStore:
             if job_id not in self.jobs:
                 raise KeyError(job_id)
             return deepcopy(self.jobs[job_id])
+
+    def save_trace(self, job_id: str, entry: dict[str, Any]) -> None:
+        """Persist each attempt independently of graph success and result writes."""
+        with self.lock:
+            if job_id not in self.jobs:
+                return
+            entries = self.jobs[job_id].setdefault("execution_trace", [])
+            for index, previous in enumerate(entries):
+                if previous.get("trace_id") == entry["trace_id"]:
+                    entries[index] = deepcopy(entry)
+                    break
+            else:
+                entries.append(deepcopy(entry))
+            self.jobs[job_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
+            self._persist(job_id)
 
     def stats(self) -> dict[str, int]:
         """统计内存缓存中的活跃（运行/排队/等待用户）任务数与任务总数。"""

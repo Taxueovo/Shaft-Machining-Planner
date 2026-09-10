@@ -1,3 +1,4 @@
+# 收集高精度特征的加工时机选择，生成规则路线并应用受约束的模型修正。
 """Process planning nodes: precision choice, process route generation."""
 
 from __future__ import annotations
@@ -22,6 +23,7 @@ from rag.workflow_integration import build_rag_context
 logger = logging.getLogger(__name__)
 
 
+# 提供加工时机中断、规则路线生成及受约束模型修正节点。
 class ProcessNodesMixin:
     """Mixin for precision choice and process route generation nodes."""
 

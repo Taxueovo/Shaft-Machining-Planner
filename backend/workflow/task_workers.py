@@ -1,3 +1,4 @@
+# 在隔离快照中执行任务合同，审计工具调用，返回结构化结果供调度器发布。
 """Execute one contract in isolation; only the collector may publish its updates."""
 
 from __future__ import annotations
@@ -9,10 +10,13 @@ from models.tasks import TaskContract, TaskResult
 from workflow.tool_registry import ToolRegistry
 
 
+# 按任务合同维护工具白名单和累计调用次数。
 class ToolBudget:
+    # 绑定当前合同并初始化空调用账本。
     def __init__(self, contract):
         self.contract, self.calls = contract, []
 
+    # 工具调用前检查授权与剩余预算，再记录调用名称及参数。
     def record(self, name, arguments):
         if name not in self.contract.allowed_tools:
             raise ValueError(f"Tool {name} is not authorized by the task contract")
@@ -21,30 +25,38 @@ class ToolBudget:
         self.calls.append({"tool": name, "arguments": arguments})
 
 
+# 仅暴露受审计的查询入口，为隔离任务绑定工具权限和预算。
 class RepositoryView:
     """Expose only audited query methods, not arbitrary repository mutation."""
 
+    # 保存真实仓储及任务预算，所有代理查询都先经过预算检查。
     def __init__(self, repository, budget):
         self.repository, self.budget = repository, budget
 
+    # 记录并校验车床查询权限后，再调用真实仓储。
     def search_turning(self, *args, **kwargs):
         self.budget.record("query_turning_machines", {"args": list(args), **kwargs})
         return self.repository.search_turning(*args, **kwargs)
 
+    # 记录并校验工艺机床查询权限后，原样传递尺寸和能力条件。
     def search_process(self, *args, **kwargs):
         self.budget.record("query_process_machines", {"args": list(args), **kwargs})
         return self.repository.search_process(*args, **kwargs)
 
+    # 记录刀具查询的权限和预算，再把参数交给真实刀具仓储。
     def search(self, *args, **kwargs):
         self.budget.record("query_cutting_tools", {"args": list(args), **kwargs})
         return self.repository.search(*args, **kwargs)
 
 
+# 丢弃任务内部的进度写入，统一由调度器发布共享状态。
 class SilentStore:
+    # 有意丢弃工作线程内的共享状态写入，由结果收集器统一发布。
     def update(self, *args, **kwargs):
         pass
 
 
+# 复制工作流及输入快照，按角色执行并返回结构化产物；异常转为可重试失败。
 def execute_contract(
     workflow, task: TaskContract, snapshot: dict, version: str, attempt: int
 ) -> TaskResult:
@@ -55,6 +67,7 @@ def execute_contract(
     flow.machine_repo = RepositoryView(workflow.machine_repo, budget)
     flow.tool_repo = RepositoryView(workflow.tool_repo, budget)
     flow.tool_registry = ToolRegistry(flow.machine_repo, flow.tool_repo)
+    # 每个任务读取独立快照；工具仓储共享底层只读数据，但预算与状态写入相互隔离。
     state = deepcopy(snapshot)
     state["_worker_contract"] = task.model_dump()
     state["skip_advisory_llm"] = True
@@ -98,6 +111,7 @@ def execute_contract(
             artifact = {"findings": report["findings"], "mode": report["mode"]}
             summary = report["summary"]
             budget.calls = report["tool_calls"]
+        # 装夹产物是候选分析和待补充事项，当前实现不自动验证夹具能力。
         elif task.worker == "workholding":
             hollow = state["request"].get("blank_type") == "hollow"
             answer = state.get("engineering_answers", {}).get(task.task_id)
@@ -122,6 +136,7 @@ def execute_contract(
                 "user_statement": answer,
                 "statement_verified": False,
             }
+            # 收到说明只表示信息已记录，statement_verified 与 production_release 仍保持否定。
             if answer:
                 summary = "Fixture information recorded for engineering review; supplied claims are not automatically verified."
             else:
@@ -141,6 +156,7 @@ def execute_contract(
             if cap.get("machine", {}).get("conclusion") != "satisfied":
                 processes.add("ISO Turning")
             candidates = {}
+            # 扩展查询数量但保留尺寸、重量、模数及精度约束，不放宽条件来制造匹配。
             for process in sorted(processes - {"Heat Treatment"}):
                 candidates[process] = flow.machine_repo.search_process(
                     process,
@@ -193,6 +209,7 @@ def execute_contract(
             missing_information=missing,
             tool_calls=budget.calls,
         )
+    # 任务异常转成结构化失败供调度器有限重试，不将不完整输出写回主状态。
     except Exception as exc:
         return TaskResult(
             task_id=task.task_id,

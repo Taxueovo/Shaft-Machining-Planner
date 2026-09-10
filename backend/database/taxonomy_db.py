@@ -1,3 +1,4 @@
+# 持久化案例分类树，维护父子层级及分类节点的增删改查。
 """Taxonomy tree database."""
 
 from __future__ import annotations
@@ -21,6 +22,7 @@ DATA_DIR = Path(__file__).resolve().parent.parent.parent / "data"
 TAXONOMY_FILE = DATA_DIR / "taxonomy.json"
 
 
+# 管理分类树的 JSON 持久化及节点增删改查。
 class TaxonomyDB:
     """Taxonomy tree database - JSON file storage."""
 
@@ -30,6 +32,7 @@ class TaxonomyDB:
         self._tree: Optional[TaxonomyTree] = None
         self._lock = threading.RLock()
 
+    # 从 JSON 文件恢复内存数据，处理文件缺失或内容无效的情况。
     def _load(self) -> TaxonomyTree:
         """Load taxonomy from JSON file."""
         if self._tree is not None:
@@ -47,6 +50,7 @@ class TaxonomyDB:
         logger.info("Loaded %d taxonomy nodes", len(self._tree.nodes))
         return self._tree
 
+    # 将当前内存数据序列化并保存到对应 JSON 文件。
     def _save(self) -> None:
         """Save taxonomy to JSON file."""
         if self._tree is None:
@@ -68,35 +72,42 @@ class TaxonomyDB:
 
         logger.info("Saved %d taxonomy nodes", len(self._tree.nodes))
 
+    # 返回当前完整分类树模型。
     def get_tree(self) -> TaxonomyTree:
         """Get complete taxonomy tree."""
         return self._load()
 
+    # 按唯一标识查找分类节点，未找到时返回空值。
     def get_node(self, node_id: str) -> Optional[TaxonomyNode]:
         """Get node by ID."""
         tree = self._load()
         return tree.get_node(node_id)
 
+    # 筛选父节点标识匹配的直接子节点。
     def get_children(self, parent_id: Optional[str]) -> list[TaxonomyNode]:
         """Get direct children of a node."""
         tree = self._load()
         return tree.get_children(parent_id)
 
+    # 递归收集指定节点下的全部后代节点。
     def get_all_descendants(self, node_id: str) -> list[TaxonomyNode]:
         """Get all descendants of a node."""
         tree = self._load()
         return tree.get_all_descendants(node_id)
 
+    # 沿父节点链回溯，再反转为从根到目标节点的路径。
     def get_path(self, node_id: str) -> list[TaxonomyNode]:
         """Get path from root to specified node."""
         tree = self._load()
         return tree.get_path(node_id)
 
+    # 取得没有子节点的分类，用于最终案例归类。
     def get_leaves(self) -> list[TaxonomyNode]:
         """Get all leaf nodes."""
         tree = self._load()
         return tree.get_leaves()
 
+    # 校验父节点并添加分类节点，随后持久化分类树。
     def add_node(self, node: TaxonomyNode) -> None:
         """Add a new node."""
         with self._lock:
@@ -118,6 +129,7 @@ class TaxonomyDB:
         self._tree = tree
         self._save()
 
+    # 在锁内更新节点模型上存在的字段，并持久化分类树。
     def update_node(self, node_id: str, updates: dict) -> None:
         """Update an existing node."""
         with self._lock:
@@ -139,6 +151,7 @@ class TaxonomyDB:
         self._tree = tree
         self._save()
 
+    # 删除分类节点；按实现约束处理其后代，避免留下无效层级。
     def delete_node(self, node_id: str, recursive: bool = False) -> None:
         """Delete a node."""
         with self._lock:

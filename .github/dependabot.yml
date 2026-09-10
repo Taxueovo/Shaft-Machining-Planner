@@ -1,3 +1,4 @@
+# 依赖更新配置：定期创建 Python 与 GitHub Actions 的更新请求，并限制同时打开的数量。
 version: 2
 updates:
   - package-ecosystem: "pip"

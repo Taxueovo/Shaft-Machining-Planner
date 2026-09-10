@@ -1,3 +1,4 @@
+# 逐工序匹配机床与刀具，区分已满足、未覆盖和不适用的资源状态。
 """Resource selection nodes: machine/tool queries, per-operation resource matching, and LLM ranking."""
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from rag.workflow_integration import build_rag_context
 logger = logging.getLogger(__name__)
 
 
+# 提供车床与逐工序资源匹配节点，汇总缺口和候选记录。
 class SelectionNodesMixin:
     """Mixin for resource selection nodes."""
 

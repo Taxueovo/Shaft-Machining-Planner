@@ -1,3 +1,4 @@
+# 综合必需工序、特征覆盖、资源与拓扑检查，限定路线修复次数并保留失败原因。
 """Verification and repair nodes: process route verification, topology check, auto repair."""
 
 from __future__ import annotations
@@ -30,6 +31,7 @@ from rag.workflow_integration import build_rag_context
 logger = logging.getLogger(__name__)
 
 
+# 提供路线结构、拓扑和领域检查，以及次数受限的修复逻辑。
 class VerificationNodesMixin:
     """Mixin for verification and repair nodes."""
 

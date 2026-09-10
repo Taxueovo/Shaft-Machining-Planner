@@ -1,3 +1,4 @@
+# 独立开展加工、质量和热处理审查；工具证据可追溯，但不能代替工程放行。
 """Independent specialist reviews with bounded, read-only tool use.
 
 Reports are tied to the exact route. Model findings remain proposals; they can
@@ -17,10 +18,12 @@ from llm_client import chat_json, llm_available
 from rag.workflow_integration import build_rag_context
 
 
+# 对路线内容计算稳定摘要，审查结果只可用于对应的路线版本。
 def route_fingerprint(route: list[dict]) -> str:
     return hashlib.sha256(json.dumps(route, sort_keys=True, default=str).encode()).hexdigest()
 
 
+# 描述审查问题、严重程度、证据和处置方式，区分路线修复与工程确认。
 class Finding(BaseModel):
     model_config = ConfigDict(extra="forbid")
     code: str = Field(min_length=1, max_length=80)
@@ -32,6 +35,7 @@ class Finding(BaseModel):
     recommendation: str = Field(min_length=1, max_length=1200)
 
 
+# 约束专家可提出的只读工具请求，工艺类别仅在相关查询中使用。
 class ToolRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: Literal[
@@ -40,6 +44,7 @@ class ToolRequest(BaseModel):
     process: str | None = Field(default=None, max_length=120)
 
 
+# 约束专家单轮模型响应的工具请求、发现项数量和总结格式。
 class ReviewTurn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     tools: list[ToolRequest] = Field(default_factory=list, max_length=2)
@@ -54,11 +59,14 @@ SCOPES = {
 }
 
 
+# 以独立上下文执行领域规则及模型审查，保留不完整审查的降级标记。
 class SpecialistAgent(BaseAgent):
+    # 绑定工作流依赖和专家角色，确保专家使用对应的领域范围。
     def __init__(self, workflow, name):
         super().__init__(name)
         self.workflow = workflow
 
+    # 声明该智能体读取和产出的状态键，供执行前后检查。
     def capabilities(self):
         return AgentCapability(
             name=self.name,
@@ -68,8 +76,10 @@ class SpecialistAgent(BaseAgent):
             tags=["specialist", "tool-using", "review"],
         )
 
+    # 实现当前智能体的执行入口，按能力声明返回结构化结果。
     def execute(self, state: dict[str, Any]) -> AgentResult:
         request, route = state["request"], state["process_route"]
+        # 证据字典是模型可引用的来源集合；随后工具输出会获得新的证据标识。
         evidence = {
             "input": request,
             "route": route,
@@ -144,6 +154,7 @@ class SpecialistAgent(BaseAgent):
                             ]
                         )
                         continue
+                    # 模型发现必须引用真实取得的证据和当前工序；引用合法只代表可追溯，不证明结论正确。
                     known = {op["operation_no"] for op in route}
                     for finding in response.findings:
                         if not set(finding.evidence_ids).issubset(evidence):
@@ -173,6 +184,7 @@ class SpecialistAgent(BaseAgent):
         }
         return AgentResult(success=True, state_updates={self.name: report}, tool_calls=calls)
 
+    # 从当前已验证输入取得工具参数，返回可供专家引用的实际查询证据。
     def _tool(self, tool, state):
         req, geometry = state["request"], state["geometry"]
         if tool.name == "inspect_route":
@@ -201,10 +213,12 @@ class SpecialistAgent(BaseAgent):
         )
         return {"status": "retrieved" if text else "unavailable", "text": text}
 
+    # 生成无需模型的领域检查项，保留装夹、孔尺寸、检验和热处理缺失信息。
     def _rules(self, state):
         req = state["request"]
         findings = []
 
+        # 把规则发现追加为统一问题结构，并保留规则来源及可引用证据。
         def add(code, message, recommendation, evidence="input"):
             findings.append(
                 dict(
@@ -272,6 +286,7 @@ class SpecialistAgent(BaseAgent):
         return findings
 
 
+# 检查三个领域报告是否对应当前路线，汇总修复请求与待确认事项。
 def coordinate_reviews(state: dict) -> dict:
     fingerprint = route_fingerprint(state["process_route"])
     reports, findings, degraded = [], [], []
@@ -301,12 +316,15 @@ def coordinate_reviews(state: dict) -> dict:
     }
 
 
+# 合并领域意见而不允许一个专家抵消另一个专家的待确认问题。
 class ReviewCoordinatorAgent(BaseAgent):
     """Merge independent findings without letting one specialist waive another's concerns."""
 
+    # 设置协调器的固定名称，不绑定某一个领域专家。
     def __init__(self):
         super().__init__("review_coordination")
 
+    # 声明该智能体读取和产出的状态键，供执行前后检查。
     def capabilities(self):
         return AgentCapability(
             name=self.name,
@@ -315,5 +333,6 @@ class ReviewCoordinatorAgent(BaseAgent):
             produces_state_keys=["agent_collaboration", "release_status"],
         )
 
+    # 只合并当前状态中的领域报告，不自行生成或撤销领域结论。
     def execute(self, state):
         return AgentResult(success=True, state_updates=coordinate_reviews(state))

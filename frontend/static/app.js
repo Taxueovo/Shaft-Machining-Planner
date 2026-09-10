@@ -1,3 +1,4 @@
+// 页面公共事件代理：将声明式按钮动作分派到已登记函数，减少内联脚本。
 // Shared delegated event handling.
 //
 // Replaces inline `onclick="fn(...)"` handlers (which the Content-Security-Policy

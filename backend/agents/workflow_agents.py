@@ -1,3 +1,4 @@
+# 将工作流节点包装成统一智能体接口，声明各节点所需输入和产出字段。
 """Agent subclasses - wrap Workflow nodes as the standard Agent interface."""
 
 from __future__ import annotations
@@ -10,13 +11,16 @@ if TYPE_CHECKING:
     from workflow.graph import Workflow
 
 
+# 适配任务摘要节点，将其输入和输出纳入统一智能体协议。
 class TaskPlanningAgent(BaseAgent):
     """Task planning agent."""
 
+    # 绑定工作流实例并设置当前角色名称，执行时委托给相应节点。
     def __init__(self, workflow: Workflow) -> None:
         super().__init__("task_planning")
         self._workflow = workflow
 
+    # 声明该智能体读取和产出的状态键，供执行前后检查。
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
             name="task_planning",
@@ -33,13 +37,16 @@ class TaskPlanningAgent(BaseAgent):
         return AgentResult(success=True, state_updates=self._workflow.task_planning(state))
 
 
+# 适配几何分析节点，输出后续规划使用的轴段及特征信息。
 class FeatureAnalysisAgent(BaseAgent):
     """Feature analysis agent."""
 
+    # 绑定工作流实例并设置当前角色名称，执行时委托给相应节点。
     def __init__(self, workflow: Workflow) -> None:
         super().__init__("feature_analysis")
         self._workflow = workflow
 
+    # 声明该智能体读取和产出的状态键，供执行前后检查。
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
             name="feature_analysis",
@@ -54,13 +61,16 @@ class FeatureAnalysisAgent(BaseAgent):
         return AgentResult(success=True, state_updates=self._workflow.feature_analysis(state))
 
 
+# 适配热处理决策节点，保留输入要求和待确认的处理参数。
 class HeatTreatmentPlanningAgent(BaseAgent):
     """Heat-treatment decision agent."""
 
+    # 绑定工作流实例并设置当前角色名称，执行时委托给相应节点。
     def __init__(self, workflow: Workflow) -> None:
         super().__init__("heat_treatment_planning")
         self._workflow = workflow
 
+    # 声明该智能体读取和产出的状态键，供执行前后检查。
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
             name="heat_treatment_planning",
@@ -77,13 +87,16 @@ class HeatTreatmentPlanningAgent(BaseAgent):
         )
 
 
+# 适配人工加工时机选择节点，允许图中断并等待选择结果。
 class PrecisionChoiceAgent(BaseAgent):
     """Precision choice agent."""
 
+    # 绑定工作流实例并设置当前角色名称，执行时委托给相应节点。
     def __init__(self, workflow: Workflow) -> None:
         super().__init__("precision_choice")
         self._workflow = workflow
 
+    # 声明该智能体读取和产出的状态键，供执行前后检查。
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
             name="precision_choice",
@@ -98,13 +111,16 @@ class PrecisionChoiceAgent(BaseAgent):
         return AgentResult(success=True, state_updates=self._workflow.precision_choice(state))
 
 
+# 适配工艺路线生成节点，要求成功结果包含路线字段。
 class ProcessPlanningAgent(BaseAgent):
     """Process planning agent."""
 
+    # 绑定工作流实例并设置当前角色名称，执行时委托给相应节点。
     def __init__(self, workflow: Workflow) -> None:
         super().__init__("process_planning")
         self._workflow = workflow
 
+    # 声明该智能体读取和产出的状态键，供执行前后检查。
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
             name="process_planning",
@@ -119,13 +135,16 @@ class ProcessPlanningAgent(BaseAgent):
         return AgentResult(success=True, state_updates=self._workflow.process_planning(state))
 
 
+# 适配机床和刀具匹配节点，声明能力结论及逐工序资源输出。
 class ResourceSelectionAgent(BaseAgent):
     """Resource selection agent."""
 
+    # 绑定工作流实例并设置当前角色名称，执行时委托给相应节点。
     def __init__(self, workflow: Workflow) -> None:
         super().__init__("resource_selection")
         self._workflow = workflow
 
+    # 声明该智能体读取和产出的状态键，供执行前后检查。
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
             name="resource_selection",
@@ -140,13 +159,16 @@ class ResourceSelectionAgent(BaseAgent):
         return AgentResult(success=True, state_updates=self._workflow.resource_selection(state))
 
 
+# 适配综合验证节点，将检查结果和任务终态交回图流程。
 class VerificationAgent(BaseAgent):
     """Plan verification agent."""
 
+    # 绑定工作流实例并设置当前角色名称，执行时委托给相应节点。
     def __init__(self, workflow: Workflow) -> None:
         super().__init__("verification")
         self._workflow = workflow
 
+    # 声明该智能体读取和产出的状态键，供执行前后检查。
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
             name="verification",
@@ -168,13 +190,16 @@ class VerificationAgent(BaseAgent):
         return AgentResult(success=True, state_updates=self._workflow.verification(state))
 
 
+# 适配路线修复节点，输出修订路线及受限的修复计数。
 class RepairAgent(BaseAgent):
     """Process repair agent."""
 
+    # 绑定工作流实例并设置当前角色名称，执行时委托给相应节点。
     def __init__(self, workflow: Workflow) -> None:
         super().__init__("repair")
         self._workflow = workflow
 
+    # 声明该智能体读取和产出的状态键，供执行前后检查。
     def capabilities(self) -> AgentCapability:
         return AgentCapability(
             name="repair",

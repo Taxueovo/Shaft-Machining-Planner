@@ -1,3 +1,4 @@
+# 集中维护工艺名称、材料属性与精加工阈值，供规则引擎和校验共用。
 """Rule constants: feature mappings, material properties, machining parameters."""
 
 from __future__ import annotations
@@ -243,6 +244,7 @@ MATERIAL_PROPERTIES: dict[str, dict[str, Any]] = {
 }
 
 
+# 查找材料切削属性，未知牌号使用明确的默认属性。
 def get_material_properties(material: str) -> dict[str, Any]:
     """Get material machining properties, unknown material returns defaults."""
     material_upper = material.strip().upper()
@@ -272,6 +274,7 @@ def is_high_precision(
     return (bool(values) and max(values) <= 0.02) or (roughness is not None and roughness <= 0.8)
 
 
+# 综合特征标记、公差和粗糙度判断是否进入高精度加工路径。
 def is_feature_high_precision(feature: Any) -> bool:
     """Determine whether the feature requires a precision machining chain.
 
@@ -294,6 +297,7 @@ def is_feature_high_precision(feature: Any) -> bool:
     ).upper() in {"IT5", "IT6"}
 
 
+# 按既定公差和粗糙度阈值判断是否需要磨削工序。
 def requires_grinding(
     upper: Optional[float], lower: Optional[float], roughness: Optional[float]
 ) -> bool:

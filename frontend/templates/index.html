@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shaft Machining Planner - PE Agent - Shaft Process Planning</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
+{# 当前页面的局部样式：补充公共样式中的布局、状态和窄屏显示规则。 #}
   <style>
     .hero { text-align: center; padding: 40px 20px; margin-bottom: 30px; }
     .hero h1 { font-size: 32px; margin-bottom: 12px; }
@@ -58,6 +59,7 @@
   </div>
 </main>
 
+{# 页面脚本使用响应生成的 nonce；动态数据由模板安全编码后注入。 #}
 <script nonce="{{ request.state.csp_nonce }}">
 (function() {
   // Shutdown button

@@ -1,3 +1,4 @@
+# 提供知识库命令行管理入口，支持状态查看、增量构建、检索和索引清理。
 """RAG interactive management console.
 
 Launch:
@@ -93,6 +94,7 @@ def _scan_case_files() -> list[Path]:
 # ═══════════════════════════════════════════════════════════════
 
 
+# 封装知识库管理控制台的状态查看、索引构建和交互检索。
 class RAGCli:
     """RAG management console - interactive, menu-driven."""
 
@@ -142,6 +144,7 @@ class RAGCli:
 
     # ── 1. Dashboard ──
 
+    # 展示双通道索引数量、配置和可用状态。
     def show_dashboard(self):
         """Display the index status dashboard."""
         self._rule("📊 RAG Index Dashboard")
@@ -221,6 +224,7 @@ class RAGCli:
 
     # ── 2. Scan source files ──
 
+    # 列出知识库源文件，便于确认本次构建的输入范围。
     def show_source_files(self):
         """Show the detailed list of source files."""
         self._rule("📁 Source File Scan")
@@ -246,6 +250,7 @@ class RAGCli:
 
     # ── 3. Build the specs index ──
 
+    # 执行规范文档通道的索引构建并显示结果。
     def build_specs(self):
         """Build the specs (process handbook) index."""
         self._rule("🔨 Build Specs Index")
@@ -265,6 +270,7 @@ class RAGCli:
 
     # ── 4. Build the cases index ──
 
+    # 执行案例通道的索引构建并显示结果。
     def build_cases(self):
         """Build the cases (case base) index."""
         self._rule("🔨 Build Cases Index")
@@ -284,6 +290,7 @@ class RAGCli:
 
     # ── 5. Build all ──
 
+    # 依次构建规范和案例通道，并汇总各通道结果。
     def build_all(self):
         """Build both channel indexes in one step."""
         self._rule("🚀 Build All Indexes")
@@ -327,6 +334,7 @@ class RAGCli:
 
     # ── 6. Retrieval test ──
 
+    # 读取交互查询并展示混合召回及精排结果，便于调试检索质量。
     def search_test(self):
         """Interactive retrieval test."""
         self._rule("🔍 Retrieval Test")
@@ -395,6 +403,7 @@ class RAGCli:
 
     # ── 7. Clear indexes ──
 
+    # 根据用户选择清理指定通道索引。
     def clear_indexes(self):
         """Clear the indexes."""
         self._rule("🧹 Clear Indexes")
@@ -420,6 +429,7 @@ class RAGCli:
 
     # ── 8. Chunk details ──
 
+    # 展示已索引分块样例及元数据，用于检查分块效果。
     def show_chunks(self):
         """Show samples of indexed chunks."""
         self._rule("📋 Chunk Details")
@@ -482,6 +492,7 @@ class RAGCli:
 
     # ── Menu loop ──
 
+    # 运行控制台菜单循环，将用户选择分派到对应管理操作。
     def run(self):
         """Start the interactive menu loop."""
         self._clear_screen()
@@ -574,6 +585,7 @@ class RAGCli:
 # ═══════════════════════════════════════════════════════════════
 
 
+# 解析命令行参数并进入对应管理操作或交互菜单。
 def main():
     """CLI entry point - supports interactive mode and command-line arguments."""
     if "--help" in sys.argv or "-h" in sys.argv:

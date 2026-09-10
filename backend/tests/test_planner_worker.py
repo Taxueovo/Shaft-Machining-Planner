@@ -1,3 +1,4 @@
+# 回归测试：覆盖任务依赖校验、结果复用、工具权限和持久化人工恢复。
 """Behavioral checks for task planning, isolated execution and durable human input."""
 
 from copy import deepcopy
@@ -15,6 +16,7 @@ from service import PlanningService
 from tests.test_production_reviews import request, workflow_state
 
 
+# 比较实心和空心件，验证计划按几何条件增加装夹任务。
 def test_plan_adapts_to_part():
     _, _, solid = workflow_state()
     _, _, hollow = workflow_state(request(blank_type="hollow", blank_inner_diameter_mm=20))
@@ -24,6 +26,7 @@ def test_plan_adapts_to_part():
     assert hollow["release_status"] == "engineering_review_required"
 
 
+# 覆盖环、缺失必需角色、越权工具、重复任务和缺失路线依赖。
 @pytest.mark.parametrize("mutation", ["cycle", "missing", "tool", "duplicate", "ungated"])
 def test_planner_contract_rejects_invalid_dags(mutation):
     _, _, state = workflow_state()
@@ -42,6 +45,7 @@ def test_planner_contract_rejects_invalid_dags(mutation):
         TaskPlan.model_validate(data)
 
 
+# 验证非法模型计划退回规则计划，并明确报告降级或预算耗尽。
 def test_invalid_model_plan_falls_back_with_explicit_mode(monkeypatch):
     _, _, state = workflow_state()
     monkeypatch.setattr(planner, "llm_available", lambda: True)
@@ -52,6 +56,7 @@ def test_invalid_model_plan_falls_back_with_explicit_mode(monkeypatch):
     assert calls == 4 and mode == "budget_exhausted"
 
 
+# 验证模型不能改写已执行任务的合同以绕过结果账本。
 def test_model_cannot_rewrite_completed_contract(monkeypatch):
     _, _, state = workflow_state()
     proposed = deepcopy(state["task_plan"])
@@ -63,10 +68,12 @@ def test_model_cannot_rewrite_completed_contract(monkeypatch):
     assert plan.tasks[0].objective != proposed["tasks"][0]["objective"]
 
 
+# 模拟资源缺口，验证追加任务且已完成任务只执行一次。
 def test_resource_failure_adds_tasks_and_reuses_completed_work(monkeypatch):
     original = scheduler.execute_contract
     counts = Counter()
 
+    # 记录各角色调用次数，并把资源结果改为缺口以触发补充分析。
     def execute(flow, task, state, version, attempt):
         counts[task.worker] += 1
         result = original(flow, task, state, version, attempt)
@@ -85,10 +92,12 @@ def test_resource_failure_adds_tasks_and_reuses_completed_work(monkeypatch):
     ]
 
 
+# 模拟任务失败，验证只重试一次且必需任务失败时不能完成规划。
 def test_tool_failure_retries_once_then_fails_closed(monkeypatch):
     original = scheduler.execute_contract
     counts = Counter()
 
+    # 记录调用次数并把路线任务标为工具失败，验证有限重试。
     def execute(flow, task, state, version, attempt):
         counts[task.worker] += 1
         result = original(flow, task, state, version, attempt)
@@ -103,6 +112,7 @@ def test_tool_failure_retries_once_then_fails_closed(monkeypatch):
     assert "incomplete" in state["verification"]["message"]
 
 
+# 修改上游产物及输入，验证依赖结果按版本失效。
 def test_dependency_changes_invalidate_descendants():
     _, _, state = workflow_state()
     plan = TaskPlan.model_validate(state["task_plan"])
@@ -113,11 +123,13 @@ def test_dependency_changes_invalidate_descendants():
     assert not scheduler.current_results(plan, state)
 
 
+# 关闭后重建持久化工作流，验证回答或暂缓可恢复，且已完成任务不重跑。
 @pytest.mark.parametrize("defer", [False, True])
 def test_durable_engineering_pause_and_resume_reuses_work(tmp_path, monkeypatch, defer):
     monkeypatch.setenv("JOB_DB_FILE", str(tmp_path / "jobs.sqlite3"))
     original_plan = planner.baseline_plan
 
+    # 把装夹任务设为阻塞，仅用于触发持久化人工恢复测试路径。
     def blocking(state):
         plan = original_plan(state)
         next(t for t in plan.tasks if t.worker == "workholding").blocking = True
@@ -127,6 +139,7 @@ def test_durable_engineering_pause_and_resume_reuses_work(tmp_path, monkeypatch,
     original_execute = scheduler.execute_contract
     counts = Counter()
 
+    # 统计恢复前后的角色执行次数，验证检查点能够复用已完成工作。
     def execute(flow, task, state, version, attempt):
         counts[task.worker] += 1
         return original_execute(flow, task, state, version, attempt)
@@ -163,6 +176,7 @@ def test_durable_engineering_pause_and_resume_reuses_work(tmp_path, monkeypatch,
     restored.store.connection.close()
 
 
+# 验证未知任务回答在恢复前被拒绝，并保留等待状态。
 def test_service_rejects_invalid_answers_before_resuming():
     service = PlanningService.__new__(PlanningService)
     service.store = JobStore()
@@ -179,6 +193,7 @@ def test_service_rejects_invalid_answers_before_resuming():
     assert service.store.get("paused")["status"] == "waiting_engineering_input"
 
 
+# 验证合法模型计划可增加需要人工补充的阻塞任务。
 def test_valid_model_plan_can_add_blocking_worker(monkeypatch):
     _, _, state = workflow_state()
     proposed = planner.baseline_plan(state)
@@ -190,6 +205,7 @@ def test_valid_model_plan_can_add_blocking_worker(monkeypatch):
     assert next(t for t in plan.tasks if t.worker == "workholding").blocking
 
 
+# 验证空工具权限合同阻止资源查询，且不会记录已执行调用。
 def test_worker_cannot_call_tool_outside_contract():
     from workflow.task_workers import execute_contract
 
@@ -202,6 +218,7 @@ def test_worker_cannot_call_tool_outside_contract():
     assert result.tool_calls == []
 
 
+# 注入越权状态字段，验证收集器不发布角色无权修改的输入。
 def test_collector_ignores_worker_writes_to_unowned_fields():
     flow, _, state = workflow_state()
     state["worker_results"]["quality_review"]["state_updates"]["request"] = {"material": "invented"}
