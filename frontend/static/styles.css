@@ -1,3 +1,5 @@
+/* 公共样式：定义全站表单、任务面板、资源表格和工序编辑的展示规则。 */
+/* 全局设计变量：统一页面颜色、圆角和阴影，组件通过变量保持视觉一致。 */
 :root{
   /* Industrial palette */
   --bg:#eef0f4;
@@ -23,6 +25,7 @@
   --shadow-sm:0 1px 2px rgba(23,32,51,.05);
   --shadow-md:0 4px 14px rgba(23,32,51,.07);
 }
+/* 使用边框盒计算宽度，避免表单和面板因内边距产生布局溢出。 */
 *{box-sizing:border-box}
 body{margin:0;font-family:"Segoe UI","Helvetica Neue",Arial,system-ui,sans-serif;color:var(--ink);background:var(--bg);-webkit-font-smoothing:antialiased}
 button{font:inherit;cursor:pointer}
@@ -39,6 +42,7 @@ input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(3
 .service i{width:7px;height:7px;border-radius:50%;background:#f04438;flex-shrink:0}
 .service.ok i{background:#32d583}
 .service.ok{color:#bfe3cf}
+/* 页面内容容器与垂直堆叠布局，限制桌面宽度并保留窄屏边距。 */
 .shell{width:min(1220px,calc(100% - 32px));margin:28px auto 60px}
 .stack{display:grid;gap:20px}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);padding:24px;box-shadow:var(--shadow-sm)}
@@ -47,12 +51,14 @@ input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(3
 .heading h2,.toolbar h3{margin:0;font-size:18px;letter-spacing:.2px}
 .heading b{display:inline-flex;min-width:42px;height:30px;align-items:center;justify-content:center;border-radius:var(--radius-input);background:var(--primary-soft);color:var(--primary);font-size:12px}
 .heading b.warn{background:#fdf1d8;color:var(--warning)}
+/* 表单和结果区共用栅格，具体列数通过组合类控制。 */
 .grid{display:grid;gap:16px}
 .grid.two{grid-template-columns:repeat(2,minmax(0,1fr))}.grid.three{grid-template-columns:repeat(3,minmax(0,1fr))}.grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}
 label{display:grid;gap:7px;color:#37414f;font-size:14px}
 .metric{border-radius:var(--radius-sm);padding:12px 15px;background:#f5f7fa;border:1px solid var(--line);display:grid;align-content:center}
 .metric span{color:var(--muted);font-size:13px}.metric strong{font-size:20px;margin-top:4px}
 .toolbar{margin:24px 0 10px}
+/* 宽表格允许横向滚动，避免工序和资源列挤压页面主体。 */
 .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius-sm)}
 table{width:100%;border-collapse:collapse;min-width:800px}
 th,td{border-bottom:1px solid var(--line);padding:11px 9px;text-align:left;vertical-align:top}
@@ -60,6 +66,7 @@ th{background:#f4f6f9;color:#4a5568;font-size:13px;font-weight:600}
 td input,td select{min-width:100px}
 tr:last-child td{border-bottom:none}
 /* Buttons — unified industrial style */
+/* 统一按钮外观、交互反馈及禁用状态。 */
 .button{border:1px solid transparent;border-radius:var(--radius-btn);padding:10px 16px;font-weight:600;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:background .15s,border-color .15s,color .15s,box-shadow .15s}
 .button:disabled{opacity:.45;cursor:not-allowed}
 .button.primary{background:var(--primary);color:#fff}
@@ -74,6 +81,7 @@ tr:last-child td{border-bottom:none}
 .button.ghost.danger:hover:not(:disabled){background:#fbe3e1}
 .button.danger{color:var(--danger);background:#fff0ee;padding:8px 11px}
 .feature-stack{display:grid;gap:14px}
+/* 特征输入卡片将定位和专用参数分组，便于增删和核对。 */
 .feature-card{border:1px solid var(--line);border-radius:var(--radius-sm);padding:18px;background:#fbfcfe}
 .feature-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px}
 .feature-title h3{margin:0}
@@ -81,13 +89,16 @@ tr:last-child td{border-bottom:none}
 .empty{border:1px dashed var(--line-strong);border-radius:var(--radius-sm);padding:28px;text-align:center;color:var(--muted);background:#fafbfc}
 .muted{color:var(--muted);line-height:1.65}
 .hidden{display:none!important}
+/* 错误、警告和成功提示采用独立色彩，配合文字传达状态。 */
 .alert{border-radius:var(--radius-sm);padding:13px 15px;line-height:1.6;border:1px solid transparent}
 .alert.warning{background:#fff8e8;color:#7a4d00;border-color:#f2e3b8}
 .alert.danger{background:#fff0ee;color:var(--danger);border-color:#f2c8c5}
 .submit-row{padding:4px 2px}
+/* 任务进度条的轨道与填充层，宽度由轮询结果更新。 */
 .progress{height:13px;border-radius:var(--radius-pill);overflow:hidden;background:#e8ecf3}
 .progress>div{height:100%;width:0;background:linear-gradient(90deg,var(--primary),#6c8fec);transition:width .35s}
 .progress-meta{margin-top:12px}
+/* 任务状态徽标与业务标签，颜色由状态类决定。 */
 .badge{border-radius:var(--radius-pill);padding:7px 12px;font-size:13px;font-weight:700}
 .badge.neutral{background:#eef1f6;color:#475467}.badge.success{background:#e8f7ef;color:var(--success)}.badge.warning{background:#fff2d8;color:var(--warning)}.badge.danger{background:#fff0ee;color:var(--danger)}
 .result-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
@@ -102,11 +113,13 @@ tr:last-child td{border-bottom:none}
 .choice label{display:flex;align-items:flex-start;gap:10px}
 .choice input{width:auto;margin-top:3px}
 /* 窄屏适配：多列栅格/结果表退化为单列，避免横向滚动溢出 */
+/* 响应式断点：调整栅格或最小表宽，使窄屏仍可操作。 */
 @media(max-width:900px){.grid.two,.grid.three,.grid.four,.result-grid{grid-template-columns:1fr}.submit-row{align-items:stretch;flex-direction:column}.operation{grid-template-columns:54px 1fr}.operation>div:last-child{grid-column:1/-1}.shaft-3d{min-height:260px}}
 .shaft-3d{width:100%;height:360px;border-radius:var(--radius-sm);border:1px solid var(--line);background:#f8f9fb;overflow:hidden;cursor:grab}
 .shaft-3d:active{cursor:grabbing}
 .shaft-3d canvas{display:block;width:100%!important;height:100%!important}
 /* ── Process route customization edit mode ── */
+/* 工序编辑表保留必要列宽，配合拖拽及行内输入交互。 */
 .route-edit-table{min-width:900px}
 .route-edit-table th,.route-edit-table td{border-bottom:1px solid var(--line);padding:8px 9px;vertical-align:middle}
 .route-edit-table input,.route-edit-table select{height:34px;padding:6px 8px;min-width:0}
@@ -128,4 +141,5 @@ tr:last-child td{border-bottom:none}
 .mini-btn.danger:hover:not(:disabled){background:#fbe3e1}
 .route-edit-toolbar{display:flex;align-items:center;gap:12px;margin:14px 0 4px}
 .route-edit-actions{display:flex;gap:10px;margin-top:16px;flex-wrap:wrap}
+/* 响应式断点：调整栅格或最小表宽，使窄屏仍可操作。 */
 @media(max-width:900px){.route-edit-table{min-width:720px}}

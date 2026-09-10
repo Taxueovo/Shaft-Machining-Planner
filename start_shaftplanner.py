@@ -1,3 +1,4 @@
+# 统一启动本地前后端、等待就绪并管理子进程退出。
 """
 Shaft Machining Planner one-click launcher
 ============================
@@ -39,6 +40,7 @@ PE_BACKEND_HEALTH = "http://127.0.0.1:8001/health"
 PE_FRONTEND_URL = "http://127.0.0.1:8000"
 
 
+# 轮询健康接口直到成功或超时，供启动器判断单个服务是否就绪。
 def _ready(url: str, timeout: float) -> bool:
     """Wait for a service to be ready (an HTTP 200 response means it is ready)."""
     deadline = time.time() + timeout
@@ -53,6 +55,7 @@ def _ready(url: str, timeout: float) -> bool:
     return False
 
 
+# 并行等待多个服务就绪，汇总成功状态。
 def _wait_all(targets: list[tuple[str, str]], timeout: float = 60) -> None:
     """Wait for multiple services to be ready in parallel.
 

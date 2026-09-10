@@ -1,3 +1,4 @@
+# 封装规则、本地和远程模型配置，以及超时控制、JSON 解析和格式兼容回退。
 """
 OpenAI client - OpenAI Compatible API
 
@@ -61,6 +62,7 @@ OPENAI_MAX_TOKENS = int(os.getenv("OPENAI_MAX_TOKENS") or os.getenv("LLM_MAX_TOK
 _client = None
 
 
+# 只接受明确的回环主机地址，避免本地模式向外部地址发送输入。
 def _is_loopback_url(value: str) -> bool:
     parsed = urlparse(value)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
@@ -73,6 +75,7 @@ def _is_loopback_url(value: str) -> bool:
         return False
 
 
+# 解析当前模型模式与连接参数，集中执行本地端点限制。
 def _runtime_config() -> tuple[str, str, str]:
     if LLM_PROVIDER == "local":
         if not _is_loopback_url(LOCAL_MODEL_BASE_URL):
@@ -96,6 +99,7 @@ def _runtime_config() -> tuple[str, str, str]:
 # =====================================================
 
 
+# 按运行配置初始化并复用模型客户端。
 def _get_client():
 
     global _client
@@ -119,6 +123,7 @@ def _get_client():
 # =====================================================
 
 
+# 判断当前模式与依赖是否允许模型调用，规则模式始终关闭模型。
 def llm_available() -> bool:
     """
     Determine whether the LLM client is available
@@ -140,6 +145,7 @@ def llm_available() -> bool:
         return False
 
 
+# 在模型配置不可用时记录明确警告，避免无提示地误认为模型已参与。
 def warn_if_llm_misconfigured() -> None:
     """Log a clear warning when the configured provider will silently fall back to rules.
 
@@ -167,6 +173,7 @@ def warn_if_llm_misconfigured() -> None:
 # =====================================================
 
 
+# 发送模型消息，按调用参数设置模型、温度、输出上限和超时。
 def chat(
     messages: list[dict[str, str]],
     *,
@@ -217,6 +224,7 @@ def chat(
 # =====================================================
 
 
+# 优先请求 JSON 响应格式，不兼容时回退文本请求并提取 JSON。
 def chat_json(messages, *, model=None, temperature=None, max_tokens=None, timeout_seconds=None):
 
     try:
@@ -252,6 +260,7 @@ def chat_json(messages, *, model=None, temperature=None, max_tokens=None, timeou
 # =====================================================
 
 
+# 从模型文本或代码围栏中提取 JSON，解析失败时抛出异常供上层降级。
 def _extract_json(text: str):
 
     text = text.strip()

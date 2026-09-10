@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shaft Machining Planner - PE Agent - Shaft Library</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
+{# 当前页面的局部样式：补充公共样式中的布局、状态和窄屏显示规则。 #}
   <style>
     .taxonomy-layout { display: grid; grid-template-columns: 320px 1fr; gap: 20px; min-height: 600px; }
     .tree-panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 20px; overflow-y: auto; max-height: 700px; }
@@ -96,6 +97,7 @@
   </div>
 </main>
 
+{# 页面脚本使用响应生成的 nonce；动态数据由模板安全编码后注入。 #}
 <script nonce="{{ request.state.csp_nonce }}">
 (function() {
   let taxonomyData = [];
@@ -110,6 +112,7 @@
   const initialCategory = urlParams.get('category');
 
   // Load taxonomy
+  // 读取分类节点并初始化树、选中项和统计信息。
   async function loadTaxonomy() {
     try {
       const res = await fetch('/api/taxonomy');
@@ -135,6 +138,7 @@
   }
 
   // Load filters
+  // 从后端取得材料和行业筛选项并填充下拉框。
   async function loadFilters() {
     try {
       const res = await fetch('/api/cases/filters');
@@ -153,11 +157,13 @@
   }
 
   // Render tree
+  // 从根节点开始重绘分类导航。
   function renderTree() {
     const container = document.getElementById('taxonomy-tree');
     container.innerHTML = renderNode(null);
   }
 
+  // 递归渲染指定父节点下的分类，附带展开与选择入口。
   function renderNode(parentId) {
     const children = taxonomyData.filter(n => n.parent_id === parentId);
     if (!children.length) return '';
@@ -178,6 +184,7 @@
     }).join('') + '</div>';
   }
 
+  // 按分类标识选择导航图标，无专用映射时使用默认图标。
   function getNodeIcon(id) {
     if (id === 'shaft') return '🔧';
     if (id.startsWith('motor')) return '⚡';
@@ -206,6 +213,7 @@
   });
 
   // Select node
+  // 记录当前分类选择，并联动更新树、面包屑和案例列表。
   window.selectNode = async function(nodeId) {
     currentNodeId = nodeId;
     renderTree();
@@ -224,6 +232,7 @@
   };
 
   // Update breadcrumb
+  // 沿父节点回溯当前分类路径，并生成可点击面包屑。
   function updateBreadcrumb(nodeId) {
     const path = [];
     let current = taxonomyData.find(n => n.id === nodeId);
@@ -242,6 +251,7 @@
   }
 
   // Load cases
+  // 根据当前分类或筛选条件查询案例，刷新列表和状态提示。
   async function loadCases(nodeId) {
     try {
       const params = new URLSearchParams();
@@ -268,6 +278,7 @@
   }
 
   // Render cases
+  // 把案例摘要渲染为可选择列表或卡片，并处理空结果。
   function renderCases(cases) {
     const grid = document.getElementById('case-grid');
 
@@ -298,6 +309,7 @@
   }
 
   // Update stats
+  // 更新分类和案例统计展示，反映当前已加载数据。
   function updateStats() {
     const categories = taxonomyData.filter(n => n.parent_id !== null).length;
     document.getElementById('stat-categories').textContent = categories;
@@ -312,6 +324,7 @@
   }
 
   // Select parent category
+  // 切换到当前节点的父分类，保持导航状态一致。
   window.selectParent = function() {
     if (!currentNodeId) return;
     const current = taxonomyData.find(n => n.id === currentNodeId);
@@ -333,6 +346,7 @@
   loadFilters();
 })();
 </script>
+{# 页面脚本使用响应生成的 nonce；动态数据由模板安全编码后注入。 #}
 <script nonce="{{ request.state.csp_nonce }}">
 document.getElementById("shutdown-btn").addEventListener("click", async () => {
   if (!confirm("Confirm shutdown of Shaft Machining Planner - PE Agent system?")) return;

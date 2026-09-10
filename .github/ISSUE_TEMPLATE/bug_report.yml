@@ -1,3 +1,4 @@
+# 缺陷反馈模板：要求描述复现步骤与实际结果，便于定位可重复的问题。
 name: Bug report
 description: Report a reproducible problem in ShaftPlanner
 labels: [bug]

@@ -1,3 +1,4 @@
+# 检查待发布文件、敏感内容及公开工作簿结构和哈希，任一异常即阻止发布。
 """Fail closed when private data or unsafe workbook content enters a public release."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# 把工艺输入转换为知识检索请求；检索失败时返回空上下文供主流程降级运行。
 """RAG x Workflow integration layer.
 
 Injects RAG (process handbook + case base) retrieval results into the LLM node
@@ -21,6 +22,7 @@ from typing import Any, Optional
 logger = logging.getLogger(__name__)
 
 
+# 调用知识检索并捕获可选模块异常；失败时返回空参考文本。
 def _safe_retrieve_for_llm(query: str, top_k: int = 3, max_chars: int = 3000) -> str:
     """Safe retrieval - returns an empty string when RAG is unavailable or fails."""
     try:
@@ -32,6 +34,7 @@ def _safe_retrieve_for_llm(query: str, top_k: int = 3, max_chars: int = 3000) ->
         return ""
 
 
+# 压缩特征列表为便于检索的名称和要求摘要。
 def _feature_summary(features: list[dict[str, Any]]) -> str:
     """Compress a feature list into a retrieval-friendly text summary."""
     try:
@@ -49,6 +52,7 @@ def _feature_summary(features: list[dict[str, Any]]) -> str:
     return ", ".join(parts) or "None"
 
 
+# 按材料、几何、热处理和加工选择构造知识检索查询。
 def build_rag_query(
     request: dict[str, Any],
     geometry: dict[str, Any],
@@ -105,6 +109,7 @@ def build_rag_query(
     return " ".join(parts)
 
 
+# 检索并限制参考文本长度，供工作流提示注入使用。
 def build_rag_context(
     request: dict[str, Any],
     geometry: dict[str, Any],

@@ -1,3 +1,4 @@
+# 集中校验状态、几何和工艺路线结构，阻止无效输入进入后续执行。
 """Guardrails: input/output validation and constraint layer."""
 
 from __future__ import annotations
@@ -5,9 +6,11 @@ from __future__ import annotations
 from typing import Any, Callable, Optional
 
 
+# 保存统一校验规则，分别检查状态、路线结构和几何必需字段。
 class Guardrails:
     """Unified input/output validation and constraint layer."""
 
+    # 初始化有序规则列表，后续注册的规则按加入顺序执行。
     def __init__(self) -> None:
         self._rules: list[Callable[[dict[str, Any]], Optional[str]]] = []
 

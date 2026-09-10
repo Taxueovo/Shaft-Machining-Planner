@@ -1,3 +1,4 @@
+# 提供知识库状态、索引管理与检索接口，延迟初始化可选依赖。
 """RAG management API - FastAPI Router.
 
 Provides all REST endpoints needed by the frontend RAG management panel.
@@ -25,6 +26,7 @@ _retriever: Any = None
 _rag_available: Optional[bool] = None
 
 
+# 延迟创建知识库服务，依赖或配置不可用时返回失败状态。
 def _init() -> bool:
     """Lazily initialize the RAG services. Returns True on success."""
     global _store, _builder, _retriever, _rag_available
@@ -88,6 +90,7 @@ def _scan_case_files() -> list[dict]:
 # ═══════════════════════════════════════════════════════════════
 
 
+# 汇总知识库配置、源文件和索引状态供管理页展示。
 @rag_router.get("/status")
 def rag_status() -> dict[str, Any]:
     """Full RAG status - dashboard data."""
@@ -130,6 +133,7 @@ def rag_status() -> dict[str, Any]:
 # ═══════════════════════════════════════════════════════════════
 
 
+# 触发规范和案例通道的索引构建，返回构建统计。
 @rag_router.post("/build")
 def build_index(
     channel: Optional[str] = Query(default="all", description="all | specs | cases"),
@@ -152,6 +156,7 @@ def build_index(
         return {"channel": "all", "chunks": total, "elapsed_s": round(time.time() - t0, 1)}
 
 
+# 清理选定索引通道，并使相关关键词缓存失效。
 @rag_router.delete("/clear")
 def clear_index(
     channel: Optional[str] = Query(default="all", description="all | specs | cases"),
@@ -176,6 +181,7 @@ def clear_index(
 # ═══════════════════════════════════════════════════════════════
 
 
+# 接收检索参数，执行混合召回并返回规范和案例结果。
 @rag_router.get("/search")
 def search(
     q: str = Query(description="Query text"),
@@ -216,6 +222,7 @@ def search(
 # ═══════════════════════════════════════════════════════════════
 
 
+# 返回限定数量的已索引分块，供界面抽样检查。
 @rag_router.get("/chunks")
 def list_chunks(
     channel: Optional[str] = Query(default="all", description="all | specs | cases"),

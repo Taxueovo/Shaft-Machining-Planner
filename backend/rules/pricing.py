@@ -1,3 +1,4 @@
+# 基于几何、材料密度和单价估算毛坯重量及材料成本。
 """Material cost estimation module."""
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ MATERIAL_PRICES: dict[str, dict[str, float]] = {
 }
 
 
+# 由毛坯体积、材料密度和单价估算重量、单件及批量成本。
 def estimate_material_cost(
     material: str,
     blank_type: str,

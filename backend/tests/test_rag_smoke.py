@@ -1,3 +1,4 @@
+# 回归测试：覆盖知识分块、混合召回和无需真实模型的向量库冒烟流程。
 """RAG smoke tests.
 
 Run in the dedicated ``rag-smoke`` CI job, which installs the lightweight RAG runtime
@@ -19,6 +20,7 @@ from backend.rag.retriever import _rrf_fusion
 from backend.rag.reranker import _apply_feature_penalty, _match_feature_aliases
 
 
+# 构造带给定标识和得分的检索结果，隔离融合算法测试。
 def _sr(
     chunk_id: str,
     src: str,
@@ -37,6 +39,7 @@ def _sr(
     )
 
 
+# 验证同源同内容分块获得稳定标识，内容变化会改变标识。
 def test_chunk_ids_are_deterministic():
     a = SpecChunk(source_file="a.md", section="S", content="hello world")
     b = SpecChunk(source_file="a.md", section="S", content="hello world")
@@ -55,6 +58,7 @@ def test_chunk_ids_are_deterministic():
     assert case_a.chunk_id.startswith("case-")
 
 
+# 验证倒数排名融合去重，并标记同时被两路召回的候选。
 def test_rrf_fusion_merges_dedupes_and_marks_both():
     merged = _rrf_fusion(
         [_sr("a", "vector", 1.0), _sr("b", "vector", 0.8)],
@@ -66,6 +70,7 @@ def test_rrf_fusion_merges_dedupes_and_marks_both():
     assert merged[0].chunk_id == "a"  # accumulated over both recall paths -> highest RRF
 
 
+# 验证英文工作流查询同样触发不相关特征惩罚。
 def test_feature_penalty_fires_for_english_workflow_query():
     # The production query builder emits English feature labels; the penalty must fire
     # (this used to be a no-op because FEATURE_KEYWORDS was Chinese-only).
@@ -78,22 +83,28 @@ def test_feature_penalty_fires_for_english_workflow_query():
     assert by_id["hit"].score == 1.0
 
 
+# 使用确定性测试向量执行集合写入与查询，不访问真实模型服务。
 def test_vector_store_build_and_search(tmp_path, monkeypatch):
     from backend.rag.vector_store import VectorStoreManager
 
     import backend.rag.vector_store as vector_store
     from chromadb.api.types import EmbeddingFunction
 
+    # 提供不联网的确定性嵌入函数，供向量库冒烟测试使用。
     class TestEmbedding(EmbeddingFunction):
+        # 初始化测试嵌入对象；不创建真实模型客户端。
         def __init__(self):
             pass
 
+        # 返回测试嵌入函数的稳定名称，供集合配置匹配。
         def name(self):
             return "test-local"
 
+        # 返回测试嵌入函数配置，避免依赖外部模型参数。
         def get_config(self):
             return {}
 
+        # 将测试文本映射为可重复向量，保证向量库测试不受网络和模型变化影响。
         def __call__(self, input):
             return [
                 [float("rough" in text.lower()) + 0.01, float("grind" in text.lower()) + 0.01, 0.1]
@@ -125,6 +136,7 @@ def test_vector_store_build_and_search(tmp_path, monkeypatch):
     assert len(both[0]) >= 1
 
 
+# 验证空查询及非法集合名称被边界检查处理。
 def test_empty_query_guard_and_collection_name_guard():
     from backend.rag.retriever import HybridRetriever
 

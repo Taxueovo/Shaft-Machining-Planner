@@ -1,3 +1,4 @@
+# 回归测试：覆盖规则模式完整规划和人工选择后的继续执行。
 """End-to-end workflow test: POST-style job lifecycle through the LangGraph pipeline.
 
 Runs in deterministic rules mode (conftest sets LLM_PROVIDER=rules), so no real model
@@ -15,6 +16,7 @@ from models.process import ProcessStage
 from models.workflow import PlanningRequest
 
 
+# 创建端到端测试服务并关闭看门狗等测试不需要的副作用。
 @pytest.fixture()
 def service():
     from service import PlanningService
@@ -28,6 +30,7 @@ def service():
         svc.executor.shutdown(wait=False)
 
 
+# 构造能贯穿规则工作流的最小合法请求。
 def _simple_request() -> PlanningRequest:
     return PlanningRequest(
         material="45",
@@ -45,6 +48,7 @@ def _simple_request() -> PlanningRequest:
     )
 
 
+# 在有限等待时间内轮询任务直到终态，超时则使测试失败。
 def _wait_terminal(service, job_id: str, timeout: float = 30.0) -> dict:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -56,6 +60,7 @@ def _wait_terminal(service, job_id: str, timeout: float = 30.0) -> dict:
     raise AssertionError(f"job {job_id} did not reach a terminal state within {timeout}s")
 
 
+# 验证规则模式从提交到资源匹配和结果查询的完整链路。
 def test_workflow_rules_mode_end_to_end(service):
     request = _simple_request()
     job_id = service.create(request)
@@ -64,6 +69,13 @@ def test_workflow_rules_mode_end_to_end(service):
     assert job["status"] == "completed", job.get("message") or job.get("error")
 
     result = job["result"]
+    traces = service.result(job_id)["execution_trace"]
+    assert traces
+    assert all(t["inputs"] is not None and t["outputs"] is not None for t in traces)
+    assert all(t["status"] == "success" for t in traces)
+    assert len({t["trace_id"] for t in traces}) == len(traces)
+    assert any(t["node"] == "execute_task" for t in traces)
+    assert all("execution_trace" not in t["inputs"] for t in traces)
     route = result.get("process_route", [])
     assert route, "workflow produced an empty route"
     names = [op["name"] for op in route]
@@ -90,6 +102,7 @@ def test_workflow_rules_mode_end_to_end(service):
     assert card_path.stat().st_size > 0
 
 
+# 验证加工时机中断、提交选择及恢复至终态的完整链路。
 def test_workflow_hitl_choice_and_resume(service):
     # A high-precision keyway triggers the precision_choice HITL interrupt.
     request = PlanningRequest(

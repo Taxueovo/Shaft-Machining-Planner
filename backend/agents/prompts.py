@@ -1,3 +1,4 @@
+# 按名称和版本管理提示模板，并将模板变量渲染成模型消息。
 """Prompt template manager."""
 
 from __future__ import annotations
@@ -5,9 +6,11 @@ from __future__ import annotations
 from typing import Any
 
 
+# 保存版本化提示模板并渲染消息，避免节点内重复拼装模板结构。
 class PromptManager:
     """Externalized management of prompt templates."""
 
+    # 创建提示模板存储，后续模板按名称和版本登记。
     def __init__(self) -> None:
         self._templates: dict[str, dict[str, str]] = {}
 

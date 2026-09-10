@@ -6,6 +6,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Shaft Machining Planner - PE Agent - Custom Process Planning</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
+{# 当前页面的局部样式：补充公共样式中的布局、状态和窄屏显示规则。 #}
   <style>
     .case-banner { background: var(--primary-soft); border: 1px solid #b8ccff; border-radius: var(--radius-sm); padding: 16px 20px; margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between; }
     .case-banner .info { display: flex; align-items: center; gap: 12px; }
@@ -196,6 +197,7 @@
   </div>
 </div>
 
+{# 当前页面的局部样式：补充公共样式中的布局、状态和窄屏显示规则。 #}
 <style>
   /* 模态遮罩：fixed 铺满视口且 z-index 置顶，遮罩本身不设关闭点击，仅能经对话框按钮操作 */
   .dialog-overlay {
@@ -316,6 +318,7 @@
     border-color: #3b5de7;
   }
 </style>
+{# 页面脚本使用响应生成的 nonce；动态数据由模板安全编码后注入。 #}
 <script nonce="{{ request.state.csp_nonce }}">
   // Pass case ID to form.js
   window.CASE_ID_FROM_URL = new URLSearchParams(window.location.search).get('case') || null;

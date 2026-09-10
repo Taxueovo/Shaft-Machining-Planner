@@ -1,9 +1,11 @@
+# 回归测试：覆盖预览路线与公开机床库的资源匹配。
 """Tests for local resource capability checks in live route preview."""
 
 from app import preview_route
 from repositories import MachineRepository
 
 
+# 验证预览结果包含实际本地资源匹配，而不是仅有路线文字。
 def test_preview_route_returns_local_resource_matching():
     result = preview_route(
         {
@@ -35,6 +37,7 @@ def test_preview_route_returns_local_resource_matching():
     )
 
 
+# 验证高精度轴承位预览保留明确的不热处理要求。
 def test_preview_preserves_no_heat_for_precision_bearing_seat():
     result = preview_route(
         {
@@ -61,6 +64,7 @@ def test_preview_preserves_no_heat_for_precision_bearing_seat():
     assert any(op.get("feature_id") == "F01" for op in result["route"])
 
 
+# 验证磨削工序查询对应磨床能力记录。
 def test_grinding_routes_query_local_grinding_machine_records():
     result = preview_route(
         {
@@ -90,6 +94,7 @@ def test_grinding_routes_query_local_grinding_machine_records():
     )
 
 
+# 验证齿轮磨削查询能够匹配公开磨齿设备记录。
 def test_machine_repository_matches_new_gear_grinding_records():
     matches = MachineRepository().search_process("Gear Grinding", 450, 250)
 
@@ -100,6 +105,7 @@ def test_machine_repository_matches_new_gear_grinding_records():
     )
 
 
+# 验证滚齿查询覆盖扩充后的公开设备记录。
 def test_machine_repository_matches_expanded_gear_hobbing_library():
     matches = MachineRepository().search_process("Gear Hobbing", 150, 50)
 
@@ -110,6 +116,7 @@ def test_machine_repository_matches_expanded_gear_hobbing_library():
     }
 
 
+# 验证模数约束参与筛选，未验证精度不能标为已确认。
 def test_machine_repository_enforces_module_and_labels_unverified_precision():
     matches = MachineRepository().search_process(
         "Gear Hobbing", 150, 50, required_module=8, high_precision_required=True

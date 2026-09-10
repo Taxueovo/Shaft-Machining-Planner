@@ -39,6 +39,7 @@ _ALLOWED_ORIGINS = {"http://127.0.0.1:8000", "http://localhost:8000"}
 MAX_REQUEST_BYTES = 2_000_000
 
 
+# 按静态文件生成稳定摘要，作为浏览器资源 URL 的缓存版本。
 def _compute_static_version() -> str:
     """A stable build hash for static asset URLs.
 
@@ -60,9 +61,11 @@ def _compute_static_version() -> str:
 STATIC_VERSION = _compute_static_version()
 
 
+# 为带版本的静态资源设置长期缓存头，减少重复下载。
 class StaticCacheMiddleware(BaseHTTPMiddleware):
     """Serve static assets with long immutable caching (URL carries the version hash)."""
 
+    # 先执行请求，再只对静态资源响应追加不可变缓存策略。
     async def dispatch(self, request: Request, call_next):
         request.state.csp_nonce = secrets.token_urlsafe(18)
         response = await call_next(request)
@@ -71,9 +74,11 @@ class StaticCacheMiddleware(BaseHTTPMiddleware):
         return response
 
 
+# 在请求代理前拒绝不可信来源的写操作，并添加浏览器安全响应头。
 class LocalOriginMiddleware(BaseHTTPMiddleware):
     """Reject cross-site state-changing requests before they reach the local proxy."""
 
+    # 校验请求来源并附加安全头；不可信写请求在代理前直接返回拒绝。
     async def dispatch(self, request: Request, call_next):
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
             try:
@@ -192,6 +197,7 @@ async def forward(
         ) from error
 
 
+# 将浏览器查询参数带到后端路径，避免代理时丢失筛选和分页条件。
 def with_query(request: Request, path: str) -> str:
     """Preserve browser query parameters when proxying GET requests."""
     return f"{path}?{request.url.query}" if request.url.query else path
@@ -203,6 +209,7 @@ def with_query(request: Request, path: str) -> str:
 # ============================================================
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.post("/api/jobs")
 async def create_job(request: Request) -> dict[str, Any]:
     return await forward(
@@ -213,11 +220,13 @@ async def create_job(request: Request) -> dict[str, Any]:
     )
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/jobs/{job_id}")
 async def get_job(request: Request, job_id: str) -> dict[str, Any]:
     return await forward(request, "GET", f"/api/v1/jobs/{job_id}")
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.post("/api/jobs/{job_id}/choices")
 async def submit_choices(request: Request, job_id: str) -> dict[str, Any]:
     return await forward(
@@ -228,11 +237,13 @@ async def submit_choices(request: Request, job_id: str) -> dict[str, Any]:
     )
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/jobs/{job_id}/result")
 async def get_result(request: Request, job_id: str) -> dict[str, Any]:
     return await forward(request, "GET", f"/api/v1/jobs/{job_id}/result")
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.post("/api/jobs/{job_id}/process-card/export")
 async def export_process_card(request: Request, job_id: str) -> dict[str, Any]:
     return await forward(request, "POST", f"/api/v1/jobs/{job_id}/process-card/export")
@@ -253,6 +264,7 @@ async def download_process_card(request: Request, job_id: str) -> Response:
             status_code=upstream.status_code, detail="Process card is not available."
         )
 
+    # 分段传输后端下载响应，并在结束或异常时释放上游流。
     async def chunks():
         try:
             async for chunk in upstream.aiter_bytes():
@@ -272,6 +284,7 @@ async def download_process_card(request: Request, job_id: str) -> Response:
     )
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.post("/api/jobs/{job_id}/engineering")
 async def submit_engineering(request: Request, job_id: str) -> dict[str, Any]:
     return await forward(
@@ -279,6 +292,7 @@ async def submit_engineering(request: Request, job_id: str) -> dict[str, Any]:
     )
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.post("/api/jobs/{job_id}/process-route/customize")
 async def customize_process_route(request: Request, job_id: str) -> dict[str, Any]:
     return await forward(
@@ -286,46 +300,55 @@ async def customize_process_route(request: Request, job_id: str) -> dict[str, An
     )
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.delete("/api/jobs/{job_id}/process-route/customization")
 async def reset_process_route(request: Request, job_id: str) -> dict[str, Any]:
     return await forward(request, "DELETE", f"/api/v1/jobs/{job_id}/process-route/customization")
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.post("/api/preview-route")
 async def preview_route(request: Request) -> dict[str, Any]:
     return await forward(request, "POST", "/api/v1/preview-route", await request.json())
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/materials")
 async def list_materials(request: Request) -> dict[str, Any]:
     return await forward(request, "GET", "/api/v1/materials")
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/materials/price")
 async def get_material_price(request: Request) -> dict[str, Any]:
     return await forward(request, "GET", with_query(request, "/api/v1/materials/price"))
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/tools")
 async def list_tools(request: Request) -> dict[str, Any]:
     return await forward(request, "GET", "/api/v1/tools")
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.post("/api/tools/{tool_name}")
 async def call_tool(request: Request, tool_name: str) -> dict[str, Any]:
     return await forward(request, "POST", f"/api/v1/tools/{tool_name}", await request.json())
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/agents")
 async def list_agents(request: Request) -> dict[str, Any]:
     return await forward(request, "GET", "/api/v1/agents")
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/orchestrator/status")
 async def orchestrator_status(request: Request) -> dict[str, Any]:
     return await forward(request, "GET", "/api/v1/orchestrator/status")
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/prompts")
 async def list_prompts(request: Request) -> dict[str, Any]:
     return await forward(request, "GET", "/api/v1/prompts")
@@ -336,6 +359,7 @@ async def list_prompts(request: Request) -> dict[str, Any]:
 # ============================================================
 
 
+# 渲染案例分类管理页面。
 @app.get("/taxonomy", response_class=HTMLResponse)
 async def taxonomy_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
@@ -344,6 +368,7 @@ async def taxonomy_page(request: Request) -> HTMLResponse:
     )
 
 
+# 渲染案例列表页面，数据由页面脚本另行请求。
 @app.get("/cases", response_class=HTMLResponse)
 async def cases_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
@@ -352,6 +377,7 @@ async def cases_page(request: Request) -> HTMLResponse:
     )
 
 
+# 加载指定案例并渲染详情，处理不存在的案例标识。
 @app.get("/cases/{case_id}", response_class=HTMLResponse)
 async def case_detail_page(request: Request, case_id: str) -> HTMLResponse:
     return templates.TemplateResponse(
@@ -386,36 +412,43 @@ async def custom_planning_page(request: Request) -> HTMLResponse:
 # ============================================================
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/taxonomy")
 async def get_taxonomy(request: Request) -> dict[str, Any]:
     return await forward(request, "GET", "/api/v1/taxonomy")
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/taxonomy/{node_id}")
 async def get_taxonomy_node(request: Request, node_id: str) -> dict[str, Any]:
     return await forward(request, "GET", f"/api/v1/taxonomy/{node_id}")
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/taxonomy/{node_id}/cases")
 async def get_taxonomy_cases(request: Request, node_id: str) -> dict[str, Any]:
     return await forward(request, "GET", with_query(request, f"/api/v1/taxonomy/{node_id}/cases"))
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/cases")
 async def list_cases(request: Request) -> dict[str, Any]:
     return await forward(request, "GET", with_query(request, "/api/v1/cases"))
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/cases/filters")
 async def get_case_filters(request: Request) -> dict[str, Any]:
     return await forward(request, "GET", "/api/v1/cases/filters")
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/cases/{case_id}")
 async def get_case(request: Request, case_id: str) -> dict[str, Any]:
     return await forward(request, "GET", f"/api/v1/cases/{case_id}")
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.post("/api/cases/save-from-form")
 async def save_case_from_form(request: Request) -> dict[str, Any]:
     return await forward(
@@ -431,41 +464,49 @@ async def save_case_from_form(request: Request) -> dict[str, Any]:
 # ============================================================
 
 
+# 渲染知识库管理页面，由前端脚本读取索引状态。
 @app.get("/rag", response_class=HTMLResponse)
 async def rag_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(request=request, name="rag.html")
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/rag/status")
 async def rag_status(request: Request) -> dict[str, Any]:
     return await forward(request, "GET", "/api/v1/rag/status")
 
 
+# 转发知识库构建请求及其通道参数。
 @app.post("/api/rag/build")
 async def rag_build(request: Request) -> dict[str, Any]:
     return await forward(request, "POST", with_query(request, "/api/v1/rag/build"))
 
 
+# 转发指定知识索引的清理请求。
 @app.delete("/api/rag/clear")
 async def rag_clear(request: Request) -> dict[str, Any]:
     return await forward(request, "DELETE", with_query(request, "/api/v1/rag/clear"))
 
 
+# 转发知识检索查询参数，保持后端返回结构。
 @app.get("/api/rag/search")
 async def rag_search(request: Request) -> dict[str, Any]:
     return await forward(request, "GET", with_query(request, "/api/v1/rag/search"))
 
 
+# 转发已索引分块的抽样查询。
 @app.get("/api/rag/chunks")
 async def rag_chunks(request: Request) -> dict[str, Any]:
     return await forward(request, "GET", with_query(request, "/api/v1/rag/chunks"))
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.get("/api/rag-health")
 async def rag_health(request: Request) -> dict[str, Any]:
     return await forward(request, "GET", "/api/v1/rag-health")
 
 
+# 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.post("/api/heartbeat")
 async def heartbeat(request: Request) -> dict[str, str]:
     """Forward heartbeat to backend watchdog."""
@@ -478,6 +519,7 @@ async def heartbeat(request: Request) -> dict[str, str]:
     return {"status": "ok"}
 
 
+# 处理用户的关闭请求，安排服务退出并先返回确认响应。
 @app.post("/api/shutdown")
 async def shutdown(request: Request) -> dict[str, str]:
     """Shutdown backend and frontend services."""
@@ -494,6 +536,7 @@ async def shutdown(request: Request) -> dict[str, str]:
         pass  # Backend may already be shutdown
 
     # 2. Delay frontend shutdown (let response send first)
+    # 延迟结束前端进程，让当前关闭响应先发送给浏览器。
     async def _delayed_shutdown() -> None:
         await asyncio.sleep(0.5)
         os.kill(os.getpid(), signal.SIGTERM)

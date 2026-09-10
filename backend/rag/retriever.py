@@ -1,3 +1,4 @@
+# 组合关键词与向量召回，进行倒数排名融合和精排后输出参考上下文。
 """Hybrid retriever - BM25 + Vector -> RRF fusion -> Cross-Encoder rerank.
 
 Three-stage retrieval pipeline:
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 _live_retrievers: WeakSet = WeakSet()
 
 
+# 使所有已登记检索器的 BM25 缓存失效。
 def invalidate_all_bm25() -> int:
     """Drop the cached BM25 index on every live retriever (next search resyncs from the store)."""
     count = 0
@@ -44,6 +46,7 @@ def invalidate_all_bm25() -> int:
 # ═══════════════════════════════════════════════════════════════
 
 
+# 使用倒数排名融合多路候选，按分块标识去重并保留召回来源。
 def _rrf_fusion(
     *result_lists: list[SearchResult],
     k: int = RRF_K,
@@ -108,6 +111,7 @@ def _rrf_fusion(
 # ═══════════════════════════════════════════════════════════════
 
 
+# 组合关键词、向量召回及精排，兼顾字面匹配与语义相似度。
 class HybridRetriever:
     """Hybrid retriever - BM25 + Vector -> RRF -> Cross-Encoder.
 
@@ -124,6 +128,7 @@ class HybridRetriever:
         self._bm25_lock = threading.Lock()
         _live_retrievers.add(self)
 
+    # 清空当前关键词缓存标记，使下次检索重新同步。
     def invalidate_bm25(self) -> None:
         """Drop the cached BM25 index so the next search resyncs from the vector store."""
         self._bm25 = None
@@ -168,6 +173,7 @@ class HybridRetriever:
 
     # ── Main retrieval interface ──
 
+    # 执行混合检索并返回排序结果，空查询不进入召回流程。
     def retrieve(
         self,
         query: str,
@@ -254,6 +260,7 @@ class HybridRetriever:
             total=len(candidates),
         )
 
+    # 将检索结果按通道组织为带来源的模型参考文本。
     def retrieve_for_llm_context(
         self,
         query: str,
@@ -341,6 +348,7 @@ def _get_retriever() -> HybridRetriever:
     return _retriever
 
 
+# 执行混合检索并返回排序结果，空查询不进入召回流程。
 def retrieve(query: str, top_k: int = 5) -> RetrievalResponse:
     """Convenience function for hybrid retrieval."""
     return _get_retriever().retrieve(
@@ -350,6 +358,7 @@ def retrieve(query: str, top_k: int = 5) -> RetrievalResponse:
     )
 
 
+# 执行检索并格式化为适合模型读取的参考上下文。
 def retrieve_for_llm(query: str, top_k: int = 3, max_chars: int = 3000) -> str:
     """Retrieve and format as LLM context."""
     return _get_retriever().retrieve_for_llm_context(

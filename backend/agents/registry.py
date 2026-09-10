@@ -1,3 +1,4 @@
+# 登记智能体实例及能力，供编排器查询、发现与调度。
 """Agent registry: dynamic registration and discovery."""
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from .base import BaseAgent
 logger = logging.getLogger(__name__)
 
 
+# 按唯一名称维护智能体实例，支持能力发现及运行状态查询。
 class AgentRegistry:
     """Dynamic agent registry - supports registration, discovery and capability-based dispatch."""
 

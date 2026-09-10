@@ -1,3 +1,4 @@
+# 管理规范与案例两个通道的关键词索引，支持与向量库同步及中文分词。
 """BM25 keyword retrieval engine.
 
 A BM25 dual-channel index kept in sync with the ChromaDB vector store.
@@ -31,6 +32,7 @@ from .schemas import SearchResult, Channel
 logger = logging.getLogger(__name__)
 
 
+# 使用中文分词并保留英文和数字词项，供 BM25 关键词检索。
 def _tokenize(text: str) -> list[str]:
     """Chinese-aware tokenization - uses jieba for Chinese, keeps English/number tokens as-is."""
     if not HAS_BM25:
@@ -39,6 +41,7 @@ def _tokenize(text: str) -> list[str]:
     return [t.strip() for t in jieba.cut(text) if t.strip()]
 
 
+# 分别维护规范与案例的 BM25 索引及其分块元数据。
 class BM25IndexManager:
     """BM25 dual-channel index manager.
 
@@ -63,6 +66,7 @@ class BM25IndexManager:
 
     # ── Sync ──
 
+    # 读取两个向量集合的全部文档并重建关键词索引。
     def sync_from_vector_store(self, store: Any) -> None:
         """Pull all documents from VectorStoreManager and rebuild the BM25 index.
 
@@ -94,18 +98,21 @@ class BM25IndexManager:
 
     # ── Retrieval ──
 
+    # 检索规范通道，返回带来源和得分的规范候选。
     def search_specs(self, query: str, top_k: int = 10) -> list[SearchResult]:
         """BM25 retrieval over the specs channel."""
         if not self._spec_index or not self._spec_docs:
             return []
         return self._search(query, self._spec_index, self._spec_docs, Channel.SPECS, top_k)
 
+    # 检索案例通道，返回带来源和得分的案例候选。
     def search_cases(self, query: str, top_k: int = 10) -> list[SearchResult]:
         """BM25 retrieval over the cases channel."""
         if not self._case_index or not self._case_docs:
             return []
         return self._search(query, self._case_index, self._case_docs, Channel.CASES, top_k)
 
+    # 同时检索规范和案例两个通道，并保留各自结果。
     def search_all(
         self, query: str, top_k_per_channel: int = 10
     ) -> tuple[list[SearchResult], list[SearchResult]]:
@@ -151,6 +158,7 @@ class BM25IndexManager:
             )
         return results
 
+    # 清空两通道的文档和索引缓存，等待后续重新同步。
     def clear(self) -> None:
         """Clear the BM25 index."""
         self._spec_index = None

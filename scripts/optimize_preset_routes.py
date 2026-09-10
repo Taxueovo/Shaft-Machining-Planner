@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# 按典型轴类和热处理流程维护预设案例工艺路线。
 # -*- coding: utf-8 -*-
 """
 Rewrite the process_plan of preset cases (data/cases.json) according to real production practice.
@@ -47,6 +48,7 @@ def _st(no, name, stage, desc, machine=None):
 # ============================================================
 
 
+# 构造调质轴预设工序链，安排热处理、基准修复及最终精加工。
 def _qt_base(material_blank="φ35 bar", boring=False, stress_relief=False):
     """Quench-and-temper shaft base chain (Blank → ... → quench & temper → repair center holes → finish turning → grinding)."""
     steps = [
@@ -98,6 +100,7 @@ def _qt_base(material_blank="φ35 bar", boring=False, stress_relief=False):
     return steps
 
 
+# 构造渗碳淬火预设链，将精车前移并组织清洗、回火和后续检验。
 def _carb_base(material_blank="φ28 bar", spline=False, gear=False, cam=False):
     """Carburize-quench chain (finish turning moved before heat treatment + pre-clean → carburize → clean quench oil → temper → shot blast → inspection)."""
     steps = [

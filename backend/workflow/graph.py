@@ -1,3 +1,4 @@
+# 装配工作流节点和动态任务调度边，并使用 SQLite 检查点保存可恢复状态。
 """LangGraph workflow definition: graph structure, node registration, routing logic."""
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ import sqlite3
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 
-from models.workflow import WorkflowState
+from models.workflow import WorkflowState, traced
 from repositories import MachineRepository, ToolRepository
 from providers import HeatTreatmentProvider
 from agents import AgentRegistry, Guardrails, Orchestrator, PromptManager
@@ -29,6 +30,7 @@ from .nodes import (
 logger = logging.getLogger(__name__)
 
 
+# 组合领域节点与动态调度节点，并持有资源仓储和图检查点连接。
 class Workflow(
     TaskSchedulerMixin,
     PlanningNodesMixin,
@@ -63,6 +65,7 @@ class Workflow(
         self.guardrails.add_rule(lambda s: "request" not in s and "Missing input request" or None)
         self.orchestrator.register_fallback("process_planning", [])
 
+        # 几何尚未生成时允许继续；已存在几何则执行结构及正值校验。
         def _validate_geometry_rule(state: dict[str, Any]) -> Optional[str]:
             # geometry is created later in the pipeline (feature_analysis), so absence is
             # expected at early nodes; only validate a geometry that is already present.
@@ -101,12 +104,19 @@ class Workflow(
             return node
 
         builder = StateGraph(WorkflowState)
-        builder.add_node("task_planning", _make_agent_node("task_planning"))
-        builder.add_node("feature_analysis", _make_agent_node("feature_analysis"))
-        builder.add_node("heat_treatment_planning", _make_agent_node("heat_treatment_planning"))
-        builder.add_node("precision_choice", _make_agent_node("precision_choice"))
-        builder.add_node("verification", _make_agent_node("verification"))
-        builder.add_node("repair", _make_agent_node("repair"))
+        # Cover every registered graph node, including scheduling and guardrail failures.
+        add_node = builder.add_node
+
+        def add_traced_node(name, action):
+            wrapped = traced(name)(lambda owner, state: action(state))
+            return add_node(name, lambda state: wrapped(self, state))
+
+        add_traced_node("task_planning", _make_agent_node("task_planning"))
+        add_traced_node("feature_analysis", _make_agent_node("feature_analysis"))
+        add_traced_node("heat_treatment_planning", _make_agent_node("heat_treatment_planning"))
+        add_traced_node("precision_choice", _make_agent_node("precision_choice"))
+        add_traced_node("verification", _make_agent_node("verification"))
+        add_traced_node("repair", _make_agent_node("repair"))
         for name in (
             "plan_tasks",
             "execute_task",
@@ -114,7 +124,7 @@ class Workflow(
             "engineering_input",
             "finish_tasks",
         ):
-            builder.add_node(name, getattr(self, name))
+            add_traced_node(name, getattr(self, name))
         builder.add_edge(START, "task_planning")
         builder.add_edge("task_planning", "feature_analysis")
         builder.add_edge("feature_analysis", "heat_treatment_planning")
@@ -136,6 +146,7 @@ class Workflow(
         )
         builder.add_edge("repair", "plan_tasks")
         # Checkpoints share the local job database, including its file permissions.
+        # 检查点连接与任务库使用相同数据库文件；内存模式只在当前进程存活期间有效。
         self.checkpoint_connection = sqlite3.connect(store.db_path, check_same_thread=False)
         saver = SqliteSaver(self.checkpoint_connection)
         saver.setup()

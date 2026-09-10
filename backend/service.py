@@ -1,3 +1,4 @@
+# 管理任务生命周期、人工恢复、定制路线复核、结果缓存及工艺卡导出。
 """Planning service layer: job creation, HITL resume, thread pool management."""
 
 from __future__ import annotations
@@ -53,6 +54,7 @@ RAG_STORE_EXPORTS = os.getenv("RAG_STORE_EXPORTS", "false").strip().lower() in (
 _RAG_CASE_LOCK = threading.Lock()
 
 
+# 转义以公式触发字符开头的文本，避免导出单元格被当作公式执行。
 def safe_excel_value(value: Any) -> Any:
     """Prevent user/model-controlled text from being interpreted as an Excel formula."""
     if isinstance(value, str) and value != "-" and value.startswith(("=", "+", "-", "@")):
@@ -60,6 +62,7 @@ def safe_excel_value(value: Any) -> Any:
     return value
 
 
+# 维护带容量和有效期限制的内存结果缓存，仅适合显式启用的演示复用。
 class JobCache:
     """Thread-safe in-memory job result cache (TTL + max-entry eviction, demo/development only).
 
@@ -67,6 +70,7 @@ class JobCache:
     final workflow result, so multiple jobs never share the same object and pollute each other.
     """
 
+    # 设置容量、有效期和线程锁，初始化空缓存及启用标志。
     def __init__(
         self, max_entries: int = JOB_CACHE_MAX_ENTRIES, ttl_seconds: float = JOB_CACHE_TTL_SECONDS
     ) -> None:
@@ -76,6 +80,7 @@ class JobCache:
         self._lock = threading.Lock()
         self.enabled = max_entries > 0 and ttl_seconds > 0
 
+    # 读取未过期缓存并返回深拷贝，过期或禁用时按未命中处理。
     def get(self, key: str) -> dict[str, Any] | None:
         if not self.enabled:
             return None
@@ -88,6 +93,7 @@ class JobCache:
                 return None
             return deepcopy(entry["result"])
 
+    # 保存结果深拷贝，必要时淘汰最早条目以满足容量限制。
     def put(self, key: str, result: dict[str, Any]) -> None:
         if not self.enabled:
             return
@@ -98,14 +104,17 @@ class JobCache:
                 del self._data[oldest_key]
             self._data[key] = {"result": deepcopy(result), "stored_at": time.time()}
 
+    # 在锁内清空全部缓存结果。
     def clear(self) -> None:
         with self._lock:
             self._data.clear()
 
+    # 返回当前缓存条目数，供状态与日志统计。
     def __len__(self) -> int:
         return len(self._data)
 
 
+# 对规范化请求 JSON 计算哈希，相同输入得到同一缓存键。
 def _request_cache_key(payload: dict[str, Any]) -> str:
     """Deterministic hash of the request payload: canonical JSON with sorted keys -> sha256.
 
@@ -116,9 +125,11 @@ def _request_cache_key(payload: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+# 组织任务创建、后台执行、人工恢复、路线定制和工艺卡导出。
 class PlanningService:
     """Process planning service: manages the job lifecycle."""
 
+    # 创建任务库、工作流、受限线程池和缓存，并启动本地心跳看门狗。
     def __init__(self) -> None:
         self.store = JobStore()
         self.workflow = Workflow(self.store)
@@ -135,9 +146,11 @@ class PlanningService:
         self._watchdog_thread = threading.Thread(target=self._watchdog, daemon=True)
         self._watchdog_thread.start()
 
+    # 刷新最后活动时间，供本地服务看门狗判断空闲状态。
     def touch_heartbeat(self) -> None:
         self.last_heartbeat = time.time()
 
+    # 周期检查心跳超时，满足退出条件时终止本地服务。
     def _watchdog(self) -> None:
         while self._watchdog_active:
             time.sleep(5)
@@ -148,6 +161,7 @@ class PlanningService:
                 self._watchdog_active = False
                 return
 
+    # 为请求生成任务标识，显式启用缓存时尝试复用，否则提交后台首次执行。
     def create(self, request: PlanningRequest) -> str:
         job_id = uuid.uuid4().hex[:12]
         payload = request.model_dump(mode="json")
@@ -187,6 +201,7 @@ class PlanningService:
             )
         return job_id
 
+    # 建立首次执行的图输入及计数，进入统一调用入口。
     def _initial(self, job_id: str, payload: dict[str, Any], cache_key: str | None = None) -> None:
         self._invoke(
             job_id,
@@ -201,6 +216,7 @@ class PlanningService:
             cache_key=cache_key,
         )
 
+    # 确认任务存在可读取检查点，不能确认时拒绝恢复。
     def _has_checkpoint(self, job_id: str) -> bool:
         """Require a durable checkpoint before resuming a paused task."""
         try:
@@ -209,6 +225,7 @@ class PlanningService:
         except Exception:
             return False
 
+    # 校验任务处于加工时机等待状态，再提交选择恢复图执行。
     def resume(self, job_id: str, choices: ChoicesRequest) -> None:
         current = self.store.get(job_id)
         if current["status"] != "waiting_user_choice":
@@ -226,6 +243,7 @@ class PlanningService:
         )
         self.executor.submit(self._invoke, job_id, Command(resume=choices.model_dump(mode="json")))
 
+    # 在锁内验证等待状态和回答标识，原子切换为运行后提交恢复任务。
     def resume_engineering(self, job_id: str, answers: EngineeringAnswersRequest) -> None:
         with self.store.lock:
             current = self.store.get(job_id)
@@ -245,6 +263,7 @@ class PlanningService:
             )
         self.executor.submit(self._invoke, job_id, Command(resume=answers.model_dump(mode="json")))
 
+    # 在独立候选状态中匹配资源并复核路线，仅在全部检查通过后发布新修订。
     def customize_route(self, job_id: str, operations: list[Any]) -> list[dict[str, Any]]:
         """Save the user-customized process route (adjustment stage before the process card is generated).
 
@@ -260,6 +279,7 @@ class PlanningService:
         payload = [op.model_dump(mode="json") for op in operations]
         from agents.specialists import SpecialistAgent, SCOPES, coordinate_reviews
 
+        # 候选定制从原始结果复制，旧任务账本不能作为修改后路线的有效验证证据。
         candidate = deepcopy(job["result"])
         candidate.pop("task_execution", None)
         candidate.pop("worker_results", None)
@@ -274,7 +294,9 @@ class PlanningService:
 
         # A detached workflow prevents validation progress/failure writes from changing
         # the live job. Publish the edited snapshot only after all checks succeed.
+        # 为定制候选复核提供无写入存储，避免复核进度污染真实任务。
         class ReviewStore:
+            # 忽略候选复核中的存储更新，防止改变真实任务进度。
             def update(self, *args, **kwargs):
                 pass
 
@@ -310,6 +332,7 @@ class PlanningService:
         candidate["process_route"] = payload
         with self.store.lock:
             current = self.store.get(job_id)
+            # 复核期间可能有其他请求发布新版本；修订号变化时拒绝覆盖，防止丢失并发编辑。
             if current.get("route_revision", 0) != job.get("route_revision", 0):
                 raise ValueError("Route changed during review; reload and retry.")
             history = current.get("route_history", []) + [
@@ -330,6 +353,7 @@ class PlanningService:
             )
         return payload
 
+    # 归档当前定制结果，清除覆盖并递增修订号，恢复原始路线。
     def reset_custom_route(self, job_id: str) -> None:
         """Clear the customized route and restore the original route generated by the workflow."""
         with self.store.lock:
@@ -349,6 +373,7 @@ class PlanningService:
                 route_revision=job.get("route_revision", 0) + 1,
             )
 
+    # 调用图并区分人工中断、终态和执行异常，将可展示的状态写回任务库。
     def _invoke(
         self, job_id: str, graph_input: dict[str, Any] | Command, cache_key: str | None = None
     ) -> None:
@@ -357,6 +382,7 @@ class PlanningService:
         config = {"configurable": {"thread_id": job_id}}
         try:
             result = self.workflow.graph.invoke(graph_input, config=config)
+            # 人工中断属于等待状态，节点已保存问题；不能继续把任务写为已完成。
             if result.get("__interrupt__"):
                 logger.info("[%s] HITL interrupt captured, waiting for user choice.", job_id)
                 return
@@ -416,6 +442,7 @@ class PlanningService:
                 result={"traceback": traceback.format_exc()},
             )
 
+    # 以有效路线及资源复核结果生成 Excel 草案，文件名包含修订号。
     def export_process_card_excel(self, job_id: str) -> Path:
         """Generate the process card Excel file, save it to the project output/ directory, and return the file path."""
         from openpyxl import Workbook
@@ -465,6 +492,7 @@ class PlanningService:
         ctr = Alignment(horizontal="center", vertical="center", wrap_text=True)
         lw = Alignment(vertical="center", wrap_text=True)
 
+        # 设置导出表头行的样式与单元格布局。
         def hdr_row(row, ncol):
             for c in range(1, ncol + 1):
                 cell = ws.cell(row=row, column=c)
@@ -473,6 +501,7 @@ class PlanningService:
                 cell.alignment = ctr
                 cell.border = bdr
 
+        # 为指定正文区域设置边框和对齐方式。
         def body_rng(r1, r2, ncol, left_col=0):
             for rr in range(r1, r2 + 1):
                 for c in range(1, ncol + 1):
@@ -480,6 +509,7 @@ class PlanningService:
                     cell.border = bdr
                     cell.alignment = lw if (left_col and c == left_col) else ctr
 
+        # 按列写入单元格值，文本先经过公式注入防护。
         def wr(row, vals):
             for c, v in enumerate(vals, 1):
                 ws.cell(row=row, column=c, value=safe_excel_value(v))
@@ -734,6 +764,7 @@ class PlanningService:
         project_root = Path(__file__).resolve().parent.parent
         output_dir = project_root / "output"
         output_dir.mkdir(exist_ok=True)
+        # 导出文件绑定路线修订号，编辑后不会误下载上一版工艺卡。
         revision = job.get("route_revision", 0)
         file_path = output_dir / f"process_card_{job_id}_r{revision}.xlsx"
         wb.save(file_path)
@@ -755,12 +786,14 @@ class PlanningService:
 
         return file_path
 
+    # 包装可选的导出回写，记录异常而不使已完成的导出失败。
     def _store_exported_card_to_rag_safely(self, *args: Any) -> None:
         try:
             self._store_exported_card_to_rag(*args)
         except Exception as exc:  # noqa: BLE001 - background indexing must not affect export
             logger.warning("Failed to store process card into RAG case library: %s", exc)
 
+    # 在启用回写时把导出的工艺数据保存为案例并更新知识索引。
     def _store_exported_card_to_rag(
         self,
         job_id: str,
@@ -873,6 +906,7 @@ class PlanningService:
                 job_id,
             )
 
+    # 读取终态任务，优先返回已复核的定制快照，并附带审查和任务执行信息。
     def result(self, job_id: str) -> dict[str, Any]:
         job = self.store.get(job_id)
         if job["status"] not in {"completed", "resource_mismatch", "failed"}:
@@ -896,6 +930,6 @@ class PlanningService:
             "custom_route": job.get("custom_route"),
             "resource_selection": result.get("resource_selection"),
             "verification": result.get("verification"),
-            "execution_trace": result.get("execution_trace", []),
+            "execution_trace": job.get("execution_trace") or result.get("execution_trace", []),
             "result": result,
         }

@@ -1,3 +1,4 @@
+# 定义案例、工序、列表摘要和筛选请求的数据结构。
 """Case data models."""
 
 from __future__ import annotations
@@ -8,6 +9,7 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 
+# 定义案例工序的编号、名称、设备及工艺说明等字段。
 class ProcessStep(BaseModel):
     """Process step."""
 
@@ -19,6 +21,7 @@ class ProcessStep(BaseModel):
     tool: Optional[str] = Field(default=None, description="Cutting tool")
 
 
+# 定义案例列表摘要，避免每次列表查询传输完整工艺路线。
 class CaseMetadata(BaseModel):
     """Case metadata."""
 
@@ -41,6 +44,7 @@ class CaseMetadata(BaseModel):
     updated_at: datetime = Field(default_factory=datetime.now)
 
 
+# 在案例摘要基础上保存完整工艺路线与补充信息。
 class Case(CaseMetadata):
     """Full case (including process route)."""
 
@@ -49,6 +53,7 @@ class Case(CaseMetadata):
     features: list[dict] = Field(default_factory=list, description="Feature definitions")
     notes: Optional[str] = Field(default=None, description="Additional notes")
 
+    # 从完整案例提取列表摘要，保持元数据字段一致。
     def to_metadata(self) -> CaseMetadata:
         """Convert to metadata only."""
         return CaseMetadata(
@@ -70,6 +75,7 @@ class Case(CaseMetadata):
         )
 
 
+# 定义案例筛选和分页请求的字段约束。
 class CaseSearchRequest(BaseModel):
     """Case search request."""
 

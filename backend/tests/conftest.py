@@ -1,3 +1,4 @@
+# 配置确定性的规则测试环境和模块路径，并在公开数据缺失时跳过依赖数据的测试。
 """pytest configuration - automatically adds the backend directory to the Python path."""
 
 import os
@@ -27,6 +28,7 @@ _REQUIRE_DATA_FILES = {
 }
 
 
+# 公开样例工作簿缺失时，仅跳过确实依赖这些数据的测试模块。
 def pytest_collection_modifyitems(config, items):
     repo_root = Path(__file__).resolve().parent.parent.parent
     data_dir = repo_root / "data"
