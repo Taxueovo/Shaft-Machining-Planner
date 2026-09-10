@@ -154,15 +154,20 @@ class ExecutionTrace:
     @staticmethod
     def snapshot(value):
         """Detached JSON snapshot; omit trace history to prevent recursive growth."""
+
         def clean(item):
             if isinstance(item, BaseModel):
                 return clean(item.model_dump(mode="json"))
             if isinstance(item, dict):
-                return {str(k): clean(v) for k, v in item.items()
-                        if k not in {"execution_trace", "_tool_calls"}}
+                return {
+                    str(k): clean(v)
+                    for k, v in item.items()
+                    if k not in {"execution_trace", "_tool_calls"}
+                }
             if isinstance(item, (list, tuple)):
                 return [clean(v) for v in item]
             return item
+
         return json.loads(json.dumps(clean(value), ensure_ascii=False, default=str))
 
     @staticmethod
@@ -233,8 +238,9 @@ def traced(node_name: str, input_keys: list[str] | None = None):
                 extra_tool_calls = result.pop("_tool_calls", [])
                 for child in result.get("execution_trace", []):
                     extra_tool_calls.extend(child.get("tool_calls", []))
-                ExecutionTrace.finish(entry, list(result.keys()), tool_calls=extra_tool_calls,
-                                      outputs=result)
+                ExecutionTrace.finish(
+                    entry, list(result.keys()), tool_calls=extra_tool_calls, outputs=result
+                )
                 persist()
                 result["execution_trace"] = [entry]
                 return result
