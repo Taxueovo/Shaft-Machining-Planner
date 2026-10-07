@@ -15,19 +15,21 @@ import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from copy import copy, deepcopy
+from contextvars import copy_context
 from pathlib import Path
 from typing import Any
 
 from langgraph.types import Command
 
 from models.workflow import PlanningRequest
-from models.input import ChoicesRequest
+from models.input import ChoicesRequest, validate_pending_choices
 from models.tasks import EngineeringAnswersRequest
 from workflow import JobStore, Workflow
+from workflow.harness import HarnessPolicy, HarnessStopped, pending_job_count
 
 logger = logging.getLogger(__name__)
 
-HEARTBEAT_TIMEOUT = int(os.getenv("HEARTBEAT_TIMEOUT", "30"))
+HEARTBEAT_TIMEOUT = int(os.getenv("HEARTBEAT_TIMEOUT", "300"))
 
 # ---- A1 job-level cache (demo/development) ----
 # Identical requests (same hash) reuse the previous workflow result, skipping the whole
@@ -121,7 +123,14 @@ def _request_cache_key(payload: dict[str, Any]) -> str:
     The same input always yields the same key regardless of dict key order, implementing
     "same request -> reused result".
     """
-    canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, default=str)
+    from llm_client import runtime_identity
+
+    canonical = json.dumps(
+        {"request": payload, "execution_identity": runtime_identity()},
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
@@ -133,6 +142,7 @@ class PlanningService:
     def __init__(self) -> None:
         self.store = JobStore()
         self.workflow = Workflow(self.store)
+        self.store.interrupt_inflight()
         self.job_cache = JobCache()
         self.job_cache.enabled = self.job_cache.enabled and JOB_CACHE_ENABLED
         # Bound the worker pool to a small fixed range regardless of host core count,
@@ -144,7 +154,9 @@ class PlanningService:
         self.last_heartbeat = time.time()
         self._watchdog_active = True
         self._watchdog_thread = threading.Thread(target=self._watchdog, daemon=True)
-        self._watchdog_thread.start()
+        self.auto_shutdown_on_idle = os.getenv("AUTO_SHUTDOWN_ON_IDLE", "false").lower() == "true"
+        if self.auto_shutdown_on_idle:
+            self._watchdog_thread.start()
 
     # 刷新最后活动时间，供本地服务看门狗判断空闲状态。
     def touch_heartbeat(self) -> None:
@@ -155,20 +167,50 @@ class PlanningService:
         while self._watchdog_active:
             time.sleep(5)
             elapsed = time.time() - self.last_heartbeat
-            if elapsed > HEARTBEAT_TIMEOUT:
+            if self.should_shutdown_for_idle(elapsed):
                 logger.warning("No heartbeat for %.0fs, shutting down...", elapsed)
                 os.kill(os.getpid(), signal.SIGTERM)
                 self._watchdog_active = False
                 return
 
+    def should_shutdown_for_idle(self, elapsed: float) -> bool:
+        return (
+            self.auto_shutdown_on_idle
+            and elapsed > HEARTBEAT_TIMEOUT
+            and self.store.stats()["active_jobs"] == 0
+        )
+
     # 为请求生成任务标识，显式启用缓存时尝试复用，否则提交后台首次执行。
-    def create(self, request: PlanningRequest) -> str:
+    def create(self, request: PlanningRequest, idempotency_key: str | None = None) -> str:
+        with self.store.lock:
+            key = hashlib.sha256(idempotency_key.encode()).hexdigest() if idempotency_key else None
+            payload = request.model_dump(mode="json")
+            fingerprint = hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()
+            if key:
+                for job in self.store.jobs.values():
+                    if job.get("idempotency_key") == key:
+                        if job["input_digest"] != fingerprint:
+                            raise ValueError(
+                                "Idempotency key was already used with different input."
+                            )
+                        return job["job_id"]
+            pending = pending_job_count(self.store)
+            if pending >= HarnessPolicy.from_env().max_pending_jobs:
+                raise ValueError("Execution queue is full; retry after another job finishes.")
+            job_id = self._create(request)
+            if key:
+                self.store.update(job_id, idempotency_key=key, input_digest=fingerprint)
+            return job_id
+
+    def _create(self, request: PlanningRequest) -> str:
         job_id = uuid.uuid4().hex[:12]
         payload = request.model_dump(mode="json")
-        cache_key = _request_cache_key(payload)
+        from agent_memory import memory_enabled
+
+        cache_key = None if memory_enabled() else _request_cache_key(payload)
 
         # A1 cache hit: skip the whole workflow and reuse the previous result (demo: same shaft returns in seconds)
-        if self.job_cache.enabled:
+        if self.job_cache.enabled and cache_key:
             cached = self.job_cache.get(cache_key)
             if cached is not None:
                 logger.info(
@@ -177,14 +219,15 @@ class PlanningService:
                 self.store.create(job_id, payload)
                 self.store.update(
                     job_id,
-                    status="completed",
+                    status=cached.get("status", "completed"),
                     progress=100,
-                    current_step="completed",
+                    current_step=cached.get("status", "completed"),
                     pending_choices=[],
                     message="Cache hit: input identical to the previous run, reusing the previous process result. "
                     "(To force recomputation, set JOB_CACHE_ENABLED=false in .env)",
                     result=cached,
                     _cache_key=cache_key,
+                    cache_provenance={"source_job_id": cached.get("job_id"), "reexecuted": False},
                 )
                 return job_id
 
@@ -227,21 +270,39 @@ class PlanningService:
 
     # 校验任务处于加工时机等待状态，再提交选择恢复图执行。
     def resume(self, job_id: str, choices: ChoicesRequest) -> None:
-        current = self.store.get(job_id)
-        if current["status"] != "waiting_user_choice":
-            raise ValueError("Task is not in waiting for user choice state.")
+        with self.store.lock:
+            current = self.store.get(job_id)
+            if current["status"] != "waiting_user_choice":
+                raise ValueError("Task is not in waiting for user choice state.")
+            validate_pending_choices(choices, current["pending_choices"])
+            self._submit_resume(job_id, current, choices.model_dump(mode="json"))
+
+    def _submit_resume(self, job_id, current, response):
+        """Called under the store lock; queue failure restores the human waiting state."""
+        if current.get("harness", {}).get("active"):
+            raise ValueError("The previous invocation is still finishing; retry shortly.")
         if not self._has_checkpoint(job_id):
-            message = (
-                "No recoverable workflow checkpoint exists for this job. Please create a new job."
-            )
-            self.store.update(
-                job_id, status="failed", progress=100, current_step="failed", message=message
-            )
-            raise ValueError(message)
+            raise ValueError("No recoverable workflow checkpoint exists for this job.")
+        if pending_job_count(self.store) >= HarnessPolicy.from_env().max_pending_jobs:
+            raise ValueError("Execution queue is full; retry after another job finishes.")
         self.store.update(
-            job_id, status="running", message="Choices received, continuing.", pending_choices=[]
+            job_id,
+            status="running",
+            pending_choices=[],
+            pending_engineering=[],
+            message="Human input received, continuing.",
         )
-        self.executor.submit(self._invoke, job_id, Command(resume=choices.model_dump(mode="json")))
+        try:
+            self.executor.submit(self._invoke, job_id, Command(resume=response))
+        except Exception as exc:
+            self.store.update(
+                job_id,
+                status=current["status"],
+                pending_choices=current["pending_choices"],
+                pending_engineering=current.get("pending_engineering", []),
+                message="Could not queue continuation; input has not been consumed.",
+            )
+            raise ValueError("Could not queue continuation; retry later.") from exc
 
     # 在锁内验证等待状态和回答标识，原子切换为运行后提交恢复任务。
     def resume_engineering(self, job_id: str, answers: EngineeringAnswersRequest) -> None:
@@ -253,22 +314,68 @@ class PlanningService:
             provided = {a.task_id for a in answers.answers}
             if not provided <= pending or (not answers.defer and provided != pending):
                 raise ValueError("Answers must cover the pending tasks only.")
-            if not self._has_checkpoint(job_id):
-                raise ValueError("No recoverable workflow checkpoint exists for this job.")
+            self._submit_resume(job_id, current, answers.model_dump(mode="json"))
+
+    def cancel(self, job_id):
+        with self.store.lock:
+            job = self.store.get(job_id)
+            if job["status"] in {"cancelled", "cancelling"}:
+                return job["status"]
+            if job["status"] not in {
+                "queued",
+                "running",
+                "waiting_user_choice",
+                "waiting_engineering_input",
+            }:
+                raise ValueError("This job has already ended.")
+            status = "cancelling" if job.get("harness", {}).get("active") else "cancelled"
             self.store.update(
                 job_id,
-                status="running",
+                cancel_requested=True,
+                status=status,
+                current_step=status,
+                message="Cancellation requested; stopping at the next execution boundary.",
+                pending_choices=[],
                 pending_engineering=[],
-                message="Engineering information received, continuing.",
             )
-        self.executor.submit(self._invoke, job_id, Command(resume=answers.model_dump(mode="json")))
+            return status
 
     # 在独立候选状态中匹配资源并复核路线，仅在全部检查通过后发布新修订。
     def customize_route(self, job_id: str, operations: list[Any]) -> list[dict[str, Any]]:
-        """Save the user-customized process route (adjustment stage before the process card is generated).
+        from workflow.harness import execute_action
+        from models.workflow import traced
+        from prompt_profiles import active_profile, use_profile, PromptProfile
+        from agent_memory import use_memory
+
+        job = self.store.get(job_id)
+        if job["result"] is None or not job["result"].get("process_route"):
+            raise ValueError("Process route is not ready; cannot customize.")
+        profile = (
+            PromptProfile.model_validate(job["prompt_snapshot"])
+            if job.get("prompt_snapshot")
+            else active_profile()
+        )
+
+        @traced("custom_route_review", ["job_id", "request"])
+        def review(owner, state):
+            return {"proposal": owner._customize_route(job_id, operations)}
+
+        with (
+            use_profile(profile),
+            use_memory(job.get("memory_context", {"status": "disabled", "items": []})),
+        ):
+            return execute_action(
+                self.workflow,
+                job_id,
+                lambda: review(self, {"job_id": job_id, "request": job["request"]}),
+                publish=lambda result: self._publish_custom_route(job_id, result["proposal"]),
+            )
+
+    def _customize_route(self, job_id: str, operations: list[Any]) -> dict[str, Any]:
+        """Prepare and review a detached candidate before publishing a route revision.
 
         Each operation keeps its original operation_no as a stable resource key; when the process card
-        is exported, machine/tool recommendations are linked by that key. Returns the saved route JSON.
+        is exported, machine/tool recommendations are linked by that key. Returns a reviewed proposal.
         """
         job = self.store.get(job_id)
         if job["result"] is None or not job["result"].get("process_route"):
@@ -277,7 +384,10 @@ class PlanningService:
         if len(numbers) != len(set(numbers)):
             raise ValueError("operation_no must be unique.")
         payload = [op.model_dump(mode="json") for op in operations]
-        from agents.specialists import SpecialistAgent, SCOPES, coordinate_reviews
+        from agents.specialists import SCOPES, coordinate_reviews
+        from agents.planner import make_task
+        from workflow.task_workers import execute_contract
+        from workflow.harness import digest
 
         # 候选定制从原始结果复制，旧任务账本不能作为修改后路线的有效验证证据。
         candidate = deepcopy(job["result"])
@@ -312,13 +422,29 @@ class PlanningService:
                 "Customized route failed revalidation: "
                 + "; ".join(structural + ([] if topology["passed"] else [topology["message"]]))
             )
-        candidate.update(reviewer.resource_selection(candidate))
+        resource_task = execute_contract(
+            reviewer, make_task("resource_selection"), candidate, digest(payload), 1
+        )
+        if resource_task.status == "tool_failed":
+            raise ValueError("Customized resource review failed: " + resource_task.summary)
+        candidate.update(resource_task.state_updates)
         with ThreadPoolExecutor(max_workers=3) as pool:
             futures = [
-                pool.submit(SpecialistAgent(reviewer, name).execute, candidate) for name in SCOPES
+                pool.submit(
+                    copy_context().run,
+                    execute_contract,
+                    reviewer,
+                    make_task(name),
+                    candidate,
+                    digest(payload),
+                    1,
+                )
+                for name in SCOPES
             ]
             reviews = [future.result() for future in futures]
         for report in reviews:
+            if report.status == "tool_failed":
+                raise ValueError("Customized specialist review failed: " + report.summary)
             candidate.update(report.state_updates)
         candidate.update(coordinate_reviews(candidate))
         candidate.update(reviewer.verification(candidate))
@@ -330,10 +456,16 @@ class PlanningService:
                 )
             )
         candidate["process_route"] = payload
+        return {"route": payload, "candidate": candidate, "revision": job.get("route_revision", 0)}
+
+    def _publish_custom_route(self, job_id, proposal):
+        from workflow.harness import check_control
+
         with self.store.lock:
+            check_control()
             current = self.store.get(job_id)
             # 复核期间可能有其他请求发布新版本；修订号变化时拒绝覆盖，防止丢失并发编辑。
-            if current.get("route_revision", 0) != job.get("route_revision", 0):
+            if current.get("route_revision", 0) != proposal["revision"]:
                 raise ValueError("Route changed during review; reload and retry.")
             history = current.get("route_history", []) + [
                 {
@@ -343,15 +475,15 @@ class PlanningService:
             ]
             self.store.update(
                 job_id,
-                custom_route=payload,
-                custom_result=candidate,
+                custom_route=proposal["route"],
+                custom_result=proposal["candidate"],
                 route_history=history,
-                route_revision=job.get("route_revision", 0) + 1,
+                route_revision=proposal["revision"] + 1,
                 status="completed",
                 current_step="completed",
                 message="Edited route revalidated; engineering review required.",
             )
-        return payload
+        return proposal["route"]
 
     # 归档当前定制结果，清除覆盖并递增修订号，恢复原始路线。
     def reset_custom_route(self, job_id: str) -> None:
@@ -381,7 +513,26 @@ class PlanningService:
 
         config = {"configurable": {"thread_id": job_id}}
         try:
-            result = self.workflow.graph.invoke(graph_input, config=config)
+            from agent_memory import retrieve_memory, use_memory
+            from prompt_profiles import active_profile, use_profile, PromptProfile
+
+            job = self.store.get(job_id)
+            if job.get("cancel_requested"):
+                raise HarnessStopped("cancel_requested", "cancelled")
+            profile = (
+                PromptProfile.model_validate(job["prompt_snapshot"])
+                if job.get("prompt_snapshot")
+                else active_profile()
+            )
+            memory = (
+                job["memory_context"]
+                if "memory_context" in job
+                else retrieve_memory(job["request"])
+            )
+            self.store.update(job_id, memory_context=memory, prompt_snapshot=profile.model_dump())
+            with use_profile(profile), use_memory(memory):
+                executed_key = _request_cache_key(self.store.get(job_id)["request"])
+                result = self.workflow.invoke(graph_input, config=config)
             # 人工中断属于等待状态，节点已保存问题；不能继续把任务写为已完成。
             if result.get("__interrupt__"):
                 logger.info("[%s] HITL interrupt captured, waiting for user choice.", job_id)
@@ -417,6 +568,8 @@ class PlanningService:
                 # Later identical requests reuse the result directly, skipping the whole workflow.
                 if (
                     cache_key
+                    and cache_key == executed_key
+                    and cache_key == _request_cache_key(self.store.get(job_id)["request"])
                     and self.job_cache.enabled
                     and final_status in {"completed", "resource_mismatch"}
                 ):
@@ -427,7 +580,22 @@ class PlanningService:
                         cache_key[:8],
                         len(self.job_cache),
                     )
-            self.store.update(job_id, **update_values)
+            with self.store.lock:
+                if self.store.get(job_id).get("cancel_requested"):
+                    raise HarnessStopped("cancel_requested", "cancelled")
+                self.store.update(job_id, **update_values)
+        except HarnessStopped as stop:
+            self.store.update(
+                job_id,
+                status=stop.status,
+                current_step=stop.status,
+                progress=100,
+                message="Execution stopped: " + stop.reason,
+                error=stop.reason,
+                pending_choices=[],
+                pending_engineering=[],
+                result=None,
+            )
         except GraphInterrupt:
             logger.info("[%s] HITL interrupt: waiting for user precision choice.", job_id)
             return
@@ -914,6 +1082,9 @@ class PlanningService:
         if job["result"] is None:
             raise ValueError("Task result is being written, please retry later.")
         result = job.get("custom_result") or job["result"]
+        from observability import summarize_model_calls
+
+        traces = job.get("execution_trace") or result.get("execution_trace", [])
         return {
             "job_id": job_id,
             "status": job["status"],
@@ -930,6 +1101,8 @@ class PlanningService:
             "custom_route": job.get("custom_route"),
             "resource_selection": result.get("resource_selection"),
             "verification": result.get("verification"),
-            "execution_trace": job.get("execution_trace") or result.get("execution_trace", []),
+            "execution_trace": traces,
+            "model_usage": summarize_model_calls(traces),
+            "memory_context": job.get("memory_context"),
             "result": result,
         }

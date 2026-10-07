@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from typing import Any
+from prompt_profiles import augment_instructions
 
 
 # 保存版本化提示模板并渲染消息，避免节点内重复拼装模板结构。
@@ -42,6 +43,7 @@ class PromptManager:
     ) -> list[dict[str, str]]:
         """渲染模板并组装为对话消息列表；空 system/user 段落不产生对应消息。"""
         rendered = self.get(name, variables)
+        rendered["system"] = augment_instructions(name, rendered["system"])
         messages = []
         if rendered["system"]:
             messages.append({"role": "system", "content": rendered["system"]})

@@ -9,11 +9,13 @@ from copy import deepcopy
 import repositories
 
 from langgraph.types import Send, interrupt
-from agents.planner import propose_plan
+from agents.planner import propose_plan, planning_decision_key
 from agents.specialists import coordinate_reviews
 from models.tasks import TaskPlan, TaskContract, TaskResult, EngineeringAnswersRequest
 from models.workflow import ExecutionTrace
 from .task_workers import execute_contract
+from llm_client import runtime_identity
+from .harness import current_control
 
 MAX_WAVES = 16
 
@@ -35,6 +37,7 @@ def context_version(task, state):
             )
     data = {
         "protocol_version": 1,
+        "execution_identity": runtime_identity(),
         "task": task.model_dump(),
         "request": state["request"],
         "geometry": state["geometry"],
@@ -69,6 +72,32 @@ def current_results(plan, state):
     return valid
 
 
+def worker_snapshot(task, state):
+    """Do not copy global traces, scheduler ledgers or sibling reports into every Send."""
+    keys = {
+        "job_id",
+        "request",
+        "geometry",
+        "user_choices",
+        "heat_treatment_decision",
+        "process_route",
+        "retry_count",
+        "repair_count",
+        "verification",
+        "route_hashes",
+    }
+    snapshot = {key: value for key, value in state.items() if key in keys}
+    snapshot["worker_results"] = {
+        key: state.get("worker_results", {}).get(key, {}) for key in task.depends_on
+    }
+    snapshot["engineering_answers"] = (
+        {task.task_id: state["engineering_answers"][task.task_id]}
+        if task.task_id in state.get("engineering_answers", {})
+        else {}
+    )
+    return snapshot
+
+
 # 提供确定性调度、并行执行、结果收集及人工补充节点。
 class TaskSchedulerMixin:
     # 更新计划和任务账本，选择当前可运行任务，并将等待及复用情况写入看板。
@@ -97,13 +126,24 @@ class TaskSchedulerMixin:
             ).model_dump()
             snapshot["worker_results"] = {**state.get("worker_results", {}), **seeded}
         valid = current_results(TaskPlan.model_validate(old), snapshot) if old else {}
-        plan, calls, mode, error = propose_plan(snapshot, old, valid, state.get("planner_calls", 0))
+        decision = planning_decision_key(state, valid)
+        plan, calls, mode, error = propose_plan(
+            snapshot,
+            old,
+            valid,
+            state.get("planner_calls", 0),
+            allow_model=decision != state.get("planner_decision_key"),
+        )
         valid = current_results(plan, snapshot)
         ready, blocked = [], []
         for task in plan.tasks:
             result = valid.get(task.task_id)
             # 同版本成功或需人工输入的结果直接保留；工具失败最多允许第二次尝试。
-            if result and not (result["status"] == "tool_failed" and result["attempt"] < 2):
+            if result and not (
+                result["status"] == "tool_failed"
+                and result["attempt"] < 2
+                and result.get("retryable", True)
+            ):
                 continue
             if all(dep in valid for dep in task.depends_on):
                 if task.requires_success and any(
@@ -126,22 +166,25 @@ class TaskSchedulerMixin:
         ]
         # 优先执行仍可推进的任务；无就绪任务后才等待人工，最后才进行必需任务验收。
         action = "dispatch" if ready else "human" if pending else "finish"
+        parallel = current_control().policy.max_parallel_tasks if current_control() else 4
         event = {
             "wave": count,
             "mode": mode,
             "rationale": plan.rationale,
             "error": error,
-            "dispatched": ready[:4],
+            "dispatched": ready[:parallel],
             "reused": list(valid),
             "blocked": blocked,
             "action": action,
+            "decision_changed": decision != state.get("planner_decision_key"),
         }
         updates = {
             "task_plan": plan.model_dump(),
             "planner_calls": calls,
+            "planner_decision_key": decision,
             "scheduler_waves": count,
             "task_action": action,
-            "ready_tasks": ready[:4],
+            "ready_tasks": ready[:parallel],
             "pending_engineering": pending,
             "planner_events": [*state.get("planner_events", []), event],
             "tasks_repair_count": state.get("repair_count", 0),
@@ -170,10 +213,19 @@ class TaskSchedulerMixin:
             return "engineering_input"
         if state["task_action"] == "finish":
             return "finish_tasks"
+        if state["task_action"] != "dispatch" or not state.get("ready_tasks"):
+            raise ValueError("Invalid scheduler routing decision")
         plan = TaskPlan.model_validate(state["task_plan"])
         by_id = {task.task_id: task for task in plan.tasks}
         return [
-            Send("execute_task", {"task": by_id[tid].model_dump(), "snapshot": state})
+            Send(
+                "execute_task",
+                {
+                    "task": by_id[tid].model_dump(),
+                    "snapshot": worker_snapshot(by_id[tid], state),
+                    "previous_result": state.get("worker_results", {}).get(tid, {}),
+                },
+            )
             for tid in state["ready_tasks"]
         ]
 
@@ -182,7 +234,9 @@ class TaskSchedulerMixin:
         task = TaskContract.model_validate(envelope["task"])
         state = envelope["snapshot"]
         version = context_version(task, state)
-        previous = state.get("worker_results", {}).get(task.task_id, {})
+        previous = envelope.get(
+            "previous_result", state.get("worker_results", {}).get(task.task_id, {})
+        )
         attempt = (
             previous.get("attempt", 0) + 1 if previous.get("context_version") == version else 1
         )

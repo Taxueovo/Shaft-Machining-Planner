@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from copy import deepcopy
 from models.tasks import TaskContract, TaskPlan
 from llm_client import chat_json, llm_available
+from prompt_profiles import augment_instructions
 
 # 模型规划调用次数与调度波次数分别限额，防止反馈循环持续调用模型。
 MAX_PLANNER_CALLS = 4
@@ -63,7 +65,23 @@ def baseline_plan(state):
 
 
 # 先按资源缺口补充规则任务，再尝试模型计划；非法计划或模型失败时保留确定性回退。
-def propose_plan(state, current, results, call_count):
+def planning_decision_key(state, results):
+    """Model intervention is tied to new evidence, never ordinary scheduler waves."""
+    gaps = {
+        key: r.get("artifact")
+        for key, r in results.items()
+        if r["worker"] == "resource_selection" and r["status"] == "infeasible"
+    }
+    evidence = {
+        "request": state["request"],
+        "repair": state.get("repair_count", 0),
+        "answers": state.get("engineering_answers", {}),
+        "gaps": gaps,
+    }
+    return hashlib.sha256(json.dumps(evidence, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def propose_plan(state, current, results, call_count, *, allow_model=True):
     """Keep completed work immutable; add failure-directed tasks before optional model planning."""
     fallback = TaskPlan.model_validate(deepcopy(current)) if current else baseline_plan(state)
     by_worker = {t.worker: t for t in fallback.tasks}
@@ -79,6 +97,8 @@ def propose_plan(state, current, results, call_count):
         fallback.rationale = "Resource mismatch: add alternate-capacity search and workholding analysis; retain completed reviews."
     fallback = TaskPlan.model_validate(fallback.model_dump())
     mode, error = "rules_only", None
+    if not allow_model:
+        return fallback, call_count, "reuse_plan", None
     if llm_available() and call_count < MAX_PLANNER_CALLS:
         call_count += 1
         try:
@@ -109,7 +129,7 @@ def propose_plan(state, current, results, call_count):
             candidate = TaskPlan.model_validate(
                 chat_json(
                     [
-                        {"role": "system", "content": prompt},
+                        {"role": "system", "content": augment_instructions("planner", prompt)},
                         {
                             "role": "user",
                             "content": json.dumps(context, ensure_ascii=False, default=str),

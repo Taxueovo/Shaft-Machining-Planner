@@ -2,7 +2,11 @@
   <img src=".github/assets/readme-hero.svg" width="100%" alt="Shaft Machining Planner — geometry in, verified process route out" />
 </p>
 
-<h1 align="center">Shaft Machining Planner</h1>
+<h1 align="center">shaftmachiningplanner</h1>
+
+**v1.3.0 本地工作台**：统一导航、任务中心、浏览器草稿、历史输入复用及系统状态；新增运行 Harness、按证据变化的路由和协作式取消。
+中文操作、备份与升级说明见 [软件使用指南](docs/software-guide.md)，变更见 [更新记录](CHANGELOG.md)。
+执行预算、恢复和路由设计见 [LangGraph / Harness 架构](docs/langgraph-harness.md)。
 
 <p align="center">
   <strong>Turn motor-shaft geometry into a resource-checked machining route and an exportable process card.</strong>
@@ -127,6 +131,10 @@ The launcher handles: `NO_PROXY` setup (so local requests are not blocked by a
 corporate proxy), readiness waiting, unified shutdown on Ctrl+C / process exit,
 and idempotent skipping of ports already running.
 
+Closing the browser leaves the services running by default. Stop with Ctrl+C or
+the System Status page. `AUTO_SHUTDOWN_ON_IDLE=true` opts into idle exit (300 seconds
+by default), while running and waiting-for-input tasks remain protected.
+
 ### Running subsystems individually (debugging)
 
 - `python frontend/run_frontend.py` — frontend only (auto-starts the backend)
@@ -136,8 +144,8 @@ and idempotent skipping of ports already running.
 
 | Service          | URL                   |
 |------------------|-----------------------|
-| peagent frontend | http://127.0.0.1:8000 |
-| peagent backend  | http://127.0.0.1:8001 |
+| shaftmachiningplanner frontend | http://127.0.0.1:8000 |
+| shaftmachiningplanner backend  | http://127.0.0.1:8001 |
 
 ## 5. Environment variables
 
@@ -332,6 +340,28 @@ shafts require confirmation of workholding rather than automatic center drilling
 Explicit operation diameter transitions are validated for material-removal direction
 and continuity; intermediate sizes and complete fixture/inspection plans are still
 engineering inputs, not inferred validated production data.
+
+### Agent evaluation and historical memory
+
+The verification gate now checks declared process-state transitions: treatment and
+datum recovery, final inspection and packaging order, stock bounds and dimensional
+continuity. Unknown inputs stay explicit; these checks do not qualify fixtures or
+machining physics. Model-call traces record actual usage when returned, model and
+prompt-profile fingerprints, failures and request latency. Missing usage and costs
+remain unknown.
+
+Run `python scripts/evaluate_agents.py` for an offline workflow benchmark. The 11
+sample cases are synthetic, grouped into disjoint train/validation/test families.
+Optional GEPA optimization generates prompt-profile candidates for separate review;
+it does not activate them. See [evaluation instructions](evaluation/README.md).
+
+Optional [TencentDB-Agent-Memory integration](research/tencentdb-agent-memory-integration.md)
+retrieves versioned historical references through the v3 atomic-search API. It is
+disabled by default and requires explicit scope and gateway credentials. References
+are unverified advice and cannot override current inputs, resource checks or release
+rules. Retrieval status and records appear in the result API. Memory mode bypasses
+whole-job caching, and memory snapshot changes invalidate worker reuse. There is no
+automatic memory write-back, proxy capture or execution of external Skills.
 
 Manual route edits are re-matched and re-reviewed in a detached candidate state.
 Invalid edits leave the live result untouched. Accepted edits increment the route

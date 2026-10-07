@@ -20,9 +20,11 @@ class JobStore:
     MAX_COMPLETED_JOBS = 500
     CLEANUP_THRESHOLD = 600
 
-    def __init__(self) -> None:
+    def __init__(self, db_path: str | None = None) -> None:
         """打开 SQLite（含 WAL/权限配置）并把既有任务从磁盘载入内存缓存。"""
-        configured = os.getenv("JOB_DB_FILE", "data/jobs.sqlite3")
+        configured = (
+            db_path if db_path is not None else os.getenv("JOB_DB_FILE", "data/jobs.sqlite3")
+        )
         self.db_path = (
             configured if configured == ":memory:" else str(Path(configured).expanduser().resolve())
         )
@@ -75,7 +77,8 @@ class JobStore:
         completed = [
             (jid, job)
             for jid, job in self.jobs.items()
-            if job.get("status") in {"completed", "resource_mismatch", "failed"}
+            if job.get("status")
+            in {"completed", "resource_mismatch", "failed", "interrupted", "cancelled"}
         ]
         if len(completed) <= self.MAX_COMPLETED_JOBS:
             return
@@ -114,6 +117,12 @@ class JobStore:
         with self.lock:
             if job_id not in self.jobs:
                 raise KeyError(job_id)
+            if self.jobs[job_id].get("cancel_requested") and values.get("status") not in {
+                None,
+                "cancelled",
+                "cancelling",
+            }:
+                values["status"] = self.jobs[job_id]["status"]
             self.jobs[job_id].update(values)
             self.jobs[job_id]["updated_at"] = datetime.now(timezone.utc).isoformat()
             self._persist(job_id)
@@ -145,7 +154,81 @@ class JobStore:
         with self.lock:
             active = sum(
                 job.get("status")
-                in {"running", "queued", "waiting_user_choice", "waiting_engineering_input"}
+                in {
+                    "running",
+                    "queued",
+                    "cancelling",
+                    "waiting_user_choice",
+                    "waiting_engineering_input",
+                }
+                or job.get("harness", {}).get("active", False)
                 for job in self.jobs.values()
             )
             return {"active_jobs": active, "total_jobs": len(self.jobs)}
+
+    def interrupt_inflight(self) -> int:
+        """At single-process startup, expose abandoned jobs instead of fake progress."""
+        with self.lock:
+            ids = [
+                jid
+                for jid, job in self.jobs.items()
+                if job["status"] in {"queued", "running", "cancelling"}
+            ]
+            for jid in ids:
+                old = self.jobs[jid]
+                harness = {**old.get("harness", {}), "active": False, "phase": "interrupted"}
+                self.update(
+                    jid,
+                    status="cancelled" if old.get("cancel_requested") else "interrupted",
+                    harness=harness,
+                    current_step="interrupted",
+                    message="服务已重启，任务执行中断。可从已保存的输入重新创建规划；旧任务记录保留。",
+                )
+            for jid, job in self.jobs.items():
+                if jid not in ids and job.get("harness", {}).get("active"):
+                    record = {**job["harness"], "active": False, "phase": "interrupted"}
+                    self.update(jid, harness=record)
+            return len(ids)
+
+    def list_jobs(self, *, status=None, search="", limit=20, offset=0) -> dict:
+        """Paginated summaries; never return drawing bodies, traces or exception text."""
+        with self.lock:
+            counts = {}
+            matches = []
+            needle = search.strip().casefold()
+            for jid, job in self.jobs.items():
+                counts[job["status"]] = counts.get(job["status"], 0) + 1
+                req = job.get("request", {})
+                title = req.get("part_name") or f"{req.get('material', '—')} · 轴件规划"
+                statuses = {
+                    "active": {"queued", "running", "cancelling"},
+                    "waiting": {"waiting_user_choice", "waiting_engineering_input"},
+                }
+                if status and job["status"] not in statuses.get(status, {status}):
+                    continue
+                if needle and needle not in f"{jid} {title} {req.get('material', '')}".casefold():
+                    continue
+                matches.append(
+                    {
+                        "job_id": jid,
+                        "title": title,
+                        "material": req.get("material"),
+                        "blank_diameter_mm": req.get("blank_diameter_mm"),
+                        "total_length_mm": sum(
+                            s.get("length_mm", 0) for s in req.get("segments", [])
+                        ),
+                        "status": job["status"],
+                        "progress": job.get("progress", 0),
+                        "created_at": job["created_at"],
+                        "updated_at": job["updated_at"],
+                        "route_revision": job.get("route_revision", 0),
+                    }
+                )
+            matches.sort(key=lambda j: (j["created_at"], j["job_id"]), reverse=True)
+            return {
+                "items": matches[offset : offset + limit],
+                "total": len(matches),
+                "limit": limit,
+                "offset": offset,
+                "counts": counts,
+            }

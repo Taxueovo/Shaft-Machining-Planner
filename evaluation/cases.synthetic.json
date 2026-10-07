@@ -1,0 +1,339 @@
+{
+  "name": "shaftmachiningplanner-synthetic-regression",
+  "version": "1.0",
+  "evidence_level": "synthetic",
+  "cases": [
+    {
+      "case_id": "solid-basic",
+      "family": "plain-solid",
+      "split": "train",
+      "request": {
+        "material": "45",
+        "blank_diameter_mm": 50,
+        "segments": [
+          {
+            "segment_id": "S1",
+            "diameter_mm": 30,
+            "length_mm": 100
+          }
+        ],
+        "global_requirements": {
+          "heat_treatment": "none"
+        }
+      },
+      "expected": {
+        "required_workers": [
+          "process_planning",
+          "resource_selection",
+          "machining_review",
+          "quality_review",
+          "heat_review"
+        ],
+        "required_operations": [
+          "Final Inspection"
+        ],
+        "forbidden_operations": [
+          "Heat Treatment"
+        ]
+      }
+    },
+    {
+      "case_id": "hollow-no-finished-bore",
+      "family": "plain-hollow",
+      "split": "train",
+      "request": {
+        "material": "45",
+        "blank_type": "hollow",
+        "blank_diameter_mm": 50,
+        "blank_inner_diameter_mm": 20,
+        "segments": [
+          {
+            "segment_id": "S1",
+            "diameter_mm": 30,
+            "length_mm": 100
+          }
+        ],
+        "global_requirements": {
+          "heat_treatment": "none"
+        }
+      },
+      "expected": {
+        "required_workers": [
+          "workholding"
+        ],
+        "required_operations": [
+          "Prepare Workholding"
+        ],
+        "forbidden_operations": [
+          "Center Drilling",
+          "Heat Treatment",
+          "Rough Boring",
+          "Finish Boring",
+          "Deep Hole Drilling"
+        ]
+      }
+    },
+    {
+      "case_id": "hollow-finished-bore",
+      "family": "finished-bore",
+      "split": "train",
+      "request": {
+        "material": "45",
+        "blank_type": "hollow",
+        "blank_diameter_mm": 50,
+        "blank_inner_diameter_mm": 20,
+        "segments": [
+          {
+            "segment_id": "S1",
+            "diameter_mm": 30,
+            "length_mm": 100
+          }
+        ],
+        "features": [
+          {
+            "feature_id": "B1",
+            "feature_type": "bore",
+            "positioning_mode": "global_absolute",
+            "global_position_mm": 0,
+            "bore_diameter_mm": 22,
+            "bore_length_mm": 50
+          }
+        ],
+        "global_requirements": {
+          "heat_treatment": "none"
+        }
+      },
+      "expected": {
+        "required_workers": [
+          "workholding"
+        ],
+        "forbidden_operations": [
+          "Center Drilling"
+        ]
+      }
+    },
+    {
+      "case_id": "stepped-shaft",
+      "family": "stepped",
+      "split": "validation",
+      "request": {
+        "material": "40Cr",
+        "blank_diameter_mm": 50,
+        "segments": [
+          {
+            "segment_id": "S1",
+            "diameter_mm": 30,
+            "length_mm": 80
+          },
+          {
+            "segment_id": "S2",
+            "diameter_mm": 40,
+            "length_mm": 60
+          }
+        ],
+        "global_requirements": {
+          "heat_treatment": "none"
+        }
+      },
+      "expected": {
+        "required_operations": [
+          "Final Inspection"
+        ],
+        "forbidden_operations": [
+          "Heat Treatment"
+        ]
+      }
+    },
+    {
+      "case_id": "keyway-shaft",
+      "family": "keyway",
+      "split": "validation",
+      "request": {
+        "material": "45",
+        "blank_diameter_mm": 50,
+        "segments": [
+          {
+            "segment_id": "S1",
+            "diameter_mm": 30,
+            "length_mm": 100
+          }
+        ],
+        "features": [
+          {
+            "feature_id": "K1",
+            "feature_type": "keyway",
+            "positioning_mode": "global_absolute",
+            "global_position_mm": 10,
+            "keyway_width_mm": 6,
+            "keyway_depth_mm": 3,
+            "feature_length_mm": 20
+          }
+        ],
+        "global_requirements": {
+          "heat_treatment": "none"
+        }
+      },
+      "expected": {
+        "required_operations": [
+          "Final Inspection"
+        ],
+        "forbidden_operations": [
+          "Heat Treatment"
+        ]
+      }
+    },
+    {
+      "case_id": "precision-profile",
+      "family": "precision",
+      "split": "validation",
+      "request": {
+        "material": "45",
+        "blank_diameter_mm": 50,
+        "segments": [
+          {
+            "segment_id": "S1",
+            "diameter_mm": 30,
+            "length_mm": 100,
+            "roughness_ra": 0.4
+          }
+        ],
+        "global_requirements": {
+          "heat_treatment": "none"
+        }
+      },
+      "expected": {
+        "required_workers": [
+          "workholding"
+        ],
+        "required_operations": [
+          "Final Inspection"
+        ],
+        "forbidden_operations": [
+          "Heat Treatment"
+        ]
+      }
+    },
+    {
+      "case_id": "induction-profile",
+      "family": "induction",
+      "split": "test",
+      "request": {
+        "material": "45",
+        "blank_diameter_mm": 50,
+        "segments": [
+          {
+            "segment_id": "S1",
+            "diameter_mm": 30,
+            "length_mm": 100
+          }
+        ],
+        "global_requirements": {
+          "heat_treatment": "induction_hardening"
+        }
+      },
+      "expected": {
+        "required_operations": [
+          "Heat Treatment",
+          "Final Inspection"
+        ]
+      }
+    },
+    {
+      "case_id": "nitrided-hollow",
+      "family": "nitrided-hollow",
+      "split": "test",
+      "request": {
+        "material": "40Cr",
+        "blank_type": "hollow",
+        "blank_diameter_mm": 50,
+        "blank_inner_diameter_mm": 20,
+        "segments": [
+          {
+            "segment_id": "S1",
+            "diameter_mm": 30,
+            "length_mm": 100
+          }
+        ],
+        "global_requirements": {
+          "heat_treatment": "nitriding"
+        }
+      },
+      "expected": {
+        "required_workers": [
+          "workholding"
+        ],
+        "required_operations": [
+          "Heat Treatment",
+          "Recover Workholding Datum"
+        ],
+        "forbidden_operations": [
+          "Center Drilling"
+        ]
+      }
+    },
+    {
+      "case_id": "invalid-stock-envelope",
+      "family": "invalid-stock",
+      "split": "test",
+      "request": {
+        "material": "45",
+        "blank_diameter_mm": 20,
+        "segments": [
+          {
+            "segment_id": "S1",
+            "diameter_mm": 30,
+            "length_mm": 100
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "input_rejected"
+      }
+    },
+    {
+      "case_id": "invalid-tolerance",
+      "family": "invalid-tolerance",
+      "split": "test",
+      "request": {
+        "material": "45",
+        "blank_diameter_mm": 50,
+        "segments": [
+          {
+            "segment_id": "S1",
+            "diameter_mm": 30,
+            "length_mm": 100,
+            "diameter_upper_deviation_mm": -0.1,
+            "diameter_lower_deviation_mm": 0.1
+          }
+        ]
+      },
+      "expected": {
+        "outcome": "input_rejected"
+      }
+    },
+    {
+      "case_id": "unsupported-nitriding-material",
+      "family": "unsupported-alloy",
+      "split": "test",
+      "request": {
+        "material": "38CrMoAl",
+        "blank_type": "hollow",
+        "blank_diameter_mm": 50,
+        "blank_inner_diameter_mm": 20,
+        "segments": [
+          {
+            "segment_id": "S1",
+            "diameter_mm": 30,
+            "length_mm": 100
+          }
+        ],
+        "global_requirements": {
+          "heat_treatment": "nitriding"
+        }
+      },
+      "expected": {
+        "outcome": "failed"
+      }
+    }
+  ]
+}

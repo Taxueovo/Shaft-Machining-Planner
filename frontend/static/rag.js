@@ -1,6 +1,6 @@
 // 知识库管理页：展示索引、管理构建与清理，并提供检索和分块查看。
 /**
- * Shaft Machining Planner RAG Management — frontend logic.
+ * shaftmachiningplanner RAG Management — frontend logic.
  *
  * Loaded only on /rag page. Uses the same fetch() pattern as the rest of
  * the project. All RAG API calls go through the frontend proxy (/api/rag/...)
@@ -40,7 +40,7 @@
     const btn = getEl("shutdown-btn");
     if (btn) {
       btn.addEventListener("click", async () => {
-        if (!confirm("Confirm shutdown of Shaft Machining Planner - PE Agent system?")) return;
+        if (!confirm("Confirm shutdown of shaftmachiningplanner - PE Agent system?")) return;
         btn.disabled = true;
         btn.textContent = "Shutting down...";
         try { await fetch("/api/shutdown", { method: "POST" }); } catch (_) {}

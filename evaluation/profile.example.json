@@ -1,0 +1,9 @@
+{
+  "name": "evidence-first-candidate",
+  "version": "1.0",
+  "additions": {
+    "planner": "Keep useful completed work. Use additional diagnostic tasks only for an observed resource gap or unresolved workholding evidence.",
+    "machining_review": "Separate missing fixture evidence from a demonstrable route error. Identify the exact operation for each repair proposal.",
+    "quality_review": "Treat absent tolerances and inspection criteria as missing drawing evidence; never invent them."
+  }
+}

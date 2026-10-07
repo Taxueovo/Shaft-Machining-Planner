@@ -10,6 +10,7 @@ from typing import Any, Optional
 from langgraph.types import interrupt
 from models.process import ProcessStage, ProcessOperation, MANDATORY_OPERATION_NAMES
 from models.workflow import WorkflowState, traced
+from models.input import ChoicesRequest, validate_pending_choices
 from rules import (
     FEATURE_NAME,
     FEATURE_SUPPORTS_SPLIT,
@@ -78,12 +79,7 @@ class ProcessNodesMixin:
             pending_choices=pending,
         )
         response = interrupt({"type": "precision_choices", "pending_choices": pending})
-        user_choices = {
-            item["feature_id"]: item["processing_timing"] for item in response.get("choices", [])
-        }
-        missing = [item["feature_id"] for item in pending if item["feature_id"] not in user_choices]
-        if missing:
-            raise ValueError("Missing feature choices: " + ", ".join(missing))
+        user_choices = validate_pending_choices(ChoicesRequest.model_validate(response), pending)
         user_choices.update(auto_choices)
         return {"pending_choices": [], "user_choices": user_choices}
 

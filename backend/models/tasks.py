@@ -122,6 +122,8 @@ class TaskResult(BaseModel):
     context_version: str
     attempt: int = Field(ge=1, le=2)
     summary: str
+    error_category: str | None = None
+    retryable: bool = True
     artifact: dict[str, Any] = Field(default_factory=dict)
     state_updates: dict[str, Any] = Field(default_factory=dict)
     missing_information: list[str] = Field(default_factory=list)

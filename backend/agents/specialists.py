@@ -16,6 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from .base import AgentCapability, AgentResult, BaseAgent
 from llm_client import chat_json, llm_available
 from rag.workflow_integration import build_rag_context
+from prompt_profiles import augment_instructions
+from agent_memory import memory_evidence
 
 
 # 对路线内容计算稳定摘要，审查结果只可用于对应的路线版本。
@@ -84,6 +86,7 @@ class SpecialistAgent(BaseAgent):
             "input": request,
             "route": route,
             "heat_decision": state.get("heat_treatment_decision", {}),
+            **memory_evidence(),
         }
         contract = state.get("_worker_contract", {})
         evidence["task_contract"] = contract
@@ -116,13 +119,15 @@ class SpecialistAgent(BaseAgent):
                         "Return JSON matching this schema: "
                         + json.dumps(ReviewTurn.model_json_schema())
                         + "\nTool arguments use the current part automatically; only query_cutting_tools needs process. "
-                        "Evidence IDs: input, route, heat_decision, and returned tool IDs. "
+                        "Evidence IDs: input, route, heat_decision, supplied memory evidence_id values and returned tool IDs. "
+                        "Historical memory alone requires engineer_confirmation, never route_repair. "
                         "Use route_repair only for a concrete correction possible without inventing missing drawing data. "
                         "Missing requirements require engineer_confirmation. Do not approve production."
                     ),
                 },
                 {"role": "user", "content": json.dumps(evidence, ensure_ascii=False, default=str)},
             ]
+            messages[0]["content"] = augment_instructions(self.name, messages[0]["content"])
             try:
                 for turn in range(3):
                     response = ReviewTurn.model_validate(chat_json(messages, timeout_seconds=20))
@@ -159,6 +164,10 @@ class SpecialistAgent(BaseAgent):
                     for finding in response.findings:
                         if not set(finding.evidence_ids).issubset(evidence):
                             raise ValueError("Review cites evidence that was not retrieved.")
+                        if finding.disposition == "route_repair" and all(
+                            eid.startswith("memory:") for eid in finding.evidence_ids
+                        ):
+                            raise ValueError("Historical memory alone cannot mandate route repair.")
                         if not set(finding.operation_nos).issubset(known):
                             raise ValueError("Review cites a nonexistent operation.")
                         if finding.disposition == "route_repair" and not finding.operation_nos:
@@ -188,6 +197,8 @@ class SpecialistAgent(BaseAgent):
     def _tool(self, tool, state):
         req, geometry = state["request"], state["geometry"]
         if tool.name == "inspect_route":
+            if hasattr(self.workflow, "task_tool_budget"):
+                self.workflow.task_tool_budget.record(tool.name, {})
             from agents.guardrails import Guardrails
 
             return {
@@ -208,6 +219,8 @@ class SpecialistAgent(BaseAgent):
             return self.workflow.tool_registry.call(
                 tool.name, material=req["material"], process=tool.process, top_n=3
             )
+        if hasattr(self.workflow, "task_tool_budget"):
+            self.workflow.task_tool_budget.record("retrieve_references", {})
         text = build_rag_context(
             req, geometry, state.get("user_choices", {}), state.get("heat_treatment_decision", {})
         )

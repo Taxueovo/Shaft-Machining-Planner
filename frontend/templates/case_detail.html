@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shaft Machining Planner - PE Agent - Case Detail</title>
+  <title>案例详情 · {{ product.name }}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
 {# 当前页面的局部样式：补充公共样式中的布局、状态和窄屏显示规则。 #}
   <style>
@@ -36,18 +36,10 @@
     .error { text-align: center; padding: 40px; color: var(--danger); }
   </style>
 </head>
-<body>
-<header class="topbar">
-  <div><a class="brand link" href="/">Shaft Machining Planner - PE Agent</a><div class="subtitle">PS/PCB-AP</div></div>
-  <div style="display:flex;align-items:center;gap:12px">
-    <a href="/" class="button ghost light">Home</a>
-    <a href="/taxonomy" class="button ghost light">Shaft Library</a>
-    <a href="/cases" class="button ghost light">All Cases</a>
-    <button type="button" id="shutdown-btn" class="button ghost danger" title="Shutdown System">Stop System</button>
-  </div>
-</header>
+<body class="app-frame">
+{% from '_chrome.html' import chrome with context %}{{ chrome('案例详情') }}
 {# 内容区仅含加载占位，真实案例详情由下方脚本按需分段渲染进 #content #}
-<main class="shell">
+<main id="main-content" class="shell" tabindex="-1">
   <div id="content">
     <div class="loading">Loading case details...</div>
   </div>
@@ -93,7 +85,6 @@
         </div>
         <div class="actions">
           <a href="/custom?case=${encodeURIComponent(c.case_id)}" class="button primary">Use This Case</a>
-          <button class="button secondary" data-click="copyCase">Copy Case</button>
           <a href="/taxonomy?category=${encodeURIComponent(c.taxonomy_id)}" class="button ghost">Back to Category</a>
         </div>
       </div>
@@ -172,23 +163,12 @@
   }
 
   // 跳转到带案例标识的定制表单，以当前案例作为新规划起点。
-  window.copyCase = function() {
-    alert('Copy functionality coming soon!');
-  };
 
   loadCase();
 })();
 </script>
 {# 页面脚本使用响应生成的 nonce；动态数据由模板安全编码后注入。 #}
-<script nonce="{{ request.state.csp_nonce }}">
-document.getElementById("shutdown-btn").addEventListener("click", async () => {
-  if (!confirm("Confirm shutdown of Shaft Machining Planner - PE Agent system?")) return;
-  const btn = document.getElementById("shutdown-btn");
-  btn.disabled = true; btn.textContent = "Shutting down...";
-  try { await fetch("/api/shutdown", { method: "POST" }); } catch {}
-  setTimeout(() => { document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#475467"><div style="text-align:center"><h1 style="margin:0 0 12px">System Shutdown</h1><p>This page can be closed.</p></div></div>'; }, 800);
-});
-</script>
+
 <script src="/static/app.js?v={{ static_version }}"></script>
 <script src="/static/heartbeat.js?v={{ static_version }}"></script>
 </body>

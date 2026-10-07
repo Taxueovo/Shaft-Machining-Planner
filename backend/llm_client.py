@@ -21,10 +21,14 @@ import json
 import ipaddress
 import logging
 import os
+import hashlib
+import time
 from typing import Optional
 from urllib.parse import urlparse
 
 from dotenv import load_dotenv
+from observability import record_model_call
+from prompt_profiles import profile_metadata
 
 
 load_dotenv()
@@ -174,6 +178,22 @@ def warn_if_llm_misconfigured() -> None:
 
 
 # 发送模型消息，按调用参数设置模型、温度、输出上限和超时。
+def runtime_identity() -> dict:
+    """Non-secret configuration used to invalidate results after model/policy changes."""
+    from agent_memory import memory_identity
+
+    return {
+        "provider": LLM_PROVIDER,
+        "model": LOCAL_MODEL_NAME if LLM_PROVIDER == "local" else OPENAI_MODEL,
+        "endpoint_digest": hashlib.sha256(
+            (LOCAL_MODEL_BASE_URL if LLM_PROVIDER == "local" else OPENAI_BASE_URL).encode()
+        ).hexdigest(),
+        "prompt_profile": profile_metadata(),
+        "pipeline_version": "event-router-harness-v1",
+        "memory": memory_identity(),
+    }
+
+
 def chat(
     messages: list[dict[str, str]],
     *,
@@ -183,7 +203,16 @@ def chat(
     response_format=None,
     timeout_seconds: Optional[float] = None,
 ):
+    from agent_memory import memory_messages, memory_identity
 
+    messages = memory_messages(messages)
+    from workflow.harness import current_control
+
+    control = current_control()
+    if control:
+        timeout_seconds, max_tokens = control.model_options(
+            timeout_seconds, max_tokens or OPENAI_MAX_TOKENS
+        )
     client = _get_client()
     if timeout_seconds is not None:
         client = client.with_options(timeout=timeout_seconds, max_retries=0)
@@ -212,11 +241,44 @@ def chat(
 
     logger.info("LLM request model=%s", kwargs["model"])
 
-    response = client.chat.completions.create(**kwargs)
-
-    content = response.choices[0].message.content or ""
-
-    return content
+    started = time.perf_counter()
+    event = {
+        "model": kwargs["model"],
+        "provider": LLM_PROVIDER,
+        "prompt_profile": profile_metadata(),
+        "memory": memory_identity(),
+        "instruction_digest": hashlib.sha256(
+            json.dumps(
+                [m for m in messages if m.get("role") in {"system", "developer"}],
+                sort_keys=True,
+                ensure_ascii=False,
+            ).encode()
+        ).hexdigest(),
+        "status": "error",
+        "usage": None,
+    }
+    try:
+        response = client.chat.completions.create(**kwargs)
+        if control:
+            control.check()
+        usage = getattr(response, "usage", None)
+        if usage is not None:
+            event["usage"] = {
+                key: getattr(usage, key, None)
+                for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+            }
+        event.update(
+            status="success",
+            returned_model=getattr(response, "model", None),
+            system_fingerprint=getattr(response, "system_fingerprint", None),
+        )
+        return response.choices[0].message.content or ""
+    except Exception as exc:
+        event["error_type"] = type(exc).__name__
+        raise
+    finally:
+        event["duration_ms"] = round((time.perf_counter() - started) * 1000, 2)
+        record_model_call(event)
 
 
 # =====================================================

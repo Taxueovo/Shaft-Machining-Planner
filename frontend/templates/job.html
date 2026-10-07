@@ -1,36 +1,42 @@
 <!doctype html>
-<html lang="en">
+<html lang="zh-CN">
 {# 任务执行页骨架：执行状态进度、HITL 人工决策、结果展示三块内容均由 job.js 异步填充。 #}
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shaft Machining Planner - PE Agent · {{ job_id }}</title>
+  <title>shaftmachiningplanner · {{ job_id }}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
 </head>
-<body>
-<header class="topbar">
-  <div><a class="brand link" href="/">Shaft Machining Planner - PE Agent</a><div class="subtitle">PS/PCB-AP</div></div>
-  <div style="display:flex;align-items:center;gap:12px">
-    <a href="/" class="button ghost light">Home</a>
-    <button type="button" id="shutdown-btn" class="button ghost danger" title="Shutdown System">Stop System</button>
-  </div>
-</header>
-<main class="shell">
+<body class="app-frame">
+{% from '_chrome.html' import chrome with context %}{{ chrome('任务详情') }}
+<main id="main-content" class="shell" tabindex="-1">
   {# 执行状态区：任务进度与当前步骤由 job.js 轮询更新；默认隐藏面板按任务阶段决定是否展示 #}
+  <div class="task-subheading"><span class="eyebrow">PROCESS PLAN</span><h1 id="job-title">轴件工艺规划</h1><p>任务 {{ job_id }} · <a class="text-link" href="/jobs">返回任务中心</a> · <a class="text-link" href="/custom?from_job={{ job_id | urlencode }}">从输入新建规划</a></p></div>
   <section class="panel">
-    <div class="heading"><div><h2>Execution Status</h2></div><span id="status-badge" class="badge neutral">Loading</span></div>
+    <div class="heading"><div><h2>执行状态</h2></div><span id="status-badge" class="badge neutral">正在读取</span></div>
     <div class="progress"><div id="progress-bar"></div></div>
-    <div class="progress-meta"><strong id="current-step">Connecting</strong><span id="progress-value">0%</span></div>
-    <p id="status-message" class="muted">Fetching task status...</p>
+    <div class="progress-meta"><strong id="current-step">连接中</strong><span id="progress-value">0%</span></div>
+    <p id="status-message" class="muted">正在读取任务状态…</p>
+    <button id="job-cancel" class="button ghost hidden" type="button">取消本次执行</button>
   </section>
+  <dialog id="job-cancel-dialog" class="runtime-dialog" aria-labelledby="job-cancel-title" aria-describedby="job-cancel-description">
+    <h2 id="job-cancel-title">取消本次执行？</h2>
+    <p id="job-cancel-description" class="muted">原输入和执行记录会保留，可从输入新建规划。在途调用可能需要等待超时。</p>
+    <div class="runtime-dialog-actions">
+      <button id="job-cancel-back" class="button ghost" type="button" autofocus>继续执行</button>
+      <button id="job-cancel-confirm" class="button primary" type="button">确认取消</button>
+    </div>
+  </dialog>
+
+  <details id="harness-details" class="technical-details"><summary>运行控制、预算与故障记录</summary><section id="harness-panel" class="panel"><p class="muted">展开后读取本次运行记录。</p></section></details>
 
   {# HITL（人在回路）面板：高精度特征的加工时机需人工确认后再继续，默认隐藏按需展示 #}
   <section id="choice-panel" class="panel hidden">
-    <div class="heading"><div><b class="warn">HITL</b><h2>High-Precision Feature Timing</h2></div></div>
-    <form id="choice-form"><div id="choice-list" class="feature-stack"></div><button class="button primary" type="submit">Submit Choices & Continue</button></form>
+    <div class="heading"><div><b class="warn">HITL</b><h2>精密特征加工时机</h2></div></div>
+    <form id="choice-form"><div id="choice-list" class="feature-stack"></div><button class="button primary" type="submit">提交选择并继续</button></form>
   </section>
 
-  <section id="task-board" class="panel hidden"></section>
+  <details class="technical-details"><summary>查看 Agent 任务与执行证据</summary><section id="task-board" class="panel hidden"></section></details>
   <section id="engineering-panel" class="panel hidden"></section>
 
   <section id="error-panel" class="panel hidden"><div id="error-message" class="alert danger"></div></section>

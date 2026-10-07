@@ -8,6 +8,7 @@ from copy import copy, deepcopy
 from agents.specialists import SpecialistAgent
 from models.tasks import TaskContract, TaskResult
 from workflow.tool_registry import ToolRegistry
+from workflow.harness import ToolPolicyError, current_control, classify_failure
 
 
 # 按任务合同维护工具白名单和累计调用次数。
@@ -19,9 +20,11 @@ class ToolBudget:
     # 工具调用前检查授权与剩余预算，再记录调用名称及参数。
     def record(self, name, arguments):
         if name not in self.contract.allowed_tools:
-            raise ValueError(f"Tool {name} is not authorized by the task contract")
+            raise ToolPolicyError(f"Tool {name} is not authorized by the task contract")
         if len(self.calls) >= self.contract.max_tool_calls:
-            raise ValueError("Task tool budget exhausted")
+            raise ToolPolicyError("Task tool budget exhausted")
+        if control := current_control():
+            control.reserve("tool_calls", name)
         self.calls.append({"tool": name, "arguments": arguments})
 
 
@@ -110,7 +113,6 @@ def execute_contract(
             report = updates[task.worker]
             artifact = {"findings": report["findings"], "mode": report["mode"]}
             summary = report["summary"]
-            budget.calls = report["tool_calls"]
         # 装夹产物是候选分析和待补充事项，当前实现不自动验证夹具能力。
         elif task.worker == "workholding":
             hollow = state["request"].get("blank_type") == "hollow"
@@ -211,6 +213,7 @@ def execute_contract(
         )
     # 任务异常转成结构化失败供调度器有限重试，不将不完整输出写回主状态。
     except Exception as exc:
+        category, retryable = classify_failure(exc)
         return TaskResult(
             task_id=task.task_id,
             worker=task.worker,
@@ -218,5 +221,7 @@ def execute_contract(
             context_version=version,
             attempt=attempt,
             summary=type(exc).__name__ + ": " + str(exc)[:800],
+            error_category=category,
+            retryable=retryable,
             tool_calls=budget.calls,
         )

@@ -27,6 +27,7 @@ from rules import (
 from agents import Guardrails
 from llm_client import chat_json, llm_available
 from rag.workflow_integration import build_rag_context
+from rules.process_state import verify_process_states
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,9 @@ class VerificationNodesMixin:
     def _route_after_verification(self, state: WorkflowState) -> str:
         """verification 之后的流转决策：通过/有条件通过即结束，否则进入 repair（除非已满足终止条件）。"""
         verification = state.get("verification", {})
-        conclusion = verification.get("conclusion", "pass")
+        conclusion = verification.get("conclusion")
+        if conclusion not in {"pass", "conditional_pass", "failed"}:
+            return "failed"
         if conclusion in ("pass", "conditional_pass"):
             return "pass"
         # Duplicate-route / retry-exhausted terminations are marked explicitly by the
@@ -199,6 +202,9 @@ class VerificationNodesMixin:
                 ValidationIssue(error_code="ROUTE_STRUCTURE", message=err).model_dump()
             )
 
+        process_state = verify_process_states(state["request"], route, heat_decision)
+        validation_issues.extend(process_state["issues"])
+
         checks = [
             basic_check,
             semantic_check,
@@ -206,6 +212,13 @@ class VerificationNodesMixin:
             resource_check,
             topo_result,
             route_check,
+            {
+                "name": "Process State Transitions",
+                "passed": process_state["passed"],
+                "message": "Declared process states checked; engineering confirmation remains required."
+                if process_state["passed"]
+                else "; ".join(i["message"] for i in process_state["issues"]),
+            },
         ]
         council = state.get("agent_collaboration", {})
         repair_requests = council.get("repair_requests", [])
@@ -333,6 +346,7 @@ class VerificationNodesMixin:
                 "conclusion": conclusion,
                 "message": message,
                 "checks": checks,
+                "process_state": process_state,
                 "warnings": warnings,
                 "validation_issues": validation_issues,
                 "llm_analysis": llm_analysis,
@@ -564,7 +578,23 @@ class VerificationNodesMixin:
 
         # Feature placement is determined by the central rule engine.  Rebuild
         # the route instead of using a second, stale feature-to-stage mapping.
-        if any(issue.get("error_code") == "FEATURE_NOT_COVERED" for issue in issues):
+        state_errors = {
+            "MODIFICATION_AFTER_FINAL_INSPECTION",
+            "OPERATION_AFTER_PACKAGING",
+            "DATUM_RECOVERY_WITHOUT_HEAT",
+            "FINISH_WITHOUT_DATUM_RECOVERY",
+            "PACKAGING_WITHOUT_FINAL_INSPECTION",
+            "UNKNOWN_DIMENSION_OBJECT",
+            "DUPLICATE_SURFACE_TRANSITION",
+            "DIMENSION_STATE_DISCONTINUITY",
+            "MATERIAL_REMOVAL_REVERSED",
+            "DIMENSION_OUTSIDE_STOCK",
+            "BORE_SMALLER_THAN_STOCK",
+            "STATE_OPERATION_INVALID",
+        }
+        if any(
+            issue.get("error_code") in state_errors | {"FEATURE_NOT_COVERED"} for issue in issues
+        ):
             return build_route(request, geometry, choices)
 
         repaired = [dict(op) for op in route]

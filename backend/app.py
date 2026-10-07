@@ -4,15 +4,16 @@
 from __future__ import annotations
 
 import logging
+import json
 import hmac
 import os
 import secrets
 import signal
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Literal
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, HTTPException, Request, Response, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from dotenv import load_dotenv
@@ -52,9 +53,11 @@ warn_if_llm_misconfigured()
 
 # ---- FastAPI application ----
 
+PRODUCT = json.loads((Path(__file__).resolve().parent.parent / "product.json").read_text())
+
 app = FastAPI(
-    title="Shaft Machining Planner Backend",
-    version="1.1.0",
+    title=PRODUCT["name"] + " Backend",
+    version=PRODUCT["version"],
     description="Motor shaft structured process planning backend",
 )
 LOCAL_API_TOKEN = os.getenv("LOCAL_API_TOKEN") or secrets.token_urlsafe(32)
@@ -109,9 +112,47 @@ async def health() -> dict[str, Any]:
         "llm_available": llm_available(),
     }
     return {
-        "status": "ok" if all(checks.values()) else "degraded",
+        "status": "ok" if checks["machine_db"] and checks["tool_db"] else "degraded",
+        "version": PRODUCT["version"],
+        "name": PRODUCT["name"],
         "checks": checks,
         **service.store.stats(),
+    }
+
+
+@app.get("/api/v1/system")
+def system_status() -> dict:
+    """Safe operational overview: no keys, origins, paths or external probes."""
+    from llm_client import LLM_PROVIDER, OPENAI_MODEL, LOCAL_MODEL_NAME
+    from agent_memory import memory_enabled
+
+    ready = llm_available()
+    memory_configured = all(
+        os.getenv("AGENT_MEMORY_" + key, "").strip()
+        for key in ("URL", "API_KEY", "SERVICE_ID", "TEAM_ID", "AGENT_ID", "USER_ID")
+    )
+    return {
+        "product": PRODUCT,
+        "resources": {"machines": MACHINE_FILE.is_file(), "tools": TOOL_FILE.is_file()},
+        "model": {
+            "provider": LLM_PROVIDER,
+            "available": ready,
+            "name": LOCAL_MODEL_NAME
+            if LLM_PROVIDER == "local"
+            else OPENAI_MODEL
+            if LLM_PROVIDER != "rules"
+            else None,
+        },
+        "memory": {
+            "enabled": memory_enabled(),
+            "configured": memory_configured,
+            "connectivity": "not_checked",
+        },
+        "rag": {"installed": _RAG_AVAILABLE},
+        "jobs": service.store.stats(),
+        "auto_shutdown_on_idle": service.auto_shutdown_on_idle,
+        "deployment": "single_process_loopback",
+        "release_status": "engineering_review_required",
     }
 
 
@@ -139,8 +180,53 @@ async def shutdown() -> dict[str, str]:
 
 # 校验规划请求并提交后台任务，立即返回供轮询使用的任务标识。
 @app.post("/api/v1/jobs", status_code=202)
-def create_job(request: PlanningRequest) -> dict[str, Any]:
-    return {"job_id": service.create(request), "status": "queued", "message": "Task submitted."}
+def create_job(
+    request: PlanningRequest,
+    idempotency_key: Optional[str] = Header(default=None, min_length=1, max_length=128),
+) -> dict[str, Any]:
+    try:
+        job_id = service.create(request, idempotency_key)
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {
+        "job_id": job_id,
+        "status": service.store.get(job_id)["status"],
+        "message": "Task accepted.",
+    }
+
+
+JobStatus = Literal[
+    "active",
+    "waiting",
+    "queued",
+    "running",
+    "waiting_user_choice",
+    "waiting_engineering_input",
+    "completed",
+    "failed",
+    "resource_mismatch",
+    "interrupted",
+    "cancelled",
+    "cancelling",
+]
+
+
+@app.get("/api/v1/jobs")
+def list_jobs(
+    status: Optional[JobStatus] = None,
+    search: str = Query(default="", max_length=100),
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> dict:
+    return service.store.list_jobs(status=status, search=search, limit=limit, offset=offset)
+
+
+@app.get("/api/v1/jobs/{job_id}/input")
+def job_input(job_id: str) -> dict:
+    try:
+        return {"request": service.store.get(job_id)["request"]}
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Task not found.") from error
 
 
 # 读取任务状态、进度、待选项及任务看板；不存在的任务返回未找到。
@@ -152,6 +238,7 @@ def get_job(job_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail="Task not found.") from error
     return {
         "job_id": job_id,
+        "title": job["request"].get("part_name") or "轴件工艺规划",
         "status": job["status"],
         "progress": job["progress"],
         "current_step": job["current_step"],
@@ -161,7 +248,53 @@ def get_job(job_id: str) -> dict[str, Any]:
         "task_execution": job.get("task_execution"),
         "error": job["error"],
         "result_ready": job["result"] is not None,
+        "harness": job.get("harness"),
+        "cancel_requested": job.get("cancel_requested", False),
     }
+
+
+@app.post("/api/v1/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> dict:
+    try:
+        return {"job_id": job_id, "status": service.cancel(job_id)}
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Task not found.") from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+
+
+@app.get("/api/v1/jobs/{job_id}/harness")
+def job_harness(job_id: str) -> dict:
+    try:
+        job = service.store.get(job_id)
+        from observability import summarize_model_calls
+        from workflow.harness import HarnessPolicy
+
+        return {
+            "job_id": job_id,
+            "status": job["status"],
+            "execution": job.get("harness"),
+            "model_usage": summarize_model_calls(job.get("execution_trace", [])),
+            "failure": {
+                "reason": job.get("error"),
+                "failed_nodes": [
+                    {"node": t["node"], "trace_id": t["trace_id"]}
+                    for t in job.get("execution_trace", [])
+                    if t["status"] == "error"
+                ],
+                "worker_failures": [
+                    {
+                        key: r.get(key)
+                        for key in ("task_id", "status", "attempt", "retryable", "error_category")
+                    }
+                    for r in (job.get("task_execution") or {}).get("results", {}).values()
+                    if r["status"] == "tool_failed"
+                ],
+            },
+            "configured_policy": HarnessPolicy.from_env().model_dump(),
+        }
+    except KeyError as error:
+        raise HTTPException(status_code=404, detail="Task not found.") from error
 
 
 # 接收加工时机选择并恢复等待中的工作流，状态不匹配时返回冲突。

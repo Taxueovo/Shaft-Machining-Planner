@@ -4,8 +4,11 @@ import os
 import ipaddress
 import secrets
 import uvicorn
+from pathlib import Path
+from dotenv import load_dotenv
 
 if __name__ == "__main__":
+    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
     host = os.getenv("BACKEND_HOST", "127.0.0.1")
     try:
         is_loopback = host.lower() == "localhost" or ipaddress.ip_address(host).is_loopback
@@ -15,7 +18,7 @@ if __name__ == "__main__":
         raise SystemExit(
             "BACKEND_HOST must be a loopback address; remote hosting is intentionally disabled."
         )
-    os.environ.setdefault("LOCAL_API_TOKEN", secrets.token_urlsafe(32))
+    os.environ["LOCAL_API_TOKEN"] = os.getenv("LOCAL_API_TOKEN") or secrets.token_urlsafe(32)
     uvicorn.run(
         "app:app",
         app_dir=os.path.dirname(os.path.abspath(__file__)),

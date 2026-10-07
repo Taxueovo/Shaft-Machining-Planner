@@ -243,7 +243,13 @@ def test_custom_route_rejects_deletion_without_mutating_live_job():
     final = next(op for op in state["process_route"] if op["name"] == "Final Inspection")
     with pytest.raises(ValueError, match="revalidation"):
         svc.customize_route("review-test", [ProcessOperation(**final)])
-    assert store.get("review-test") == before
+    after = store.get("review-test")
+    # Failed review is audited; the published engineering state remains unchanged.
+    for key in set(before) - {"execution_trace", "updated_at", "harness"}:
+        assert after[key] == before[key]
+    assert after["execution_trace"][-1]["node"] == "custom_route_review"
+    assert after["execution_trace"][-1]["status"] == "error"
+    assert after["harness"]["phase"] == "error" and not after["harness"]["active"]
 
 
 # 验证合法编辑重新匹配和审查，并递增路线修订号。

@@ -296,3 +296,15 @@ class ChoicesRequest(BaseModel):
     """批量提交多个特征的加工时机选择（至少一项）。"""
 
     choices: list[FeatureChoice] = Field(min_length=1)
+
+
+def validate_pending_choices(choices: ChoicesRequest, pending: list[dict]) -> dict[str, str]:
+    expected = {item["feature_id"]: {o["value"] for o in item["options"]} for item in pending}
+    supplied = {item.feature_id: item.processing_timing for item in choices.choices}
+    if (
+        len(supplied) != len(choices.choices)
+        or supplied.keys() != expected.keys()
+        or any(value not in expected[key] for key, value in supplied.items())
+    ):
+        raise ValueError("Choices must cover the pending features and allowed options only.")
+    return supplied
