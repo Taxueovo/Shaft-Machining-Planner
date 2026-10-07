@@ -4,8 +4,8 @@
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 0.1.x   | :white_check_mark: |
-| < 0.1   | :x:                |
+| 1.3.x local workbench | :white_check_mark: |
+| Older versions | Upgrade to the current reviewed version |
 
 ## Reporting a Vulnerability
 

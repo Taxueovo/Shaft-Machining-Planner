@@ -2,6 +2,10 @@
 
 版本 1.3.0。这套架构面向本机单进程的轴件规划。工艺规则和验收由服务端控制，模型只能在限定合同内提出路线修改、调度和审查建议。
 
+![运行架构职责分层](assets/system-architecture.svg)
+
+分层图用于快速理解组件职责；以下 Mermaid 图对应图与调度的控制关系。
+
 ## 图的职责
 
 ```mermaid
@@ -37,6 +41,50 @@ flowchart TD
 ## Harness 的执行边界
 
 服务与离线评测统一使用 `Workflow.invoke()`，内部才调用编译图。路线编辑复核也使用同一份持久化运行预算及只读 Worker 合同，在发布修改前再检查运行控制。
+
+### 人工中断如何恢复
+
+```mermaid
+sequenceDiagram
+  participant U as 用户 / 工作台
+  participant S as PlanningService
+  participant H as Harness
+  participant G as LangGraph
+  participant D as SQLite
+  U->>S: 提交结构化请求
+  S->>D: 保存输入、Prompt 与记忆快照
+  S->>H: Workflow.invoke（第一次调用）
+  H->>D: run_id / invocation_id / 策略与预算
+  H->>G: 受控执行
+  G->>D: 保存待确认问题与检查点
+  G-->>S: interrupt
+  H->>D: 结束本批活动时间，释放运行 lease
+  S-->>U: 显示实际待选项或工程问题
+  U->>S: 提交答案
+  S->>D: 锁内检查状态、答案、检查点和 active
+  S->>H: Workflow.invoke（新的 invocation_id）
+  H->>D: 原 run_id 与累计预算，版本比对
+  H->>G: Command resume，沿用上下文快照
+  G-->>S: 显式终态与验证结论
+  S->>D: 检查取消状态后发布结果
+```
+
+`lease` 是本机持久化 active 标记与线程锁控制，不是多实例或跨机器租约。工程等待结束后新开调用批次，但没有刷新任务的预算、Prompt 或历史记忆。
+
+### 路线编辑如何避免覆盖有效方案
+
+```mermaid
+flowchart LR
+  A[复制原方案为候选] --> B[结构与尺寸校验]
+  B --> C[资源合同 + 并行专家合同]
+  C --> D[规则验证]
+  D --> E[预算 / 取消 / 路线修订再检查]
+  E -->|全部通过| F[锁内发布新修订]
+  B -->|失败| X[保留原方案，记录复核故障]
+  C -->|失败| X
+  D -->|失败| X
+  E -->|停止或版本冲突| X
+```
 
 | 能力 | 当前实现 |
 | --- | --- |
@@ -80,7 +128,13 @@ flowchart TD
 
 任务详情展开“运行控制、预算与故障记录”，可查看上限、累计使用数、调用批次、事件和故障。旧记录或显式演示缓存没有新的运行控制记录时，页面会说明。
 
+![合成任务的累计运行记录](assets/runtime-harness.jpg)
+
+示例图在两次调用后仍保留同一 run_id，节点与工具次数继续累计。它验证记录与控制行为，不是模型效率或生产效果的对比图。
+
 本地鉴权接口：
+
+完整接口表、合成请求和错误处理见 [本机 API 速查](api.md)。
 
 - `GET /api/v1/jobs/{job_id}/harness`：运行记录、模型使用观测和故障摘要。
 - `POST /api/v1/jobs/{job_id}/cancel`：请求协作式取消；重复取消返回当前状态。

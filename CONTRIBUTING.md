@@ -1,6 +1,6 @@
-# Contributing to Shaft Machining Planner
+# Contributing to shaftmachiningplanner
 
-Thank you for contributing! Shaft Machining Planner is a motor-shaft process planning system
+Thank you for contributing! shaftmachiningplanner is a motor-shaft process planning system
 (Python backend + frontend).
 
 ## Getting Started
@@ -29,7 +29,11 @@ Thank you for contributing! Shaft Machining Planner is a motor-shaft process pla
 - Run `python scripts/verify_public_sources.py` for capability workbook changes;
   automatic scraping must never overwrite engineering values. Record source URLs
   and review dates only after a human comparison with the official page.
-- The project is fully English by design; keep all UI strings, comments, and
-  documentation in English.
+- The local workbench and user guides use Simplified Chinese; engineering contracts
+  and operation identifiers may remain English. Match the surrounding language and
+  keep user-facing product naming as `shaftmachiningplanner`.
+- Changes to workflow behavior must update the routing/Harness guide and relevant
+  evaluation definitions. Documentation screenshots must use synthetic local inputs,
+  retain truthful status/usage labels, and include source/version notes.
 
 Thanks again for helping improve the project!
