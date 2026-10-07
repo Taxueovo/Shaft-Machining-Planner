@@ -1,145 +1,150 @@
-# shaftmachiningplanner 本地工作台使用指南
+# shaftmachiningplanner user guide
 
-版本：1.3.0。本机单进程软件，用于轴类零件工艺规划、资源样例匹配与工程复核。下图均来自规则模式的合成演示，不是客户项目或生产记录。
+Version 1.3.0. The local workbench supports shaft process planning, resource screening, and engineering review. Screenshots show the Simplified Chinese interface using synthetic inputs in rules mode.
 
-![工作台总览](assets/workbench.jpg)
+![Workbench overview](assets/workbench.jpg)
 
-## 页面导航
+## Navigation
 
-| 页面 | 主要用途 | 进入之后做什么 |
+| Page | Purpose | Typical action |
 | --- | --- | --- |
-| 工作台 | 概览与最近任务 | 查看待确认事项，从新建、预设或案例开始 |
-| 新建规划 | 结构化输入与草稿 | 核对材料、毛坯、轴段、特征、处理要求后提交 |
-| 任务中心 | 历史查询与继续处理 | 按名称 / 材料 / 编号搜索，筛选状态，复用原输入 |
-| 轴件预设 / 案例库 | 提供录入起点 | 载入后依据本次图纸修改，重新执行规划 |
-| 知识库 | 可选 RAG 资料与索引 | 检查模块、资料和索引；核心安装可没有此模块 |
-| 系统状态 | 本机配置概览与停止入口 | 查看模式和资源文件；配置完整不代表实连已验证 |
+| Workbench | Summary and recent tasks | Review pending items or start from a new form, preset, or case |
+| New plan | Structured input and browser draft | Define the part and treatment requirements, then submit |
+| Task center | History and continuation | Search by name, material, or ID; filter status; reuse original input |
+| Shaft presets / Case library | Input templates | Load and revise a template against the current drawing |
+| Knowledge library | Optional RAG documents and index | Inspect module availability, documents, and indexing |
+| System status | Configuration and shutdown | Inspect runtime mode, resource files, optional services, and task counts |
 
-## 安装与启动
+## Installation and startup
 
-在项目根目录使用 Python 3.10（当前锁文件与 CI 的验证版本）。首次安装：
+Use Python 3.10, matching the core lockfiles and CI. From the repository root:
 
 ```bash
 python -m venv .venv
 # macOS / Linux
 source .venv/bin/activate
-# Windows PowerShell 使用 .venv\Scripts\Activate.ps1
+# Windows PowerShell: .venv\Scripts\Activate.ps1
 python -m pip install --require-hashes -r requirements.lock.txt
-```
-
-复制 `.env.example` 为 `.env`，首次体验可设置 `LLM_PROVIDER=rules`，无需模型密钥；腾讯记忆默认关闭。之后启动：
-
-```bash
+cp .env.example .env
 python start_shaftplanner.py
 ```
 
-打开 <http://127.0.0.1:8000>。启动器检查服务身份和就绪状态；端口冲突或启动超时会报错。修改端口时，同时更新对应的 `BACKEND_PORT` / `BACKEND_URL` 和 `FRONTEND_PORT` / `FRONTEND_URL`。
+In PowerShell, copy the configuration with `Copy-Item .env.example .env`. The example selects `LLM_PROVIDER=rules` and disables external memory, so the core workflow runs without a model key.
 
-默认关闭浏览器后服务继续运行，可在启动终端按 Ctrl+C，或在“系统状态”发送停止请求。自动空闲退出需要主动设置 `AUTO_SHUTDOWN_ON_IDLE=true`，默认超时 300 秒；执行中和等待人工输入的任务受到保护。
+Open <http://127.0.0.1:8000>. The launcher checks service identity and readiness and reports port conflicts or startup timeouts. If you change a port, update its corresponding `BACKEND_PORT` / `BACKEND_URL` or `FRONTEND_PORT` / `FRONTEND_URL` together.
 
-分开启动用于开发排查：先在本机 `.env` 中设置非空 `LOCAL_API_TOKEN`，两端使用同一个值；然后分别在终端运行 `python backend/run_backend.py` 和 `python frontend/run_frontend.py --frontend-only --no-browser`。不要把真实 Token 写入截图或 Git。正常使用优先采用统一启动器。
+Services continue running after the browser closes. Use Ctrl+C in the launch terminal or the stop action in System status. Optional idle shutdown uses `AUTO_SHUTDOWN_ON_IDLE=true` and a default 300-second heartbeat timeout; running jobs and jobs awaiting human input are protected.
 
-## 一次完整规划
+For separate development startup, set a nonempty `LOCAL_API_TOKEN` in the local `.env` and use the same value in both services. Run these commands in separate terminals:
+
+```bash
+python backend/run_backend.py
+python frontend/run_frontend.py --frontend-only --no-browser
+```
+
+The unified launcher handles credentials for normal local use. Keep actual tokens out of screenshots and version control.
+
+## Planning workflow
 
 ```mermaid
 flowchart LR
-  A[选起点 / 载入输入] --> B[核对材料和几何]
-  B --> C[确认特征与处理要求]
-  C --> D[提交 / 等待人工事项]
-  D --> E[查看规则与专家意见]
-  E --> F[编辑复核 / 导出草案]
+  A[Load or enter input] --> B[Review material and geometry]
+  B --> C[Confirm features and treatments]
+  C --> D[Submit and answer pending questions]
+  D --> E[Inspect rules and specialist findings]
+  E --> F[Review revisions and export draft]
 ```
 
-1. 从工作台选择“新建规划”，按图纸核对材料、毛坯、轴段、特征和处理要求。默认示例只是演示输入。
-2. 用零件名称方便查找。重量、表面处理和批量会进入规划输入。路线预览与提交使用同一份参数。
-3. 尚未填完时，点击“保存本机草稿”。草稿只有一份，主动保存会覆盖同一浏览器的旧草稿；刷新后点击“恢复草稿”。浏览器存储不可用时会提示。草稿不等于服务器任务备份。
-4. 提交后查看执行状态；需要工程信息或工艺选择时补充后继续。结果包含路线、资源候选、校核及独立专家意见。Agent 任务和调用轨迹可按需展开。
-5. 核对结果后可编辑路线、导出 Excel 工艺草案。导出文件在项目的 `output/` 目录。结果及草案均需工程师复核。
+1. Open New plan and define material, blank geometry, shaft segments, features, and treatment requirements against the drawing.
+2. Set a searchable part name. Weight, surface treatment, and batch size are saved with the request. Route preview and submission use the same form parameters.
+3. Save a browser draft when pausing input. A manual save replaces the previous draft in that browser; restore it after refreshing. The draft is stored separately from server task records.
+4. Submit and inspect the task status. Supply the requested process choice or engineering answer when prompted. Expand agent tasks and traces to inspect execution evidence.
+5. Review the route, resource candidates, deterministic checks, and specialist findings. Edit and revalidate the route as needed, then export an Excel process draft to `output/`.
 
-任务详情可取消当前执行，也可展开运行预算与故障记录。取消保留原输入，在途调用可能需等待超时。人工恢复和路线编辑复核共用累计预算；详见 [LangGraph 与 Harness 说明](langgraph-harness.md)。
+Task details expose cancellation and cumulative execution records. Human continuation and edited-route review share the run budget; see [Architecture and harness](langgraph-harness.md).
 
-任务中心支持按名称、材料或任务编号查找，以及状态筛选和分页。“从输入新建”载入原始输入，修改并提交后生成独立任务；不会自动提交，也不会修改原记录。
+### Example: stepped shaft
 
-### 输入实例：阶梯轴
+![Material, blank, and shaft-segment form](assets/part-input.jpg)
 
-![材料、毛坯与轴段输入](assets/part-input.jpg)
+The example uses 45 steel, a solid blank of diameter 65 mm, and three segments: S01 diameter 60 × length 80 mm, S02 diameter 50 × length 60 mm, and S03 diameter 45 × length 40 mm. Total length is 180 mm. Features include a keyway and a hole.
 
-载入示例时可看到 45 钢、φ65 mm 实心毛坯，以及 S01 φ60 × 80、S02 φ50 × 60、S03 φ45 × 40 mm 三个轴段，总长 180 mm。默认特征包含键槽与孔。它用于演示录入方式，公差、粗糙度及处理要求仍需用户按真实图纸确认。
+Review tolerances, roughness, and treatment requirements for the intended part. The blank diameter must accommodate the maximum finished diameter. Feature locations use either global coordinates or offsets within a segment. Existing blank bores and required finished bores have separate fields. Heat-treatment requirements come from the current drawing.
 
-核对重点：毛坯直径不得小于成品最大外径；全局位置与段内偏移不能混用；毛坯已有孔径和成品内孔要求不是同一个字段。未指定热处理时，不要以历史经验代替本次图纸要求。
+### Task history and continuation
 
-### 查找、恢复与重新规划
+![Task center with status filters](assets/task-center.jpg)
 
-![任务中心与状态筛选](assets/task-center.jpg)
+The task center supports search, status filters, and pagination. Reusing input loads a previous request into the form; submission creates an independent task and preserves the source record.
 
-| 当前状态 | 含义 | 建议操作 |
+| Status | Meaning | Next action |
 | --- | --- | --- |
-| 排队中 / 执行中 | 已接收任务，等待或正在执行 | 查看进度；必要时取消 |
-| 待工艺选择 | 高精密特征需要确认加工时机 | 根据图纸选择页面实际提供的选项后继续 |
-| 待工程信息 | 某个任务缺少阻塞信息 | 补充所问资料，不能以模型建议代替缺失依据 |
-| 已生成草案 | 规划结束，有待工程师复核的结果 | 查看结论、意见、资源与路线后导出 |
-| 资源不匹配 | 当前核心资源筛查不满足 | 核实样例覆盖范围，补充真实能力后新建任务 |
-| 执行失败 | 校核或运行控制失败 | 查看故障记录；修正输入 / 配置后从输入新建 |
-| 重启中断 | 服务重启中断了执行 | 保留证据，从原输入创建独立任务 |
-| 正在取消 / 已取消 | 边界停止处理中 / 已停止 | 等待在途调用返回；需要重做时从输入新建 |
+| Queued / Running | Accepted and waiting or executing | Inspect progress; cancel if necessary |
+| Pending process choice | A precision feature needs an operation-timing decision | Select an option provided by the page |
+| Pending engineering input | A task requires blocking information | Supply the requested evidence or answer |
+| Draft generated | Planning completed with a reviewable result | Inspect verdicts, conditions, resources, and route |
+| Resource mismatch | Core resource screening failed | Check sample coverage and obtain actual capability data |
+| Execution failed | Verification or runtime control failed | Inspect failure records; correct input/configuration and create a new task |
+| Interrupted by restart | Startup detected unfinished execution | Preserve the record and create a new task from saved input |
+| Cancelling / Cancelled | Cooperative stop requested or completed | Wait for in-flight work to finish; create a new task to replan |
 
-“恢复草稿”恢复浏览器的未提交表单；“提交选择并继续”恢复同一个任务的检查点；“从输入新建”创建新任务。这三种操作的保存位置和执行语义不同。
+Browser draft restoration restores an unsubmitted form. Human continuation resumes the same task checkpoint. Historical-input reuse creates a new task. Each operation has its own persistence and execution semantics.
 
-### 解读结果与修改路线
+### Results and route revisions
 
-![确定性规则校核结果](assets/process-result.jpg)
+![Deterministic verification result](assets/process-result.jpg)
 
-`pass` 和 `conditional_pass` 是本软件的校核结论。后者要求查看条件、专家发现和资源缺口。即使所有显示的规则均通过，也没有完成装夹、参数、库存、检验等现场确认。
+`pass` and `conditional_pass` are software verification verdicts. For `conditional_pass`, inspect the outstanding conditions, specialist findings, and resource gaps. Engineering release requires site-specific confirmation of workholding, parameters, stock, and inspection.
 
-![工序与机床、刀具候选](assets/process-route.jpg)
+![Operations and machine/tool candidates](assets/process-route.jpg)
 
-每道工序显示匹配的样例候选和覆盖说明。“未覆盖”需要补资料或工程确认，不能据此补造推荐。点击“编辑工艺路线”可调整工序；保存会对独立候选重新匹配资源、进行专家与规则复核，成功后递增路线修订号，失败时保留原方案。界面中的部分工序名称与工程结论仍为英文。
+Operations display public resource candidates and coverage notes. Missing coverage remains an explicit review item. Route edits are copied to a candidate, structurally validated, rematched to resources, and reviewed by specialists and deterministic rules. A successful review increments the route revision; failure retains the current published route and records the review error.
 
-导出得到 Excel 工艺草案，并非 Word / PDF 文件或生产下达指令。保留方案的修订信息与工程复核记录，避免将旧导出当成当前路线。
+Excel exports contain process drafts. Preserve revision identifiers and engineering review records alongside exported files so that the current route can be identified.
 
-### 运行记录与取消
+### Runtime records and cancellation
 
-![运行控制与累计预算](assets/runtime-harness.jpg)
+![Execution controls and cumulative budgets](assets/runtime-harness.jpg)
 
-`run_id` 标识同一运行；`invocation_id` 标识一次执行、人工恢复或编辑复核批次。上限与消耗跨恢复累计。活动秒数在批次结束时记录，不包含等待人工。未观察到完整模型用量时显示未知，不代表费用为零。
+`run_id` identifies the run. `invocation_id` identifies an initial execution, human continuation, or edited-route review. Budgets accumulate across these invocations. Active time is recorded when an invocation ends and excludes human waiting. Missing model-usage observations remain unknown.
 
-取消需在工作台对话框中确认。取消是协作式停止，不能强杀已开始的模型或本地函数；任务结束前可能显示“正在取消”。原输入与执行证据保留；取消后不会继续显示待选表单。
+The workbench asks for confirmation before requesting cancellation. Cancellation stops subsequent execution at control boundaries; in-flight model calls and local functions must return or time out. The task may show Cancelling during this interval. Original input and execution evidence are retained, and cancelled jobs stop presenting pending answer forms.
 
-## 重启、历史与备份
+## Restart, retention, and backup
 
-任务、输入、结果、执行轨迹及 LangGraph 检查点使用同一个 SQLite 文件，默认 `data/jobs.sqlite3`，可通过 `JOB_DB_FILE` 修改。
+SQLite stores tasks, inputs, results, traces, and LangGraph checkpoints. The default path is `data/jobs.sqlite3`; override it with `JOB_DB_FILE`.
 
-- 服务启动时，原来排队或执行中的任务标记为“重启中断”；可从保存的输入重新规划。等待人工输入的任务保留问题及检查点。
-- 历史记录有容量限制：创建任务时总记录达到 600 条，若已结束记录超过 500 条，会将已结束记录清理到最多 500 条；不是把全部任务压缩到 500 条。等待中的任务不在这个清理集合。长期留存请自行备份。
-- 备份前停止前后端服务，再复制 SQLite 文件及仍存在的 `-wal` / `-shm` 伴生文件，并备份需要保留的 `output/`。不要在应用写入期间只复制主数据库。
-- 恢复时也先停止软件，将备份恢复到配置的数据库位置，再启动。恢复的文件应来自同一版本或经过兼容性验证；覆盖前保留当前副本。
-- 案例库和知识库另有文件及索引，迁移整套工作空间时还要保留所使用的数据目录；浏览器草稿不会随数据库迁移。
+- On startup, queued and running jobs become interrupted, and cancellation recovery resolves cancelled jobs. Jobs waiting for human input retain their questions and checkpoints.
+- At job creation, cleanup is considered when the total record count reaches 600. If terminal records exceed 500, terminal history is pruned to at most 500 records. Human-waiting records are excluded from that cleanup set.
+- Stop both services before backing up. Copy the database and any remaining `-wal` / `-shm` companion files, together with required files in `output/`.
+- Stop services before restoring. Retain a copy of the current database, restore to the configured path, and verify version compatibility before startup.
+- Case-library data and knowledge indexes have separate files. Include the relevant data directories when migrating a workspace. Browser drafts remain in browser storage.
 
-## 配置与升级
+## Configuration and upgrades
 
-“系统状态”显示当前模式、样例资源文件、可选知识模块、腾讯记忆配置和任务概览。配置填写完整不代表外部服务已经连接成功；该页面不会主动向外部服务发送零件信息。
+System status reports mode, public resource files, optional knowledge modules, memory configuration, and task counts. It displays local configuration without sending part data to external services. Live connectivity is checked separately.
 
-![系统状态：本机模式与可选模块](assets/system-status.jpg)
+![System status and optional modules](assets/system-status.jpg)
 
-腾讯记忆的部署、只读接入和验证方法见 [接入说明](../research/tencentdb-agent-memory-integration.md)。它作为历史经验检索层，当前本机任务与流程检查点仍由 SQLite 保存。
+The [memory integration assessment](../research/tencentdb-agent-memory-integration.md) describes service deployment and read-only retrieval. Local tasks and checkpoints continue to use SQLite.
 
-升级前停止软件并备份数据，更新代码后按锁文件安装依赖，再启动检查系统状态与一条演示规划。开发验证可使用 `requirements-dev.lock.txt` 并运行 `python -m pytest -q`。
+Before upgrading, stop services and back up data. Update code, install the version's locked dependencies, restart, and verify System status and one synthetic planning run. Development checks use `requirements-dev.lock.txt` and `python -m pytest -q`.
 
-## 常见问题
+## Troubleshooting
 
-| 现象 | 检查与处理 |
+| Symptom | Diagnosis and action |
 | --- | --- |
-| 启动报告端口被占用 | 查看启动日志中的服务身份；不要任意终止其他项目。需要改端口时，同时改 PORT 与 URL |
-| 配了密钥但仍像规则模式 | 查看系统状态、重启后的模式和日志；规则回退不证明模型调用成功 |
-| 知识库不可用或没有资料 | 安装可选 RAG 锁文件、配置 Embedding、导入允许使用的资料并检查索引 |
-| 腾讯记忆显示未完整 / unavailable | 按接入文档核对 memory-core URL、网关凭据和身份绑定；先做独立服务验收 |
-| 恢复提示配置或资源变化 | 原任务绑定版本已不同；恢复原环境或从输入新建，不能强行沿旧证据继续 |
-| 预算耗尽 | 查看停止原因及消耗，排查输入或循环。修改 HARNESS 配置只用于新任务，不能给旧任务重置额度 |
-| 已生成结果却没有运行控制记录 | 可能是旧记录或显式演示缓存；界面会说明，不能据此推断该记录受新 Harness 控制 |
-| 任务找不到 | 核对 JOB_DB_FILE 与历史清理；从已有备份恢复或重新规划 |
+| Port already in use | Inspect the service identity in startup logs. Change the corresponding port and URL together if required |
+| Model configured, but output resembles rules mode | Check System status and startup logs; inspect model-call records for successful provider requests |
+| Knowledge library unavailable or empty | Install optional RAG dependencies, configure embeddings, import permitted documents, and inspect the index |
+| Memory unavailable or configuration incomplete | Verify memory-core URL, gateway credentials, and identity bindings; complete independent service acceptance |
+| Continuation rejected after configuration/resource changes | Restore a compatible environment or create a new task from the saved input |
+| Budget exhausted | Inspect the stop reason and usage. Diagnose input or repeated execution; HARNESS changes apply to new runs |
+| Legacy result has no harness record | Check the legacy/demo-cache notice; the record predates the current execution controls |
+| Task missing | Check `JOB_DB_FILE`, retention, and available backups |
 
-更多默认策略、失败类别与执行边界见 [运行架构](langgraph-harness.md)；评测与可选候选优化见 [评测说明](../evaluation/README.md)。
+See the [harness reference](langgraph-harness.md) for policies and fault classes, and the [evaluation protocol](../evaluation/README.md) for prompt candidates.
 
-## 当前适用范围
+## Deployment scope
 
-本版适合本机演示和工程辅助验证。尚无多用户账户、角色权限、集中审计、安装包或工厂现场验收。资源库的文件存在和匹配结果不证明设备现场可用。生产放行仍需要核实图纸、装夹、参数、检验、实际设备刀具及外协能力。
+Version 1.3.0 supports local demonstrations and engineering-assistance validation. Multi-user authorization, centralized audit, packaged installation, and factory acceptance remain future work. Resource samples establish preliminary capability coverage; actual machines, tools, subcontracting, and production release require engineering confirmation.

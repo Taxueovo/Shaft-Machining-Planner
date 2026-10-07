@@ -1,25 +1,25 @@
-# 更新记录
+# Changelog
 
 ## 1.3.0 — 2026-10-07
 
-- Planner 改为按决策证据变化介入，普通调度波次复用计划；Send 只传必要业务状态和依赖产物。
-- 新增持久化运行 Harness：跨恢复的预算、上下文快照、运行身份、配置比对、协作式取消与故障记录。
-- 服务和离线评测共用执行入口，路线编辑复核也纳入预算与合同控制。
-- 任务失败按类型有限重试；人工恢复原子提交，队列失败保留问题；创建任务支持幂等键和队列上限。
-- 任务页面增加运行控制面板和工作台内取消确认对话框；评测保存预算停止的 badcase。
-- 补充 Harness 架构、默认策略、验证方法和部署边界文档。
-- 重写中文图文首页，增加 7 张合成任务实拍截图、职责分层图、恢复 / 编辑 / 评测图、本机 API 速查与示例；同步修正旧的上下文、清理和语言说明。
+- Trigger Planner intervention on changes to decision evidence; reuse plans during ordinary scheduling and narrow Send payloads to required input and dependency outputs.
+- Add a persistent execution harness with cumulative budgets, context snapshots, run identities, compatibility checks, cooperative cancellation, and failure records.
+- Share the execution entry point across services, offline evaluation, and edited-route review.
+- Add classified bounded retries, atomic human continuation, queue rollback, idempotent job creation, and queue admission limits.
+- Add execution controls and an in-workbench cancellation dialog; record budget stops in evaluation failure reports.
+- Document harness contracts, default policies, verification coverage, and deployment boundaries.
+- Publish English project documentation with seven browser screenshots of synthetic tasks, editable architecture diagrams, recovery/review/evaluation flows, an API reference, and a validated sample request. Align snapshot, retention, and language conventions with the implementation.
 
 ## 1.2.0 — 2026-10-07
 
-- 统一为本地工艺工作台：侧边导航、真实任务概览、最近任务和系统状态页。
-- 新增持久化任务中心，支持名称 / 材料 / 编号查找、状态筛选、分页和历史输入复用。
-- 新建页支持零件名称、重量、表面处理、批量以及主动保存 / 恢复浏览器草稿；错误持续显示，离开未保存输入时提醒。
-- 启动后显式标记中断任务，保留等待人工输入的任务；空闲自动退出默认关闭。
-- 启动器校验服务身份和就绪状态，启动失败退出并清理其启动的进程。
-- 结果页突出工程草案与复核入口，技术证据按需展开；缺失任务和无结果终态停止轮询。
-- 延续可选腾讯记忆只读适配器、工艺状态校核、执行遥测及离线评测能力。记忆默认关闭，未在真实腾讯云服务或工厂现场完成验收。
-- 新增本地软件指南及任务查询、重启、状态接口和启动器的回归验证。
+- Introduce the local workbench with sidebar navigation, task summaries, recent records, and system status.
+- Add persistent task history with name/material/ID search, status filters, pagination, and original-input reuse.
+- Add part name, weight, surface treatment, batch size, and manual browser draft save/restore; retain input errors and warn before leaving unsaved changes.
+- Mark interrupted execution on startup and preserve human-waiting jobs; disable idle shutdown by default.
+- Verify service identity and readiness in the launcher; clean up launcher-owned processes on startup failure.
+- Expose engineering drafts and review actions on result pages; stop polling missing jobs and terminal jobs without results.
+- Retain the optional read-only Tencent memory adapter, process-state checks, telemetry, and offline evaluation. Memory remains disabled by default; live-service and factory acceptance are pending.
+- Add the user guide and regression coverage for history, restart handling, status endpoints, and launcher behavior.
 
 ## [0.2.0] - 2026-08-16
 

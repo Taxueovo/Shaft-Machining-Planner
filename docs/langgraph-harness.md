@@ -1,152 +1,156 @@
-# shaftmachiningplanner：LangGraph 路由与运行 Harness
+# LangGraph architecture and execution harness
 
-版本 1.3.0。这套架构面向本机单进程的轴件规划。工艺规则和验收由服务端控制，模型只能在限定合同内提出路线修改、调度和审查建议。
+Version 1.3.0. shaftmachiningplanner runs a local, single-process workflow. Server-side rules and task contracts govern process acceptance. Models operate within bounded planning and review roles.
 
-![运行架构职责分层](assets/system-architecture.svg)
+![Component responsibilities](assets/system-architecture.svg)
 
-分层图用于快速理解组件职责；以下 Mermaid 图对应图与调度的控制关系。
-
-## 图的职责
+## Workflow and routing
 
 ```mermaid
 flowchart TD
-  A[运行 Harness] --> B[输入规划 / 几何分析 / 热处理决策]
-  B --> C[精密特征选择]
-  C --> D[确定性任务路由]
-  D -->|新决策证据| P[受约束的可选 Planner]
+  A[Execution harness] --> B[Input planning, geometry, heat treatment]
+  B --> C[Precision-feature choices]
+  C --> D[Deterministic scheduler]
+  D -->|Changed decision evidence| P[Optional constrained Planner]
   P --> D
-  D -->|可运行合同| E[Send 并行 Worker]
-  E --> F[单写入者收集结果]
+  D -->|Eligible task contracts| E[Parallel Send workers]
+  E --> F[Single result writer]
   F --> D
-  D -->|缺少阻塞信息| H[工程输入 interrupt]
-  H -->|校验后恢复| D
-  D -->|无就绪任务| G[必需任务验收 / 专家协调]
-  G --> V[确定性验证]
-  V -->|可修复且有预算| R[Repair]
-  R -->|保留修复路线 / 使下游结果失效| D
-  V -->|通过 / 有条件通过| X[工程草案]
-  G -->|必需产物缺失| Z[失败]
-  V -->|不可修复 / 超限| Z
+  D -->|Blocking information missing| H[Engineering-input interrupt]
+  H -->|Validated continuation| D
+  D -->|No ready tasks| G[Required-output acceptance and review coordination]
+  G --> V[Deterministic verification]
+  V -->|Repairable within budget| R[Repair]
+  R -->|Preserve proposal and invalidate dependents| D
+  V -->|Pass or conditional pass| X[Engineering draft]
+  G -->|Required output missing| Z[Failure]
+  V -->|Unrepairable or limit reached| Z
 ```
 
-图中固定的五类核心任务仍是路线、资源、加工审查、质量审查、热处理审查。装夹与替代资源分析按零件条件和缺口追加。单写入者发布共享业务状态，Worker 在隔离输入上执行，只返回其结果槽。
+The fixed core tasks are route generation, resource selection, machining review, quality review, and heat-treatment review. Workholding and alternative-resource analysis are conditional tasks. Workers receive isolated inputs and return their own result slots; a single writer publishes shared business state.
 
-本版的优化：
+### Scheduling and result validity
 
-- **按证据变化介入模型。** 首次任务计划、资源不可行的新证据、路线修复次数变化、工程回答变化才重新考虑模型计划；普通 Worker 完成和调度推进复用计划。同一证据下模型计划失败也不逐轮反复请求。模型规划仍最多 4 次，调度最多 16 波。
-- **收窄 Send 输入。** Worker 只接收业务输入、自己的依赖产物与必要路线状态；不复制全局 Trace、调度历史和兄弟审查报告。自己的上次尝试记录单独放在信封中，保证精简状态后重试计数仍正确。
-- **保留版本失效逻辑。** 合同、输入、路线、上游产物、资源及运行身份共同决定结果版本。Repair 的路线作为新提案保留，重跑受影响的资源和审查，避免生成器覆盖修复。
-- **明确结束条件。** 未知调度动作、没有就绪任务的分发、缺少显式验证结论均不会进入成功路径。模型总结不能替代必需任务和规则校核。
+- **Evidence-triggered replanning.** Initial planning, new resource infeasibility, changed repair counts, and new engineering answers can trigger Planner intervention. Ordinary worker completion advances the deterministic schedule using the existing plan. A failed Planner proposal is not repeatedly requested for unchanged evidence. Limits remain four Planner calls and sixteen scheduler waves.
+- **Narrow worker envelopes.** Each `Send` payload contains business input, required dependency outputs, necessary route state, and the worker's previous attempt record. Global traces, scheduling history, and sibling review reports stay outside the envelope.
+- **Versioned results.** Contract, input, route, upstream outputs, resources, and run identity determine result validity. Repair preserves the revised route proposal and invalidates affected resource and review outputs.
+- **Explicit completion.** Unknown actions, dispatch without eligible tasks, missing required outputs, and absent or invalid verification verdicts fail the completion contract. Successful completion requires an explicit `pass` or `conditional_pass` verdict.
 
-## Harness 的执行边界
+## Harness entry point
 
-服务与离线评测统一使用 `Workflow.invoke()`，内部才调用编译图。路线编辑复核也使用同一份持久化运行预算及只读 Worker 合同，在发布修改前再检查运行控制。
+Services and offline evaluation call `Workflow.invoke()`, which controls access to the compiled graph. Edited-route review uses the same persisted budgets and read-only worker contracts, with a final control check before publication.
 
-### 人工中断如何恢复
+### Human continuation
 
 ```mermaid
 sequenceDiagram
-  participant U as 用户 / 工作台
+  participant U as User / Workbench
   participant S as PlanningService
   participant H as Harness
   participant G as LangGraph
   participant D as SQLite
-  U->>S: 提交结构化请求
-  S->>D: 保存输入、Prompt 与记忆快照
-  S->>H: Workflow.invoke（第一次调用）
-  H->>D: run_id / invocation_id / 策略与预算
-  H->>G: 受控执行
-  G->>D: 保存待确认问题与检查点
+  U->>S: Submit structured request
+  S->>D: Persist input, prompt, and memory snapshots
+  S->>H: Workflow.invoke (initial invocation)
+  H->>D: Save run_id, invocation_id, policy, budgets
+  H->>G: Execute under controls
+  G->>D: Persist pending questions and checkpoint
   G-->>S: interrupt
-  H->>D: 结束本批活动时间，释放运行 lease
-  S-->>U: 显示实际待选项或工程问题
-  U->>S: 提交答案
-  S->>D: 锁内检查状态、答案、检查点和 active
-  S->>H: Workflow.invoke（新的 invocation_id）
-  H->>D: 原 run_id 与累计预算，版本比对
-  H->>G: Command resume，沿用上下文快照
-  G-->>S: 显式终态与验证结论
-  S->>D: 检查取消状态后发布结果
+  H->>D: Record active time and release active flag
+  S-->>U: Display offered choices or engineering questions
+  U->>S: Submit answers
+  S->>D: Validate state, answers, checkpoint, active flag under lock
+  S->>H: Workflow.invoke (new invocation_id)
+  H->>D: Reuse run_id and cumulative budgets; compare manifest
+  H->>G: Command resume with saved context
+  G-->>S: Explicit terminal state and verification verdict
+  S->>D: Check cancellation and publish result
 ```
 
-`lease` 是本机持久化 active 标记与线程锁控制，不是多实例或跨机器租约。工程等待结束后新开调用批次，但没有刷新任务的预算、Prompt 或历史记忆。
+The persisted active flag and local thread locks coordinate invocations in one process. Human continuation starts a new invocation while retaining the run's budget, prompt, and memory snapshots. Multi-instance leases require a separate distributed coordination design.
 
-### 路线编辑如何避免覆盖有效方案
+### Edited-route publication
 
 ```mermaid
 flowchart LR
-  A[复制原方案为候选] --> B[结构与尺寸校验]
-  B --> C[资源合同 + 并行专家合同]
-  C --> D[规则验证]
-  D --> E[预算 / 取消 / 路线修订再检查]
-  E -->|全部通过| F[锁内发布新修订]
-  B -->|失败| X[保留原方案，记录复核故障]
-  C -->|失败| X
-  D -->|失败| X
-  E -->|停止或版本冲突| X
+  A[Copy published route to candidate] --> B[Validate structure and dimensions]
+  B --> C[Resource contract and parallel specialist contracts]
+  C --> D[Rule verification]
+  D --> E[Recheck budget, cancellation, and route revision]
+  E -->|Accepted| F[Publish revision under lock]
+  B -->|Failure| X[Retain published route and record failure]
+  C -->|Failure| X
+  D -->|Failure| X
+  E -->|Stopped or revision conflict| X
 ```
 
-| 能力 | 当前实现 |
+Candidate preparation is isolated from publication. Failed reviews append observations while preserving the current route. Successful candidates are published only after the final control and revision checks.
+
+## Execution contracts
+
+| Control | Implementation |
 | --- | --- |
-| 运行身份 | 持久化 run_id；每次首次执行、人工恢复或路线复核有独立 invocation_id，Trace 关联这两个编号 |
-| 版本绑定 | 输入摘要、模型配置身份、Prompt 摘要、资源文件哈希、流水线 / Harness 版本；恢复前比对，不同版本拒绝沿旧状态继续 |
-| 输入上下文 | 首次执行保存 Prompt 内容快照和历史记忆快照；恢复使用原快照，不重新取一套历史建议 |
-| 全局预算 | 节点 / 复核入口、模型请求、工具调用、活动时间跨恢复累计；并行线程在同一锁内预留预算 |
-| 模型控制 | 限制单次超时与输出 Token 上限，SDK 隐式重试关闭；JSON 格式兼容回退算一次新的请求 |
-| 工具权限 | 角色白名单、合同权限子集与任务局部预算；实际只读查询、引用检索和路线检查均经过预算入口 |
-| 重试 | 传输超时、连接故障和特定服务端 / 限流错误最多两次尝试；参数、验证和权限错误不重试 |
-| 人工恢复 | 在锁内验证等待状态、实际待选项 / 待回答任务及检查点；重复请求不能提交两个恢复；队列提交失败恢复等待状态 |
-| 请求去重 | 创建接口接受 Idempotency-Key；相同键与相同输入返回已有记录，不同输入冲突；浏览器网络重试复用该键 |
-| 取消 | 排队、运行、人工等待可取消；边界检查终止后续执行，禁止迟到结果覆盖取消状态；保留原输入与证据 |
-| 故障证据 | 持久化控制事件（最近 200 条）、每节点 Trace、Worker 错误类别 / 重试性、模型使用观测；失败路线编辑也留记录 |
-| 评测 | 同一执行 Harness 跑合成案例，预算停止生成可检查 badcase；候选比较和工程复核门槛保留，不自动启用候选 |
+| Run identity | Persisted `run_id`; separate `invocation_id` for planning, continuation, and route review; traces carry both |
+| Compatibility manifest | Input digest, model configuration identity, prompt digest, resource hashes, and pipeline/harness versions checked before continuation |
+| Context snapshots | prompt contents and retrieved memory saved at first execution and reused by later invocations |
+| Cumulative budgets | Nodes/review entry, model attempts, tool calls, and active time accumulate across invocations; parallel reservations share a lock |
+| Model requests | Per-request timeout and output-token cap; SDK retries disabled; JSON-format compatibility fallback reserves another request |
+| Tool access | Role allowlists, task-contract permission subsets, and task-local budgets; retrieval and route checks pass through budget controls |
+| Typed retries | At most two attempts for classified transport timeouts, connection faults, and selected rate-limit/server failures; validation and permission failures are terminal |
+| Human continuation | Waiting state, offered identifiers, answers, and checkpoint checked under lock; duplicate requests cannot schedule two continuations; queue failure restores waiting state |
+| Idempotent creation | Matching Idempotency-Key and input return the existing job; changed input produces a conflict; browser retries reuse the key |
+| Cancellation | Queued, running, and human-waiting jobs support cancellation; boundary checks stop further work and prevent late publication |
+| Failure evidence | Latest 200 persisted control events, node traces, classified worker errors, retryability, and model-usage observations |
+| Evaluation | Synthetic workflows use the same harness; budget stops produce inspectable failure reports; prompt activation is explicit |
 
-资源仓储绑定启动时的文件版本。文件变化后需要重启软件，新建任务使用新资源；已有运行还需通过其原版本比对。用户主动路线编辑的失败只增加观测记录，不发布无效路线或改写原方案。
+Resource repositories bind to file hashes at startup. Restart after changing resource files; new jobs use the refreshed versions. Existing runs must still pass their original compatibility checks.
 
-## 默认预算
+## Default policy
 
-以下值可通过 `.env` 中同名的 `HARNESS_` 配置修改。已开始任务使用保存的策略，人工恢复不会重新获得额度。
+Set policy fields in `.env` before starting a new run. Existing jobs retain their saved policy across continuation.
 
-| 配置 | 默认值 |
+| Setting | Default |
 | --- | ---: |
-| HARNESS_MAX_NODES | 128 |
-| HARNESS_MAX_MODEL_CALLS | 32 |
-| HARNESS_MAX_TOOL_CALLS | 256 |
-| HARNESS_MAX_ACTIVE_SECONDS | 300 秒 |
-| HARNESS_MODEL_TIMEOUT_SECONDS | 30 秒 |
-| HARNESS_MODEL_OUTPUT_TOKENS | 4096 |
-| HARNESS_MAX_PARALLEL_TASKS | 4 |
-| HARNESS_MAX_PENDING_JOBS | 32 |
+| `HARNESS_MAX_NODES` | 128 |
+| `HARNESS_MAX_MODEL_CALLS` | 32 |
+| `HARNESS_MAX_TOOL_CALLS` | 256 |
+| `HARNESS_MAX_ACTIVE_SECONDS` | 300 seconds |
+| `HARNESS_MODEL_TIMEOUT_SECONDS` | 30 seconds |
+| `HARNESS_MODEL_OUTPUT_TOKENS` | 4096 |
+| `HARNESS_MAX_PARALLEL_TASKS` | 4 |
+| `HARNESS_MAX_PENDING_JOBS` | 32 |
 
-队列上限统计排队、执行和取消中的任务，等待人工的任务不占执行队列额度。Idempotency-Key 的去重有效期跟随本机任务记录；旧记录被容量清理后不能继续依赖其去重。
+Queue admission counts queued, running, and cancelling jobs. Human-waiting jobs are excluded. Idempotency guarantees end when the associated retained record is removed.
 
-活动时间是图执行 / 路线复核各批次的墙钟时间，包含其在途调用，排队和等待人工不计入。时间限制与取消是**协作式边界控制**：不会强行杀死 Python 线程；在途模型调用可能需等待超时，阻塞的本地函数仍需返回才能检查。外部记忆初始化和 RAG 索引构建不属于这份规划图预算。
+Active time measures wall-clock time within graph execution and route-review invocations, including in-flight calls. Queue time and human waiting are excluded. Memory initialization and RAG index construction sit outside the planning-graph budget.
 
-模型请求预算统计预留的请求尝试；服务商实际 Token 和费用不能仅由次数推断。输出上限也不是整段输入、Embedding 或账单 Token 的硬上限。无法取得使用量时仍显示未完整观测，不填造零费用或零 Token。
+Time limits and cancellation are cooperative boundary controls. Python threads continue until the current function returns; model calls may wait until their timeout. Output-token caps apply per model request. Provider billing, embedding usage, and the complete optimization search require separate accounting. Unavailable usage remains unknown.
 
-## 查看与验证
+## Observability and verification
 
-任务详情展开“运行控制、预算与故障记录”，可查看上限、累计使用数、调用批次、事件和故障。旧记录或显式演示缓存没有新的运行控制记录时，页面会说明。
+Task details display limits, cumulative usage, invocation identifiers, events, and failures. Legacy records or explicit demonstration caches carry a notice when harness records are unavailable.
 
-![合成任务的累计运行记录](assets/runtime-harness.jpg)
+![Synthetic run with cumulative execution records](assets/runtime-harness.jpg)
 
-示例图在两次调用后仍保留同一 run_id，节点与工具次数继续累计。它验证记录与控制行为，不是模型效率或生产效果的对比图。
+The illustrated run retains the same run ID across two invocations and accumulates node/tool usage. It demonstrates execution records and controls on a synthetic rules-mode task.
 
-本地鉴权接口：
+Authenticated endpoints include:
 
-完整接口表、合成请求和错误处理见 [本机 API 速查](api.md)。
+- `GET /api/v1/jobs/{job_id}/harness` — execution records, usage observations, and failure summary.
+- `POST /api/v1/jobs/{job_id}/cancel` — cooperative cancellation and current status.
+- `POST /api/v1/jobs` with optional `Idempotency-Key` — idempotent creation.
 
-- `GET /api/v1/jobs/{job_id}/harness`：运行记录、模型使用观测和故障摘要。
-- `POST /api/v1/jobs/{job_id}/cancel`：请求协作式取消；重复取消返回当前状态。
-- `POST /api/v1/jobs`，可选 `Idempotency-Key` 请求头：幂等创建。
+See the [API reference](api.md) for request examples and errors.
 
 ```bash
 python -m pytest -q
 python scripts/evaluate_agents.py --output output/evaluation/harness-rules.json
 ```
 
-回归涵盖真实图的并行预算、有限重试、取消竞态、恢复计数、队列回滚、输入去重、配置变化、路线编辑失败和 badcase 生成。默认评测使用规则模式且关闭外部记忆；模型边界测试使用替身客户端，不发送付费请求。
+Regression coverage includes real-graph parallel reservations, bounded retries, cancellation races, continuation counters, queue rollback, input deduplication, configuration changes, failed route edits, and failure-report generation. Default evaluation uses rules mode with external memory disabled. Model-boundary tests use substitute clients.
 
-2026-10-07 本地验证：242 项测试通过、1 项跳过；11 / 11 合成规则案例通过。Ruff、修改后的 JavaScript 语法、发布树审计与凭据扫描通过。浏览器实测新任务预算、旧任务兼容、路线复核发布及人工等待任务取消。另有一条现有 Starlette / httpx 弃用警告。
+Local validation on 2026-10-07 recorded **242 tests passed, 1 skipped**, and **11/11 synthetic rules cases passed**. Ruff, changed JavaScript syntax, release audit, and credential scan passed. Browser checks covered new/legacy records, route publication, shared budgets, and cancellation during human waiting. One existing Starlette/httpx deprecation warning remains.
 
-当前证据验证执行行为，不证明真实模型效果提高或现场制造可行。这里没有分布式租约、跨机器执行、强制进程沙箱或厂级审批服务；SQLite 和本地锁仅支持当前单进程部署。
+## Deployment boundaries
+
+Current evidence covers local execution behavior. Live-model quality improvements and factory feasibility require separate evaluation. SQLite and local locks support the single-process deployment; distributed execution, process isolation, and factory approval services remain future work.

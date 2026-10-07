@@ -1,41 +1,34 @@
-# shaftmachiningplanner 与 TencentDB-Agent-Memory 接入评估
+# TencentDB Agent Memory integration assessment
 
-核对日期：2026-10-07。结论：**可以结合，适合先作为可选历史经验层；当前无需迁移业务数据库。**
+Reviewed on 2026-10-07. TencentDB-Agent-Memory is suitable for an optional historical-context layer in shaftmachiningplanner. Task persistence and workflow recovery continue to use the local JobStore and SQLite checkpoints.
 
-核对仓库为 [TencentCloud/TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory)，默认分支 `feat/server_team`，固定提交 `8b86874a2daea49e3ff0fb53d699203146c5c77d`。
-源码 [LICENSE](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/8b86874a2daea49e3ff0fb53d699203146c5c77d/LICENSE) 为 MIT；GitHub 元数据的 NOASSERTION 不能替代实际许可证。
-该提交 README 标识 Team Memory Beta，接入合同应固定版本并随升级复验。
+The assessment uses [TencentCloud/TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory), default branch `feat/server_team`, at commit `8b86874a2daea49e3ff0fb53d699203146c5c77d`. The source [LICENSE](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/8b86874a2daea49e3ff0fb53d699203146c5c77d/LICENSE) is MIT; GitHub metadata reports NOASSERTION. The reviewed README identifies Team Memory Beta. Pin the integration contract and revalidate it on upgrades.
 
-## 适合什么
+## Responsibilities
 
 ```mermaid
 flowchart LR
-  I[当前图纸与资源规则] --> P[规划与独立审查]
-  M[Tencent memory-core] -->|首次只读检索| S[本任务记忆快照]
-  S -.未确认历史建议.-> P
-  P --> V[确定性校核与工程复核]
-  P --> J[本地 SQLite 任务与检查点]
-  S -->|恢复沿用| R[人工恢复 / 路线编辑复核]
+  I[Current input and resource rules] --> P[Planning and independent review]
+  M[Tencent memory-core] -->|Initial read-only retrieval| S[Run memory snapshot]
+  S -.Unverified historical advice.-> P
+  P --> V[Deterministic checks and engineering review]
+  P --> J[SQLite tasks and checkpoints]
+  S -->|Reuse| R[Human continuation and route review]
 ```
 
-图中接入的是历史经验层。本机任务数据库与检查点无需因此迁移到 TencentDB；模型或记忆也不获得设备操作与生产放行权限。
+| Data or operation | Current ownership | Rationale |
+| --- | --- | --- |
+| Historical process gaps, recurring errors, collaboration experience | Retrieved as unverified references with record IDs and versions | Helps direct review of the current part |
+| Drawing, material, dimensions, tolerances | Structured request | Defines the current planning requirements |
+| Machine, tool, and supplier capability | Authoritative resource data | Establishes current capability and availability |
+| Agent tasks, human interrupts, checkpoints | JobStore and LangGraph | Preserves execution state and recovery |
+| Approval, production release, equipment operation | External engineering and authorization processes | Requires explicit authority and site acceptance |
 
-| 数据 | 本阶段处理 | 原因 |
-|---|---|---|
-| 过去发现的工艺缺口、常见错误、历史协作经验 | 检索为未确认参考，保留记录 ID/版本 | 可提示专家重点检查，仍要核对当前零件 |
-| 当前图纸、材质、尺寸、公差 | 继续由结构化请求提供 | 历史记忆不能覆盖本次输入 |
-| 当前设备、刀具、供应商能力 | 继续来自权威资源库 | “上次能做”不能证明现在可用 |
-| Agent 任务、人工中断、检查点 | 保留项目 JobStore 与 LangGraph checkpoint | 长期记忆与执行恢复承担不同职责 |
-| 审批、生产放行、设备操作 | 不由记忆授予权限 | 经验和生成 Skills 不能充当授权 |
+The upstream service includes Chat Memory, Skill, LLM-Wiki, Code-Graph, and team/user/agent governance. The current adapter retrieves L1 episodic records only. Skill execution, automatic conversation-capture Proxy integration, and write-back of model conclusions are outside this adapter's scope.
 
-上游提供 Chat Memory、Skill、LLM-Wiki、Code-Graph 及 team/user/agent 治理。
-本阶段只接 L1 episodic 历史记录；不调用 Skill，不接自动对话捕获 Proxy，不写回模型结论。
-当前工艺方案是否适用于某轴件，仍由独立专家、确定性检查与工程师判断。
+## Adapter contract
 
-## 已实现接口
-
-独立 wire adapter 位于 `backend/agent_memory.py`，未复制上游 SDK，也未新增运行依赖。
-依据 [v3 SDK](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/8b86874a2daea49e3ff0fb53d699203146c5c77d/sdk/memory-core/python/tencentdb_agent_memory/v3/client.py)、[HTTP transport](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/8b86874a2daea49e3ff0fb53d699203146c5c77d/sdk/memory-core/python/tencentdb_agent_memory/_v3_http.py)、[服务端路由](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/8b86874a2daea49e3ff0fb53d699203146c5c77d/MemoryCore/src/gateway/v2-router.ts) 与 [API 文档](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/8b86874a2daea49e3ff0fb53d699203146c5c77d/MemoryCore/v3-api-memorycore-doc.md) 核实：
+`backend/agent_memory.py` implements a wire adapter using existing dependencies. The contract was checked against the pinned [v3 SDK](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/8b86874a2daea49e3ff0fb53d699203146c5c77d/sdk/memory-core/python/tencentdb_agent_memory/v3/client.py), [HTTP transport](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/8b86874a2daea49e3ff0fb53d699203146c5c77d/sdk/memory-core/python/tencentdb_agent_memory/_v3_http.py), [server router](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/8b86874a2daea49e3ff0fb53d699203146c5c77d/MemoryCore/src/gateway/v2-router.ts), and [API documentation](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/8b86874a2daea49e3ff0fb53d699203146c5c77d/MemoryCore/v3-api-memorycore-doc.md).
 
 ```text
 POST <memory-core origin>/v3/atomic/search
@@ -47,19 +40,27 @@ x-tdai-service-id: <instance id>
 {"code":0,"data":{"items":[{"id":"...","version":2,"type":"episodic","content":"...","team_id":"...","agent_id":"...","user_id":"..."}]}}
 ```
 
-SDK 与实际路由显示 atomic search 的 version 是数字，update 的版本可能是 `v2` 字符串。
-适配器只接受检索的正整数版本；无版本、缺身份、跨身份或 instruction 类型记录丢弃。
-查询只发送材料、毛坯类型、热处理和特征类型，不发送完整图纸、尺寸、工艺路线或对话。
-每个任务首次执行检索一次并保存快照，人工恢复与路线编辑复核沿用原快照；最多 5 条、单条 1600 字符、记录 JSON 总计 6000 字符、响应最多 64 KiB。
-网络超时为 2 秒每次网络操作，不重试，不跟随重定向，远程服务必须 HTTPS。
-返回记录的来源是记忆服务记录，**原始工程文档来源与审核状态尚未核实**，统一标记未确认历史建议。
-结果 API 返回 `memory_context`，记录检索/空结果/不可用及摘要；调用 telemetry 仅存摘要，不存凭据。
-失败保持当前规则/专家流程可运行；启用记忆时绕过整任务缓存，快照变化使旧任务结果失效。
-记忆正文以不可信数据注入模型，当前输入和服务器规则持续约束输出；文字提醒本身不构成完整提示注入防护。
+Atomic search uses integer versions; update APIs may use strings such as `v2`. The adapter accepts positive integer search versions and rejects records with missing versions, missing or mismatched identities, or instruction types.
 
-## 启用条件
+Queries send material, blank type, heat-treatment requirements, and feature types. Full drawings, dimensions, process routes, and conversations are excluded from the query. Retrieval runs once on initial execution; later human continuation and route review reuse the persisted snapshot.
 
-先独立部署并检查上游服务，再在项目 `.env` 填写：
+| Limit | Value |
+| --- | --- |
+| Retrieved records | 5 |
+| Content per record | 1600 characters |
+| Combined record JSON | 6000 characters |
+| Response size | 64 KiB |
+| Network timeout | 2 seconds per network operation |
+| Redirects / retries | Disabled |
+| Remote transport | HTTPS; loopback HTTP permitted |
+
+Retrieved records identify the memory-service source; their original engineering documents and review status remain unverified. All content is treated as untrusted historical advice. Current structured input and server rules constrain its use. Textual instructions alone provide incomplete prompt-injection protection.
+
+The result API exposes `memory_context` with retrieval, empty, or unavailable status and a summary. Telemetry stores summaries and excludes credentials. Retrieval failure allows the existing rules/review workflow to continue. Enabling memory bypasses whole-task caching; snapshot changes invalidate prior task results.
+
+## Configuration and deployment
+
+Deploy and validate the upstream service independently, then configure the local `.env`:
 
 ```dotenv
 AGENT_MEMORY_ENABLED=true
@@ -71,33 +72,31 @@ AGENT_MEMORY_AGENT_ID=
 AGENT_MEMORY_USER_ID=
 ```
 
-空白项必须填入实际值并重启应用，否则检索返回 unavailable。
-URL 指 memory-core，不是 Panel 8125 或 Proxy 8096。本地 HTTP 限 loopback；其他地址用 HTTPS。
-在上游管理端配置真实 team/user/agent 绑定、实例 ID 和网关 key；不允许以 default 桶承载工厂经验。
-该服务身份目前是固定的单个应用 principal。本项目没有多用户系统；字段隔离不是用户授权，不应据此声称多租户就绪。
+Fill the empty fields with actual deployment values and restart. Incomplete configuration returns unavailable. The URL must point to memory-core; Panel uses port 8125 and Proxy uses port 8096. HTTP is restricted to loopback addresses; remote endpoints require HTTPS.
 
-[上游部署环境模板](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/8b86874a2daea49e3ff0fb53d699203146c5c77d/deploy/global-images/.env.example) 显示：
+Configure the upstream instance, gateway key, and actual team/user/agent bindings. Use explicit bindings for factory experience. The application currently uses one fixed principal. Multi-user authorization requires a separate identity and access-control design.
 
-- 开源 memory-core 默认 SQLite，零外部数据库依赖；因此不必先采购腾讯云数据库。
-- MongoDB 模式是可选试验特性，要求带 mongot；不是任意 MongoDB 实例均可用。
-- 内部提取/总结模型和 Proxy 上游模型分别配置。部署在本地不意味着所配模型或观测链路也在本地。
-- 默认 `MEMORY_CORE_GATEWAY_API_KEY` 为空会关闭 Bearer gate。接入本适配器应启用网关凭据；模板注明当前 Proxy 在非空 key 下有鉴权兼容限制，不能照搬为工厂生产部署。
-- 服务端检索代码存在 recall metrics/OTel 上报点。试部署前确认实际配置的观测后端与数据去向。
+The pinned [deployment template](https://github.com/TencentCloud/TencentDB-Agent-Memory/blob/8b86874a2daea49e3ff0fb53d699203146c5c77d/deploy/global-images/.env.example) records these considerations:
 
-升级部署应固定经核验镜像 tag/digest，而非把 latest 当稳定版本。
-本次没有启动腾讯服务、创建云实例、导入真实工厂数据或发起付费模型调用。
-已用模拟 HTTP 验证 API 合同、身份检查、错误回退、内容上限、版本失效及现有 LangGraph 接入；实际服务连通、质量和延迟尚待验证。
+- Open-source memory-core defaults to SQLite and runs without an external database purchase.
+- Optional MongoDB mode is experimental and requires mongot support.
+- Extraction/summarization models and Proxy upstream models have separate configuration. Review their endpoints and data destinations.
+- An empty `MEMORY_CORE_GATEWAY_API_KEY` disables the Bearer gate. Enable gateway authentication for this adapter. The template documents a Proxy authentication compatibility limitation with nonempty keys.
+- Retrieval includes recall-metric and OpenTelemetry reporting points. Review the configured telemetry backend before deployment.
 
-## 接入验收顺序
+Pin reviewed image tags or digests for service upgrades.
 
-| 步骤 | 检查项 | 通过后才能做什么 |
+## Acceptance sequence
+
+| Stage | Required checks | Outcome |
 | --- | --- | --- |
-| 1. 独立部署 | 固定上游版本，确认网关鉴权、实例与身份绑定 | 用人工合成记录验证 API |
-| 2. 合同检查 | search 返回身份、整数版本、类型与限额一致 | 配置本项目只读适配器 |
-| 3. 隔离联调 | 测试检索、空结果、失败回退和快照恢复 | 建立代表性评测案例 |
-| 4. 工程复核 | 检查建议来源、适用性、错召回和资料缺口 | 决定哪些经验可纳入真实工作空间 |
+| Independent deployment | Pinned version, gateway authentication, instance identity, principal bindings | Test API with synthetic records |
+| Contract validation | Identity fields, integer versions, episodic type, response limits | Configure the read-only adapter |
+| Isolated integration | Retrieval, empty results, failure fallback, snapshot reuse | Build representative evaluation cases |
+| Engineering review | Source provenance, applicability, false recall, evidence gaps | Select experience suitable for the workspace |
 
-当前已完成模拟合同与本机图接入验证，没有完成上述真实服务与工厂验收。系统状态的“配置完整”不能作为验收结果。
+Simulated HTTP tests cover contracts, identity checks, fallback, content limits, version invalidation, and LangGraph integration. Live-service connectivity, retrieval quality, latency, and factory acceptance remain pending. The assessment used no Tencent service deployment, cloud instance, real factory data, or paid model calls. System status reports configuration completeness separately from acceptance.
 
-如果以后需要共享机床/工单主数据，再独立评估 TencentDB PostgreSQL/MySQL；需要规模化向量检索则评估 VectorDB。
-那是第二个架构决策，还要同步设计事务、队列/lease、文件存储和分布式 checkpoint，不能只替换 SQLite 连接串。
+## Future database decisions
+
+Shared machine or work-order master data may justify a separate TencentDB PostgreSQL/MySQL assessment. Larger vector retrieval workloads may justify VectorDB. Either decision requires explicit transaction boundaries, queue/lease coordination, file storage, and distributed checkpoint design alongside storage migration.

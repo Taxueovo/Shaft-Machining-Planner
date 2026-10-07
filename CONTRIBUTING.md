@@ -1,39 +1,31 @@
 # Contributing to shaftmachiningplanner
 
-Thank you for contributing! shaftmachiningplanner is a motor-shaft process planning system
-(Python backend + frontend).
+shaftmachiningplanner uses a Python backend and local web frontend for shaft machining process planning. Contributions should include reproducible input, expected behavior, and evidence relevant to the change.
 
-## Getting Started
+## Development setup
 
 1. Fork the repository and clone your fork.
-2. Create a conda environment: `conda env create -f environment.yml`
-3. Install reproducible development dependencies: `pip install --require-hashes -r requirements-dev.lock.txt`
-4. Run the tests: `pytest` (from the repository root)
+2. Create a Python 3.10 environment. The Conda option is `conda env create -f environment.yml`.
+3. Install locked development dependencies: `python -m pip install --require-hashes -r requirements-dev.lock.txt`.
+4. Run `python -m pytest` from the repository root.
 
-## Submitting Changes
+## Pull requests
 
-- Create a feature branch from `main`: `git checkout -b feat/my-change`
-- Keep changes focused; one pull request per logical change.
-- Add tests for new behavior when applicable; run `pytest` before pushing.
-- Open a pull request with a clear description of what and why.
+- Create a feature branch from `main`.
+- Keep each pull request focused on one logical change.
+- Include regression coverage for changed behavior where applicable, and run the relevant checks before publication.
+- Describe the problem, resulting behavior, validation, and material limitations.
 
-## Commit Message Style
+## Commit messages
 
-- Use conventional prefixes: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`.
-- Keep the first line under 72 characters.
+Use conventional prefixes such as `feat:`, `fix:`, `docs:`, `refactor:`, and `test:`. Keep the subject under 72 characters.
 
-## Code Style
+## Code and documentation conventions
 
-- Follow PEP 8; use type hints for new public functions.
-- Keep f-strings for string interpolation.
-- Run `python scripts/verify_public_sources.py` for capability workbook changes;
-  automatic scraping must never overwrite engineering values. Record source URLs
-  and review dates only after a human comparison with the official page.
-- The local workbench and user guides use Simplified Chinese; engineering contracts
-  and operation identifiers may remain English. Match the surrounding language and
-  keep user-facing product naming as `shaftmachiningplanner`.
-- Changes to workflow behavior must update the routing/Harness guide and relevant
-  evaluation definitions. Documentation screenshots must use synthetic local inputs,
-  retain truthful status/usage labels, and include source/version notes.
-
-Thanks again for helping improve the project!
+- Follow PEP 8 and use type hints for new public functions.
+- Use f-strings for string interpolation.
+- Run `python scripts/verify_public_sources.py` for capability-workbook changes. Automatic source checks preserve engineering values. Record source URLs and review dates after comparing with the official source.
+- Write public project documentation in English, using precise engineering terminology and direct descriptions of behavior. The workbench currently uses Simplified Chinese; match the surrounding interface language for UI changes. Product naming is `shaftmachiningplanner`.
+- Update the architecture/harness reference and evaluation definitions when workflow behavior changes.
+- Capture documentation screenshots with isolated synthetic local inputs. Preserve actual status and usage labels and record source/version details.
+- Bind engineering claims to their available evidence. Identify synthetic evaluation, live-service acceptance, and factory validation separately.

@@ -1,127 +1,124 @@
-# shaftmachiningplanner：工业 Agent 技术研究与升级路线
+# Industrial-agent research and implementation roadmap
 
-研究日期：2026-10-06（Asia/Shanghai）。本文保留最初选型时的架构观察与分阶段建议。后续于 2026-10-07 实现了工序状态校验、评测、模型用量记录、可选 GEPA 提示词优化入口和腾讯记忆只读适配器；使用方法见 `evaluation/README.md` 与 [腾讯接入评估](tencentdb-agent-memory-integration.md)。未在真实设备上验证，也未证明真实模型优化增益。
+Research snapshot: 2026-10-06 (Asia/Shanghai). Implementation update: 2026-10-07, version 1.3.0. External repository versions below retain the original research snapshot; implementation status reflects the subsequent local upgrade.
 
-## v1.3.0 的实现状态
+## Implementation status
 
-以下区分 2026-10-06 的研究快照与当前已完成的本机实现；外部仓库版本表仍为原研究日期的快照。
-
-| 路线事项 | 当前本机实现 | 仍缺少的证据 |
+| Area | Local implementation | Next evidence required |
 | --- | --- | --- |
-| 工序状态校验 | 几何与工序状态规则纳入验证 | 更完整的领域规则与工程师确认的反例 |
-| Trace 与失败反馈 | 调用观测、11 个合成案例、badcase 和评测入口 | 真实模型基准与工程确认的数据集 |
-| 可选 GEPA | 受限 PromptProfile 候选入口，独立依赖环境 | 实际优化增益、费用与工程复核 |
-| 历史经验 | 腾讯 v3 只读适配器与首次执行快照 | 上游服务实连、建议来源及质量验收 |
-| 运行 Harness 与路由 | 累计预算、恢复、取消、幂等和按证据重规划 | 分布式运行及工厂现场验收 |
-| 正式软件入口 | 工作台、任务中心、草稿、复用与系统状态 | 多用户权限、安装包与厂级运维体系 |
+| Process-state checks | Geometry and operation-state rules in verification | Broader domain rules and engineer-approved counterexamples |
+| Traces and failure feedback | Usage observations, 11 synthetic cases, failure reports, evaluation runner | Live-model baseline and reviewed dataset |
+| Optional GEPA | Restricted PromptProfile candidates in a separate environment | Measured gains, cost, and engineering review |
+| Historical context | Tencent v3 read-only adapter and initial snapshot | Live-service acceptance, provenance, and retrieval quality |
+| Harness and routing | Cumulative budgets, continuation, cancellation, idempotency, evidence-triggered replanning | Distributed coordination and factory acceptance |
+| Software workbench | Task center, drafts, input reuse, and system status | Multi-user authorization, packaging, and operational support |
 
-当前操作见 [图文指南](../docs/software-guide.md)，执行合同与架构见 [LangGraph / Harness](../docs/langgraph-harness.md)。下文“尚未”描述最初研究时的观察，不代表上述能力仍未实现。
+See the [user guide](../docs/software-guide.md), [architecture reference](../docs/langgraph-harness.md), [evaluation protocol](../evaluation/README.md), and [memory assessment](tencentdb-agent-memory-integration.md). Factory feasibility and real-model optimization gains remain unmeasured.
 
-## 判断
+## Architectural priorities
 
-当前架构已有 LangGraph、受限 Planner、任务合同、并行专家、证据引用、规则校验、增量重跑和 SQLite 人工中断恢复。下一步优先补足可衡量的持续改进、工艺状态约束及真实资源数据，而不是增加无明确职责的 Agent。
+The current system combines LangGraph, a constrained Planner, task contracts, parallel specialist reviews, evidence references, deterministic checks, selective recomputation, and SQLite checkpoint recovery. Development priorities are measurable evaluation, broader process-state constraints, and verified resource data.
 
-必须区分两个图：
+Two graphs have distinct responsibilities:
 
-- Agent 任务 DAG：路线生成、资源匹配、各领域评审，调度计算任务。当前已实现。
-- 制造工序图：工序先后关系、机床占用、换装、班次、加工时间与交期。当前不能因存在前一种 DAG 而声称实现了车间排程。
+- **Agent task DAG:** coordinates route generation, resource matching, and specialist review. Implemented in the current workflow.
+- **Manufacturing operation graph:** represents operation precedence, machine occupancy, setup, shifts, durations, and delivery constraints. This requires a separate scheduling model and site data.
 
-## 本次检查范围
+## Research method
 
-读取当前项目 README、工作流、调度器、Planner、专家、工具注册、RAG 接口、LLM 客户端及相关测试。检查 9 个外部仓库的公开 GitHub API 元数据和文件树，阅读仓库说明，并抽查 3 个仓库共 6 个公开源码文件。未运行这些外部仓库；文件名包含 test 不代表测试有效或 CI 通过。
+The review inspected the project's README, workflow, scheduler, Planner, specialists, tool registry, RAG interfaces, model client, and related tests. External research examined public GitHub metadata, file trees, and READMEs for nine repositories, plus six source files across three repositories. External code was reviewed statically; execution and CI validity were outside that review.
 
-## GitHub 候选与适配判断
+## GitHub candidates
 
-| 仓库 | 可借鉴的技术 | 对本项目的用法 | 边界与优先级 |
-|---|---|---|---|
-| [rwth-iat/MP-LLM](https://github.com/rwth-iat/MP-LLM) | LLM 候选生成、FSA 状态检查、BFS 与优化求解回退 | 将轴加工工序表示为有前置条件和状态变化的操作，检查热处理、精加工、余量与装夹等约束 | 高优先级；原场景是 ISA-88 模块化过程装置，必须重建轴加工规则，不能直接搬用。研究软件，未证明本项目适用性 |
-| [gepa-ai/gepa](https://github.com/gepa-ai/gepa) | 依据执行轨迹和自然语言失败反馈演化提示词，使用 Pareto 搜索保留互补候选 | 离线优化 Planner 和专家提示词；从现有 trace 提取反例与评分 | 高优先级；先建立可信评测集，冻结测试集，不让优化器修改生产规则或自动上线 |
-| [aws-samples/sample-ukg-for-mfg](https://github.com/aws-samples/sample-ukg-for-mfg) | Discovery 与 Explorer 分工、ISA-95 概念映射、跨 MES/ERP/CMMS/PLM 查询 | 建立工序—资源—设备—工单—维护记录的语义注册表，查询时携带来源和时间 | 中高优先级；AWS 示例，借鉴数据合同而非整体迁移云架构；自动字段映射需要复核 |
-| [OPCFoundation/UA-.NETStandard/McpServer](https://github.com/OPCFoundation/UA-.NETStandard/tree/master/Applications/McpServer) | OPC UA 数据访问包装成 MCP 工具，浏览、读取、历史和订阅 | 为资源匹配提供设备状态、维护状态和数据时间戳；先连接模拟服务 | 中优先级；该目录也暴露写入、方法调用和配置管理，接入前实施服务端只读工具白名单与最小权限。基金会项目不等于该 MCP 子模块具备现场部署认证 |
-| [JoMinsu-KU/A2M](https://github.com/JoMinsu-KU/A2M) | AAS 资产元数据、MCP 工具与制造流程发现 | 将机床、刀具、装夹的能力描述与工具参数关联；人工审核后注册查询工具 | 中优先级；公开数据为部分资产；README 的实线部署描述属于作者报告。本次源码确实有 PLC 写入函数，但未复现作者实验 |
-| [ekhurtado/SMIA](https://github.com/ekhurtado/smia) | AAS 合规工业 Agent、资产能力与服务发现 | 参考统一资产模型、语义能力查询及资产侧协商 | 中优先级；这是工业 MAS/数字孪生方向，不等同于 LLM 多 Agent。GPL-3.0，代码复用需单独评估许可兼容性 |
-| [OpenFactoryTwin/ofact](https://github.com/OpenFactoryTwin/ofact) | 订单、资源、过程和事件组成的工厂状态模型，场景仿真 | 当具备加工时间、故障、班次等数据后，比选故障换机、插单、外协情景 | 后续阶段；Agent 包含传统仿真 Agent。缺少真实参数时只能做明确标注的情景演示 |
-| [aimclub/SAMPO](https://github.com/aimclub/SAMPO) | 资源约束任务图、HEFT、遗传算法、多目标排程 | 参考独立的制造排程求解层与不可行解释 | 后续阶段；不能把其多 Agent 调度等同于 LLM Agent，也不能默认完整覆盖轴加工车间约束 |
-| [microsoft/agent-lightning](https://github.com/microsoft/agent-lightning) | 在真实 Agent harness 中收集交互并做强化学习 | 有足够可信样本、奖励函数和训练预算后再考虑本地模型训练 | 暂缓；v1.0 的 GPU/verl/vLLM 训练栈与当前轻量应用不同，公开代码任务成绩不能外推到制造规划 |
+| Repository | Relevant technique | Integration point | Priority and constraints |
+| --- | --- | --- | --- |
+| [rwth-iat/MP-LLM](https://github.com/rwth-iat/MP-LLM) | LLM proposals, finite-state checks, BFS, optimization fallback | Represent shaft operations with preconditions and state transitions | High. Original domain is ISA-88 modular process equipment; shaft rules need independent domain modeling and validation |
+| [gepa-ai/gepa](https://github.com/gepa-ai/gepa) | Trace-based prompt evolution and Pareto candidate search | Offline Planner/specialist prompt candidates scored from failures | High. Requires trusted data, a frozen test set, and explicit promotion |
+| [aws-samples/sample-ukg-for-mfg](https://github.com/aws-samples/sample-ukg-for-mfg) | Discovery/Explorer roles, ISA-95 mappings, cross-system queries | Semantic registry linking operations, resources, work orders, and maintenance | Medium-high. Review field mappings and adapt data contracts to local systems |
+| [OPCFoundation/UA-.NETStandard/McpServer](https://github.com/OPCFoundation/UA-.NETStandard/tree/master/Applications/McpServer) | OPC UA browsing, reads, history, and subscriptions exposed through MCP | Timestamped equipment and maintenance observations | Medium. The module also exposes writes, methods, and configuration; enforce server-side read-only allowlists and least privilege |
+| [JoMinsu-KU/A2M](https://github.com/JoMinsu-KU/A2M) | AAS metadata, MCP tools, manufacturing-process discovery | Asset capability descriptions and reviewed tool registration | Medium. Public assets are partial; source includes PLC writes. Reported deployment results require independent reproduction |
+| [ekhurtado/SMIA](https://github.com/ekhurtado/smia) | AAS-based industrial agents and capability/service discovery | Common asset semantics and asset-side negotiation | Medium. Industrial MAS/digital-twin architecture; GPL-3.0 code reuse requires license review |
+| [OpenFactoryTwin/ofact](https://github.com/OpenFactoryTwin/ofact) | Factory state models with orders, resources, processes, and events | Failure, urgent-order, and subcontracting scenarios | Later. Requires calibrated durations, shifts, and failure data |
+| [aimclub/SAMPO](https://github.com/aimclub/SAMPO) | Resource-constrained graphs, HEFT, genetic algorithms, multi-objective scheduling | Independent manufacturing scheduler and infeasibility explanations | Later. Shaft-shop constraints need explicit extensions and tests |
+| [microsoft/agent-lightning](https://github.com/microsoft/agent-lightning) | Harness interaction capture and reinforcement learning | Local-model training after a validated reward/data pipeline | Deferred. v1.0 GPU/verl/vLLM dependencies introduce a separate training stack |
 
-## 可复核的源码证据
+## Source evidence
 
-### 工艺状态检查
+### Process-state validation
 
-- [MP-LLM 校验器](https://github.com/rwth-iat/MP-LLM/blob/1edb61b265d2674861821ecd0c489ab9e7132f28/ModPlant_ui_lib/ModPlant_fsa_checker_core.py)：`check_prediction_against_rules` 从第 240 行起执行预测与规则匹配。
-- [MP-LLM 会话控制](https://github.com/rwth-iat/MP-LLM/blob/1edb61b265d2674861821ecd0c489ab9e7132f28/ModPlant_ui_lib/session.py)：第 304 行的 `step_validator` 检查生成序列的当前前缀，并接入推理会话。
-- 以上验证的是其装置模型内的可行性，不是通用制造正确性证明。
+- [MP-LLM validator](https://github.com/rwth-iat/MP-LLM/blob/1edb61b265d2674861821ecd0c489ab9e7132f28/ModPlant_ui_lib/ModPlant_fsa_checker_core.py): `check_prediction_against_rules`, starting at line 240, matches predictions against its rules.
+- [MP-LLM session](https://github.com/rwth-iat/MP-LLM/blob/1edb61b265d2674861821ecd0c489ab9e7132f28/ModPlant_ui_lib/session.py): `step_validator` at line 304 checks a generated sequence prefix within the inference session.
 
-### 跨系统语义关联
+These checks establish feasibility within that repository's plant model. Shaft machining requires its own operation definitions and physical constraints.
 
-- [AWS 数据注册](https://github.com/aws-samples/sample-ukg-for-mfg/blob/583018d336e18e86f6dc9366c3d0608d7ac65e55/agent-discovery/tools/register.py)：第 294 行起的 `register_equivalences` 拒绝未注册系统或表的关联。
-- [AWS 系统查询](https://github.com/aws-samples/sample-ukg-for-mfg/blob/583018d336e18e86f6dc9366c3d0608d7ac65e55/agent-explorer/tools/query_system.py)：包含 SQL 修改关键词拒绝、查询条数限制以及 OpenAPI GET 查询。不能仅凭关键词过滤推断整个系统具备严格只读安全性。
+### Cross-system semantics
 
-### 设备调用边界
+- [AWS registry](https://github.com/aws-samples/sample-ukg-for-mfg/blob/583018d336e18e86f6dc9366c3d0608d7ac65e55/agent-discovery/tools/register.py): `register_equivalences`, starting at line 294, rejects associations involving unregistered systems or tables.
+- [AWS query tool](https://github.com/aws-samples/sample-ukg-for-mfg/blob/583018d336e18e86f6dc9366c3d0608d7ac65e55/agent-explorer/tools/query_system.py): includes SQL mutation-keyword rejection, row limits, and OpenAPI GET queries. Full read-only enforcement requires review beyond keyword filtering.
 
-- [A2M MCP 服务](https://github.com/JoMinsu-KU/A2M/blob/404955f404bd7239c29052325751093d6f5e4eb7/AI_Agent/mcp_server.py)：包含 `start_manufacturing`、`set_coil_turn` 和 `ModbusTcpClient`。它不是纯只读知识库。
-- [A2M 工具包装](https://github.com/JoMinsu-KU/A2M/blob/404955f404bd7239c29052325751093d6f5e4eb7/AI_Agent/Tool/tool_wrapper.py)：同步包装异步工具。检查了此文件，但未运行设备调用。
+### Equipment interfaces
 
-## 版本快照
+- [A2M MCP server](https://github.com/JoMinsu-KU/A2M/blob/404955f404bd7239c29052325751093d6f5e4eb7/AI_Agent/mcp_server.py): contains `start_manufacturing`, `set_coil_turn`, and `ModbusTcpClient`.
+- [A2M tool wrapper](https://github.com/JoMinsu-KU/A2M/blob/404955f404bd7239c29052325751093d6f5e4eb7/AI_Agent/Tool/tool_wrapper.py): synchronously wraps asynchronous tools. Equipment calls were inspected statically.
 
-以下是本次读取的默认分支最新提交日期（UTC），不是 release 日期，也不同于仓库 `pushed_at`。分支活跃和存在测试文件不能替代运行验证。
+## Version snapshot
 
-| 仓库 | 默认分支提交日期 | 固定提交 | GitHub 许可标识 |
-|---|---|---|---|
+Dates are the reviewed default-branch commit dates in UTC. They differ from release dates and repository `pushed_at` values. License identifiers are GitHub metadata from the research snapshot.
+
+| Repository | Commit date | Pinned commit | License identifier |
+| --- | --- | --- | --- |
 | MP-LLM | 2026-07-14 | `1edb61b265d2674861821ecd0c489ab9e7132f28` | MIT |
 | sample-ukg-for-mfg | 2026-07-09 | `583018d336e18e86f6dc9366c3d0608d7ac65e55` | MIT-0 |
 | A2M | 2025-08-08 | `404955f404bd7239c29052325751093d6f5e4eb7` | Apache-2.0 |
-| UA-.NETStandard（全仓库） | 2026-10-06 | `e78c6482958ad431d5a1f11a335bf3630fa6cd2c` | NOASSERTION；需核对实际许可及子模块 |
+| UA-.NETStandard (whole repository) | 2026-10-06 | `e78c6482958ad431d5a1f11a335bf3630fa6cd2c` | NOASSERTION; inspect source/module licenses |
 | GEPA | 2026-10-01 | `fb1ed589fd83372caef499cffc2c73173d3b096b` | MIT |
 | Agent Lightning | 2026-09-29 | `d381995396274039f2bb1cbe5ff42ac8067f4e47` | MIT |
 | OFacT | 2026-03-10 | `45d044da62e7e3f993845c41b37471ea16bb2771` | Apache-2.0 |
 | SAMPO | 2025-10-02 | `81ca965176988d4bfa626d250a16114eead46e3c` | BSD-3-Clause |
 | SMIA | 2026-10-05 | `6c66601a1234e76216bbd0ac3d3376abc0fda697` | GPL-3.0 |
 
-## 分阶段升级建议
+## Implementation stages
 
-### 第一阶段：真实案例评测与失败反馈优化
+### 1. Representative evaluation and failure feedback
 
-接入点：`backend/models/workflow.py`、`backend/llm_client.py`、`backend/agents/planner.py`、`backend/agents/specialists.py`。
+Integration points: `backend/models/workflow.py`, `backend/llm_client.py`, `backend/agents/planner.py`, and `backend/agents/specialists.py`.
 
-当前 trace 已记录输入输出、工具和时长；LLM 客户端返回文本，尚未把 usage 与模型/提示词版本形成可直接用于对比的完整评测记录。本次未找到独立真实模型运行基准集；已有单元和集成测试不能替代它。
+The initial 2026-10-06 review identified a gap in usage/version-linked evaluation records and live-model baselines. Version 1.3.0 now records usage observations and synthetic reports. The next step is an engineer-approved set of representative parts and infeasible counterexamples, scored for:
 
-建议先由工程师确认一组代表性轴件及不可行反例，建立可重复评测，记录：
+- Hard-constraint violations and false acceptance of infeasible routes.
+- Detection of relevant issues, unsupported recommendations, and citation quality.
+- Explicit missing-information handling and fallback on model, retrieval, or tool failure.
+- Correct invalidation after repair and reuse of unaffected results.
+- End-to-end duration, observed tokens/cost, and required human edits; uncollected fields remain unknown.
 
-- 工艺硬约束违反情况，以及不可行方案被错误判为可行的情况。
-- 关键问题发现、无依据建议及引用证据是否真正支持结论。
-- 缺失资料是否明确标记；模型、RAG、工具失败时降级是否合规。
-- 修复后应失效任务是否重跑，不受影响任务是否复用。
-- 端到端时长、实际 token、模型费用与人工修改量；缺失字段明确标为未采集。
+Keep part families within one split. Use training/validation for candidate search and freeze the final test set. Preserve prior profiles and rollback configuration. The first optimization scope covers role guidance within fixed rules and permissions.
 
-把同类轴件变体放在同一数据划分，避免优化器记住近似案例。优化用训练与验证集，最终测试集冻结。用 GEPA 离线提出提示词候选，针对硬约束设置拒绝门槛，保留旧版本和回滚入口。只优化提示词的第一版不允许修改规则、权限或生产放行条件。
+[Agent evaluation guidance](https://developers.openai.com/api/docs/guides/agent-evals) describes reproducible datasets and trace-based scoring applicable to the existing LangGraph workflow.
 
-参考 [OpenAI agent evals](https://developers.openai.com/api/docs/guides/agent-evals)：从执行轨迹评分走向可重复数据集与评测运行。无需为使用此思路迁移现有 LangGraph 框架。
+### 2. Broader process-state constraints
 
-### 第二阶段：工序状态约束
+Integration points: `backend/rules/engine.py`, `backend/models/process.py`, and `backend/workflow/nodes/verification.py`.
 
-接入点：`backend/rules/engine.py`、`backend/models/process.py`、`backend/workflow/nodes/verification.py`。
+Extend the part-state model with stock allowance, datum state, heat-treatment state, and completed features. Define engineer-reviewed preconditions and transitions per operation. Return the conflicting operation, state, and rule when a route fails. Independently recheck bounded repairs.
 
-将零件状态、余量、基准、热处理状态和已完成特征明确建模；为操作定义工程确认的前置条件与状态变化。对候选路线逐步检查，返回具体工序、状态冲突和违反的规则。有限修复后再次独立检查。求解器若加入，应使用领域定义的操作集合与约束，而不是把自由文本直接当合法操作。
+Any solver should operate on domain-defined operations and constraints. Coverage claims should identify the modeled workholding, tool, material, and physical conditions.
 
-这与当前几何及资源检查互补；不得因使用 FSA 或求解器就宣称覆盖所有装夹、刀具、材料与加工物理条件。
+### 3. Factory data and capability semantics
 
-### 第三阶段：工厂数据与能力图
+Integration points: `backend/repositories.py`, `backend/workflow/tool_registry.py`, and `backend/agents/specialists.py`.
 
-接入点：`backend/repositories.py`、`backend/workflow/tool_registry.py`、`backend/agents/specialists.py`。
+Start with simulated OPC UA and MES read-only adapters. Standardize asset IDs, capability, status, source, collection time, and data quality. Resource screening should distinguish nominal model capability, current availability, stale observations, and unknown data.
 
-先用模拟 OPC UA 和模拟 MES 提供只读适配器，统一资产 ID、能力、状态、来源、采集时间与质量标识。资源匹配应区分“型号理论能力符合”“当前可用”“数据过期”和“未知”，不能从制造商样本推断现场库存或可用性。
+Use AAS and ISA-95 for semantic associations. Models can propose mappings; engineers approve critical fields. MCP standardizes tool interfaces, while source provenance and engineering checks establish trust in the returned data.
 
-借鉴 AAS 和 ISA-95 做语义关联，模型仅提议字段映射，工程人员确认关键字段。MCP 是工具接口协议，不提供资产数据可信性或工程可行性证明。
+### 4. Manufacturing scheduling and scenario simulation
 
-### 第四阶段：制造排程与情景仿真
+Introduce an operation graph and resource calendars backed by measured or explicitly assumed processing/setup times, precedence, machine occupancy, maintenance, and due dates. A deterministic solver owns feasibility and optimization; agents explain gaps and compare scenarios.
 
-新增独立工序图和资源日历。需要实际或明确标注的加工时间、换装时间、工艺先后、设备占用、维护与交期数据。确定性求解器负责可行性与目标优化，Agent 负责解释缺口及建议情景。
+SAMPO and OFacT provide relevant scheduling and event-state concepts. Begin with a bounded scheduling pilot, document parameter sources and assumptions, and identify uncalibrated conditions.
 
-可以借鉴 SAMPO 的资源约束调度与 OFacT 的事件状态模型，但先做小范围排程验证，不直接引入完整工厂孪生。对模拟结论标明参数来源、假设与未校准范围。
+## Technology review criteria
 
-## 持续跟踪的筛选规则
+Track process planning, AAS, ISA-95, OPC UA, MES, constrained scheduling, and agent evaluation. Each proposed integration should record its capability, pinned evidence, concrete integration point, data/dependency requirements, license, validation method, and rollback procedure.
 
-优先观察上述仓库及工业 process planning、AAS、ISA-95、OPC UA、MES、约束排程与 Agent evaluation 领域的新实现。每次候选都需要说明：新能力、证据与固定版本、本项目具体接入点、所需数据与依赖、许可、验证方法及回滚方式。
-
-信息更新与代码上线分别处理：每周检索只在有实质进展时报告；技术试验在隔离分支进行；基准验证通过并完成工程审查后才考虑替换默认路径。不根据 star 数、宣传词、其他领域 benchmark 成绩或单次演示自动升级。
+A weekly review cadence is suitable for identifying material developments. Trials belong in isolated branches; default-path changes require benchmark results and engineering review. Selection should follow project requirements and reproducible evidence.
