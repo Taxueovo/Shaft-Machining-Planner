@@ -17,6 +17,7 @@ IGNORED = {
     "output",
     "chroma",
     ".venv",
+    ".venv-optimization",
     "venv",
     ".coverage",
 }

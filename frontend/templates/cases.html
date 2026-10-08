@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shaft Machining Planner - PE Agent - Case Library</title>
+  <title>案例库 · {{ product.name }}</title>
   <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
 {# 当前页面的局部样式：补充公共样式中的布局、状态和窄屏显示规则。 #}
   <style>
@@ -33,16 +33,9 @@
     .search-feedback.error { color: var(--danger); }
   </style>
 </head>
-<body>
-<header class="topbar">
-  <div><a class="brand link" href="/">Shaft Machining Planner - PE Agent</a><div class="subtitle">PS/PCB-AP</div></div>
-  <div style="display:flex;align-items:center;gap:12px">
-    <a href="/" class="button ghost light">Home</a>
-    <a href="/taxonomy" class="button ghost light">Shaft Library</a>
-    <button type="button" id="shutdown-btn" class="button ghost danger" title="Shutdown System">Stop System</button>
-  </div>
-</header>
-<main class="shell">
+<body class="app-frame">
+{% from '_chrome.html' import chrome with context %}{{ chrome('案例库') }}
+<main id="main-content" class="shell" tabindex="-1">
   {# 顶部统计卡：总数/行业数/材料数，脚本初始化时用 /api/cases 与 /api/cases/filters 填充 #}
   <div class="stats">
     <div class="stat-card"><div class="label">Total Cases</div><div class="value" id="stat-total">-</div></div>
@@ -189,15 +182,7 @@
 })();
 </script>
 {# 页面脚本使用响应生成的 nonce；动态数据由模板安全编码后注入。 #}
-<script nonce="{{ request.state.csp_nonce }}">
-document.getElementById("shutdown-btn").addEventListener("click", async () => {
-  if (!confirm("Confirm shutdown of Shaft Machining Planner - PE Agent system?")) return;
-  const btn = document.getElementById("shutdown-btn");
-  btn.disabled = true; btn.textContent = "Shutting down...";
-  try { await fetch("/api/shutdown", { method: "POST" }); } catch {}
-  setTimeout(() => { document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#475467"><div style="text-align:center"><h1 style="margin:0 0 12px">System Shutdown</h1><p>This page can be closed.</p></div></div>'; }, 800);
-});
-</script>
+
 <script src="/static/app.js?v={{ static_version }}"></script>
 <script src="/static/heartbeat.js?v={{ static_version }}"></script>
 </body>

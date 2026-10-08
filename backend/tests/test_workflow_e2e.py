@@ -152,7 +152,7 @@ def test_workflow_hitl_choice_and_resume(service):
         job_id,
         ChoicesRequest(
             choices=[
-                {"feature_id": c["feature_id"], "processing_timing": "before_heat_treatment"}
+                {"feature_id": c["feature_id"], "processing_timing": c["recommended"]}
                 for c in pending
             ]
         ),

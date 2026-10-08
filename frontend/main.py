@@ -1,4 +1,4 @@
-"""Shaft Machining Planner 前端服务（FastAPI 应用入口）。
+"""shaftmachiningplanner 前端服务（FastAPI 应用入口）。
 
 页面路由负责渲染 Jinja 模板；/api/* 路径统一转发到本地后端服务
 （BACKEND_URL），转发时附加 x-local-api-token 头用于本地鉴权。
@@ -8,12 +8,14 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from dotenv import load_dotenv
@@ -35,7 +37,11 @@ if not LOCAL_API_TOKEN:
     raise RuntimeError(
         "LOCAL_API_TOKEN is required. Start the application with frontend/run_frontend.py."
     )
-_ALLOWED_ORIGINS = {"http://127.0.0.1:8000", "http://localhost:8000"}
+_frontend_port = int(os.getenv("FRONTEND_PORT", "8000"))
+_ALLOWED_ORIGINS = {f"http://127.0.0.1:{_frontend_port}", f"http://localhost:{_frontend_port}"}
+_configured_origin = urlsplit(os.getenv("FRONTEND_URL", f"http://127.0.0.1:{_frontend_port}"))
+if _configured_origin.hostname in {"127.0.0.1", "localhost", "::1"}:
+    _ALLOWED_ORIGINS.add(f"{_configured_origin.scheme}://{_configured_origin.netloc}")
 MAX_REQUEST_BYTES = 2_000_000
 
 
@@ -113,13 +119,15 @@ async def lifespan(app: FastAPI):
     await app.state.backend.aclose()
 
 
-app = FastAPI(title="Shaft Machining Planner Frontend", version="1.0.0", lifespan=lifespan)
+PRODUCT = json.loads((FRONTEND_DIR.parent / "product.json").read_text())
+app = FastAPI(title=PRODUCT["name"] + " Frontend", version=PRODUCT["version"], lifespan=lifespan)
 # 中间件按注册顺序由外向内执行：StaticCacheMiddleware 先写入 csp_nonce，
 # 后执行的 LocalOriginMiddleware 组装 CSP 响应头时才能读到该随机值，顺序不可互换。
 app.add_middleware(StaticCacheMiddleware)
 app.add_middleware(LocalOriginMiddleware)
 templates = Jinja2Templates(directory=str(FRONTEND_DIR / "templates"))
 templates.env.globals["static_version"] = STATIC_VERSION
+templates.env.globals["product"] = PRODUCT
 app.mount(
     "/static",
     StaticFiles(directory=str(FRONTEND_DIR / "static")),
@@ -133,20 +141,60 @@ async def index(request: Request) -> HTMLResponse:
     backend_ok = False
     detail = ""
     try:
-        response = await request.app.state.backend.get("/health")
+        response = await request.app.state.backend.get("/health", timeout=2.0)
         response.raise_for_status()
         data = response.json()
         backend_ok = data.get("status") in {"ok", "degraded"}
         if data.get("status") == "degraded":
-            detail = "Backend started, but the capability library file check failed."
-    except Exception as error:
-        detail = f"Backend connection failed: {error}"
+            detail = "资源库文件不完整，请到系统状态页检查。"
+    except Exception:
+        detail = "后端暂不可用。请确认启动器正在运行，然后刷新页面。"
 
     return templates.TemplateResponse(
         request=request,
         name="index.html",
         context={"backend_ok": backend_ok, "backend_detail": detail},
     )
+
+
+@app.get("/health")
+async def frontend_health() -> dict:
+    return {"status": "ok", "name": PRODUCT["name"], "version": PRODUCT["version"]}
+
+
+@app.get("/jobs", response_class=HTMLResponse)
+async def jobs_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request=request, name="jobs.html")
+
+
+@app.get("/system", response_class=HTMLResponse)
+async def system_page(request: Request) -> HTMLResponse:
+    return templates.TemplateResponse(request=request, name="system.html")
+
+
+@app.get("/api/system")
+async def system_status(request: Request) -> dict:
+    return await forward(request, "GET", "/api/v1/system")
+
+
+@app.get("/api/jobs")
+async def list_jobs(request: Request) -> dict:
+    return await forward(request, "GET", with_query(request, "/api/v1/jobs"))
+
+
+@app.get("/api/jobs/{job_id}/input")
+async def job_input(request: Request, job_id: str) -> dict:
+    return await forward(request, "GET", f"/api/v1/jobs/{job_id}/input")
+
+
+@app.get("/api/jobs/{job_id}/harness")
+async def job_harness(request: Request, job_id: str) -> dict:
+    return await forward(request, "GET", f"/api/v1/jobs/{job_id}/harness")
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+async def cancel_job(request: Request, job_id: str) -> dict:
+    return await forward(request, "POST", f"/api/v1/jobs/{job_id}/cancel")
 
 
 @app.get("/jobs/{job_id}", response_class=HTMLResponse)
@@ -176,7 +224,14 @@ async def forward(
             method,
             path,
             json=payload,
-            headers={"x-local-api-token": LOCAL_API_TOKEN},
+            headers={
+                "x-local-api-token": LOCAL_API_TOKEN,
+                **(
+                    {"Idempotency-Key": request.headers["Idempotency-Key"]}
+                    if path == "/api/v1/jobs" and "Idempotency-Key" in request.headers
+                    else {}
+                ),
+            },
             timeout=300.0 if path.endswith("/process-route/customize") else 90.0,
         )
         response.raise_for_status()
@@ -193,7 +248,7 @@ async def forward(
     except httpx.RequestError as error:
         raise HTTPException(
             status_code=503,
-            detail=f"Cannot connect to backend service: {error}",
+            detail="后端暂不可用，请检查启动器后重试。",
         ) from error
 
 
@@ -241,6 +296,30 @@ async def submit_choices(request: Request, job_id: str) -> dict[str, Any]:
 @app.get("/api/jobs/{job_id}/result")
 async def get_result(request: Request, job_id: str) -> dict[str, Any]:
     return await forward(request, "GET", f"/api/v1/jobs/{job_id}/result")
+
+
+@app.get("/api/engineering-skills")
+async def engineering_skills(request: Request):
+    return await forward(request, "GET", "/api/v1/engineering-skills")
+
+
+@app.get("/api/experiences")
+async def experiences(request: Request):
+    return await forward(request, "GET", with_query(request, "/api/v1/experiences"))
+
+
+@app.post("/api/jobs/{job_id}/experiences")
+async def propose_experience(request: Request, job_id: str):
+    return await forward(
+        request, "POST", f"/api/v1/jobs/{job_id}/experiences", await request.json()
+    )
+
+
+@app.post("/api/experiences/{experience_id}/review")
+async def review_experience(request: Request, experience_id: str):
+    return await forward(
+        request, "POST", f"/api/v1/experiences/{experience_id}/review", await request.json()
+    )
 
 
 # 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
@@ -393,12 +472,12 @@ async def custom_planning_page(request: Request) -> HTMLResponse:
     backend_ok = False
     detail = ""
     try:
-        response = await request.app.state.backend.get("/health")
+        response = await request.app.state.backend.get("/health", timeout=2.0)
         response.raise_for_status()
         data = response.json()
         backend_ok = data.get("status") in {"ok", "degraded"}
-    except Exception as error:
-        detail = f"Backend connection failed: {error}"
+    except Exception:
+        detail = "后端暂不可用。请确认启动器正在运行，然后刷新页面。"
 
     return templates.TemplateResponse(
         request=request,

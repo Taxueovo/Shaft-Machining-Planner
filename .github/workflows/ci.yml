@@ -44,6 +44,9 @@ jobs:
       - name: Run backend tests
         run: pytest backend/tests -v
 
+      - name: Evaluate deterministic agent behavior
+        run: python scripts/evaluate_agents.py --output output/evaluation/ci-rules.json
+
   rag-smoke:
     name: RAG smoke test
     runs-on: ubuntu-latest

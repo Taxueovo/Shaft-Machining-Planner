@@ -1,6 +1,6 @@
 # 统一启动本地前后端、等待就绪并管理子进程退出。
 """
-Shaft Machining Planner one-click launcher
+shaftmachiningplanner one-click launcher
 ============================
 
 Starts two services at the same time:
@@ -16,12 +16,13 @@ Usage:
 Notes:
 - Automatically sets NO_PROXY=127.0.0.1,localhost so local requests are not blocked by the corporate proxy (403).
 - Ports already running are skipped (idempotent); Ctrl+C or any process exit shuts down all services.
-- The peagent backend auto-stops after 30s without a browser heartbeat (existing behavior; heartbeat.js keeps it alive once the browser is open).
+- Browser idle shutdown is disabled by default; use AUTO_SHUTDOWN_ON_IDLE=true to opt in.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import secrets
 import subprocess
@@ -30,24 +31,28 @@ import time
 import urllib.request
 import webbrowser
 from pathlib import Path
+from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent
+load_dotenv(ROOT / ".env")
 
 PE_BACKEND_RUNNER = ROOT / "backend" / "run_backend.py"
 PE_FRONTEND_RUNNER = ROOT / "frontend" / "run_frontend.py"
 
-PE_BACKEND_HEALTH = "http://127.0.0.1:8001/health"
-PE_FRONTEND_URL = "http://127.0.0.1:8000"
+PE_BACKEND_HEALTH = os.getenv("BACKEND_URL", "http://127.0.0.1:8001").rstrip("/") + "/health"
+PE_FRONTEND_URL = os.getenv("FRONTEND_URL", "http://127.0.0.1:8000").rstrip("/")
+PE_FRONTEND_HEALTH = PE_FRONTEND_URL + "/health"
 
 
 # 轮询健康接口直到成功或超时，供启动器判断单个服务是否就绪。
 def _ready(url: str, timeout: float) -> bool:
-    """Wait for a service to be ready (an HTTP 200 response means it is ready)."""
+    """Wait for a service to be ready (product identity must match)."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
             with urllib.request.urlopen(url, timeout=1.5) as resp:
-                if resp.status == 200:
+                data = json.load(resp)
+                if resp.status == 200 and data.get("name") == "shaftmachiningplanner":
                     return True
         except Exception:
             pass
@@ -56,7 +61,7 @@ def _ready(url: str, timeout: float) -> bool:
 
 
 # 并行等待多个服务就绪，汇总成功状态。
-def _wait_all(targets: list[tuple[str, str]], timeout: float = 60) -> None:
+def _wait_all(targets: list[tuple[str, str]], timeout: float = 60) -> bool:
     """Wait for multiple services to be ready in parallel.
 
     Unlike waiting serially one by one: after startup all services are polled at
@@ -68,26 +73,27 @@ def _wait_all(targets: list[tuple[str, str]], timeout: float = 60) -> None:
     while remaining and time.time() < deadline:
         for name, url in list(remaining.items()):
             if _ready(url, 1):
-                print(f"[Shaft Machining Planner] {name} ready")
+                print(f"[shaftmachiningplanner] {name} ready")
                 del remaining[name]
         if remaining:
             time.sleep(0.5)
     for name in remaining:
         print(
-            f"[Shaft Machining Planner] Warning: {name} startup timed out, check the console error output."
+            f"[shaftmachiningplanner] Warning: {name} startup timed out, check the console error output."
         )
+    return not remaining
 
 
 def _start(
     processes: list[tuple[str, subprocess.Popen]], name: str, cmd: list[str], cwd: Path, env: dict
 ) -> None:
     """在新进程中拉起一个服务，并把 (名称, 进程) 记入列表，供统一就绪等待与退出清理。"""
-    print(f"[Shaft Machining Planner] Starting {name} ...")
+    print(f"[shaftmachiningplanner] Starting {name} ...")
     proc = subprocess.Popen(cmd, cwd=str(cwd), env=env)
     processes.append((name, proc))
 
 
-def main() -> None:
+def main() -> int:
     """一键启动入口：按后端优先顺序拉起后端/前端服务，等待就绪后按需打开浏览器，并阻塞到任一进程退出统一清理。"""
     # Windows console/redirection defaults to cp1252 which cannot print non-ASCII characters; force UTF-8
     for stream in (sys.stdout, sys.stderr):
@@ -96,7 +102,7 @@ def main() -> None:
         except (AttributeError, ValueError):
             pass
 
-    parser = argparse.ArgumentParser(description="Shaft Machining Planner one-click launcher")
+    parser = argparse.ArgumentParser(description="shaftmachiningplanner one-click launcher")
     parser.add_argument(
         "--no-browser", action="store_true", help="Do not open the browser automatically"
     )
@@ -113,14 +119,14 @@ def main() -> None:
     env = dict(os.environ)
     token_was_supplied = bool(env.get("LOCAL_API_TOKEN"))
     # 未预先提供 LOCAL_API_TOKEN 时生成随机令牌，子进程据此与前端做本地鉴权
-    env.setdefault("LOCAL_API_TOKEN", secrets.token_urlsafe(32))
+    env["LOCAL_API_TOKEN"] = env.get("LOCAL_API_TOKEN") or secrets.token_urlsafe(32)
     no_proxy = [
         p for p in ("127.0.0.1", "localhost") if p not in (env.get("NO_PROXY") or "").split(",")
     ]
     env["NO_PROXY"] = ",".join(no_proxy + ([env["NO_PROXY"]] if env.get("NO_PROXY") else []))
     if no_proxy:
         print(
-            f"[Shaft Machining Planner] NO_PROXY={env['NO_PROXY']} set (so local requests are not intercepted by the proxy)"
+            f"[shaftmachiningplanner] NO_PROXY={env['NO_PROXY']} set (so local requests are not intercepted by the proxy)"
         )
 
     processes: list[tuple[str, subprocess.Popen]] = []
@@ -132,7 +138,7 @@ def main() -> None:
 
         # 1. peagent backend :8001
         backend_was_running = _ready(PE_BACKEND_HEALTH, 2)
-        frontend_was_running = _ready(PE_FRONTEND_URL, 2)
+        frontend_was_running = _ready(PE_FRONTEND_HEALTH, 2)
         # 后端已在运行但不知其 LOCAL_API_TOKEN，且未显式提供令牌时，新起的前端将无法鉴权，故直接终止并提示
         if backend_was_running and not frontend_was_running and not token_was_supplied:
             raise RuntimeError(
@@ -140,9 +146,7 @@ def main() -> None:
                 "Stop it and relaunch both services, or supply the same token explicitly."
             )
         if backend_was_running:
-            print(
-                f"[Shaft Machining Planner] peagent backend already running ({PE_BACKEND_HEALTH})"
-            )
+            print(f"[shaftmachiningplanner] peagent backend already running ({PE_BACKEND_HEALTH})")
         else:
             _start(
                 processes,
@@ -156,28 +160,27 @@ def main() -> None:
         # Wait for the backend to be ready
         backend_ready_now = _ready(PE_BACKEND_HEALTH, 60)
         if not backend_ready_now:
-            print(
-                "[Shaft Machining Planner] Warning: peagent backend startup timed out, check the console error output."
-            )
+            raise RuntimeError("后端启动超时，请检查依赖、端口和日志。")
 
         # 2. peagent frontend :8000 (only started if already running or the backend is ready)
-        if frontend_was_running or _ready(PE_FRONTEND_URL, 2):
-            print(f"[Shaft Machining Planner] peagent frontend already running ({PE_FRONTEND_URL})")
+        if frontend_was_running or _ready(PE_FRONTEND_HEALTH, 2):
+            print(f"[shaftmachiningplanner] peagent frontend already running ({PE_FRONTEND_URL})")
         elif backend_ready_now or _ready(PE_BACKEND_HEALTH, 1):
             frontend_cmd = [python, str(PE_FRONTEND_RUNNER), "--frontend-only", "--no-browser"]
             _start(processes, "peagent frontend (8000)", frontend_cmd, ROOT / "frontend", env)
-            targets.append(("peagent frontend (8000)", PE_FRONTEND_URL))
+            targets.append(("peagent frontend", PE_FRONTEND_HEALTH))
         else:
             print(
-                "[Shaft Machining Planner] Warning: peagent backend not ready, frontend not started."
+                "[shaftmachiningplanner] Warning: peagent backend not ready, frontend not started."
             )
 
         # ── Wait for the remaining services to be ready ──
-        _wait_all(targets, timeout=60)
+        if not _wait_all(targets, timeout=60):
+            raise RuntimeError("服务未能全部就绪，启动未完成。")
 
         print()
         print("=" * 60)
-        print("Shaft Machining Planner ready")
+        print("shaftmachiningplanner ready")
         print(f"  peagent frontend : {PE_FRONTEND_URL}")
         print(f"  peagent backend  : {PE_BACKEND_HEALTH}")
         print("  Press Ctrl+C or close this window to stop all services")
@@ -192,27 +195,34 @@ def main() -> None:
             timer.start()
 
         # Block: exit the loop when any process exits or Ctrl+C is received, then clean up
-        while True:
+        while processes:
             time.sleep(1)
             exited = [name for name, p in processes if p.poll() is not None]
             if exited:
+                if any(p.returncode for _, p in processes if p.poll() is not None):
+                    raise RuntimeError("服务异常退出，请查看前面的日志。")
                 print(
-                    f"[Shaft Machining Planner] Process exited: {', '.join(exited)}, shutting down the remaining services..."
+                    f"[shaftmachiningplanner] Process exited: {', '.join(exited)}, shutting down the remaining services..."
                 )
                 break
     except KeyboardInterrupt:
-        print("\n[Shaft Machining Planner] Interrupt received, shutting down all services...")
+        print("\n[shaftmachiningplanner] Interrupt received, shutting down all services...")
+    except RuntimeError as error:
+        print(f"[shaftmachiningplanner] 启动失败：{error}", file=sys.stderr)
+        return 1
     finally:
         for name, proc in processes:
             if proc.poll() is None:
-                print(f"[Shaft Machining Planner] Shutting down {name} ...")
+                print(f"[shaftmachiningplanner] Shutting down {name} ...")
                 proc.terminate()
                 try:
                     proc.wait(timeout=8)
                 except subprocess.TimeoutExpired:
                     proc.kill()
-        print("[Shaft Machining Planner] All services shut down.")
+        if processes:
+            print("[shaftmachiningplanner] 本启动器启动的服务已停止。")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

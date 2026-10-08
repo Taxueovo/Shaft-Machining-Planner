@@ -40,9 +40,17 @@ class Workflow(
 ):
     """Route proposal, parallel specialist review, coordination and bounded repair."""
 
+    def invoke(self, graph_input, config=None):
+        from .harness import invoke
+
+        return invoke(self, graph_input, config)
+
     def __init__(self, store: JobStore) -> None:
         """初始化各领域依赖（仓储/规则引擎/LLM 代理）并编译整条 LangGraph 流程。"""
         self.store = store
+        from .harness import resource_versions
+
+        self.resource_manifest = resource_versions()
         self.machine_repo = MachineRepository()
         self.tool_repo = ToolRepository()
         self.heat_treatment_provider = HeatTreatmentProvider()

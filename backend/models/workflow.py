@@ -18,6 +18,8 @@ from langgraph.errors import GraphInterrupt
 from models.tasks import merge_task_results
 from models.input import ShaftSegment, FeatureInput, GlobalRequirements
 from rules.geometry import validate_manufacturing_geometry
+from observability import begin_model_capture, end_model_capture
+from prompt_profiles import profile_metadata
 
 logger = logging.getLogger(__name__)
 _trace_active = ContextVar("trace_active", default=False)
@@ -32,6 +34,7 @@ _trace_active = ContextVar("trace_active", default=False)
 class PlanningRequest(BaseModel):
     """Process planning request."""
 
+    part_name: Optional[str] = Field(default=None, max_length=100)
     material: str = Field(min_length=1, max_length=100)
     blank_type: Literal["solid", "hollow"] = "solid"
     blank_diameter_mm: float = Field(gt=0)
@@ -96,6 +99,7 @@ class WorkflowState(TypedDict, total=False):
     task_plan: dict[str, Any]
     worker_results: Annotated[dict[str, Any], merge_task_results]
     planner_calls: int
+    planner_decision_key: str
     scheduler_waves: int
     task_action: str
     ready_tasks: list[str]
@@ -149,6 +153,8 @@ class ExecutionTrace:
             "tool_calls": [],
             "output_keys": [],
             "error": None,
+            "model_calls": [],
+            "prompt_profile": profile_metadata(),
         }
 
     @staticmethod
@@ -223,17 +229,32 @@ def traced(node_name: str, input_keys: list[str] | None = None):
                 return func(self, state)
             keys = input_keys or list(state.keys())
             entry = ExecutionTrace.start(node_name, keys, state)
+            from workflow.harness import current_control
+
+            control = current_control()
+            if control:
+                entry.update(
+                    run_id=control.store.get(control.job_id)["harness"]["run_id"],
+                    invocation_id=control.invocation_id,
+                )
             job_id = state.get("job_id") or state.get("snapshot", {}).get("job_id")
             store = getattr(self, "store", None)
+            model_calls = []
 
             def persist():
+                entry["model_calls"] = ExecutionTrace.snapshot(model_calls)
                 if store is not None and job_id and hasattr(store, "save_trace"):
                     store.save_trace(job_id, entry)
 
             persist()
             token = _trace_active.set(True)
+            call_token = begin_model_capture(model_calls)
             try:
+                if control:
+                    control.reserve("nodes", node_name)
                 result = func(self, state)
+                if control:
+                    control.check()
                 # 约定：节点可在返回 dict 中通过 _tool_calls 附带工具调用明细，先取出再写入 trace
                 extra_tool_calls = result.pop("_tool_calls", [])
                 for child in result.get("execution_trace", []):
@@ -261,6 +282,7 @@ def traced(node_name: str, input_keys: list[str] | None = None):
                 persist()
                 raise
             finally:
+                end_model_capture(call_token)
                 _trace_active.reset(token)
 
         return wrapper

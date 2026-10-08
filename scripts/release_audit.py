@@ -18,6 +18,7 @@ IGNORED_DIRS = {
     "output",
     "node_modules",
     ".venv",
+    ".venv-optimization",
     "venv",
     ".coverage",
 }

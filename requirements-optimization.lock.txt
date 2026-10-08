@@ -1,0 +1,5 @@
+-r requirements.lock.txt
+
+gepa==0.1.4 \
+    --hash=sha256:12b971039599625c156d2231f6d72a29c31a22e9c237689459b5f1a3c353f532 \
+    --hash=sha256:6dd153a676ae5481764860d19286a9c0e8ddb5ef70d7f13044faf24978bdb6b8

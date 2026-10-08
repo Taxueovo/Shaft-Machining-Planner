@@ -1,0 +1,16 @@
+{% macro chrome(page) -%}
+<a class="skip-link" href="#main-content">跳到主要内容</a>
+<aside class="app-sidebar" aria-label="主导航">
+  <a class="app-brand" href="/"><span class="brand-mark" aria-hidden="true">s<span>m</span></span><span>{{ product.name }}<small>工艺规划工作台</small></span></a>
+  <div class="nav-label">工作空间</div>
+  <nav class="app-nav">
+    {% for href, label, icon in [('/', '工作台', '▦'), ('/custom', '新建规划', '+'), ('/jobs', '任务中心', '≡'), ('/taxonomy', '轴件预设', '◇'), ('/cases', '案例库', '▤'), ('/rag', '知识库', '⌘'), ('/system', '系统状态', '◉')] %}
+    {% set active = request.url.path == href or (href != '/' and request.url.path.startswith(href + '/')) %}
+    <a href="{{ href }}" class="nav-item {{ 'active' if active else '' }}" {% if active %}aria-current="page"{% endif %}><span class="nav-icon" aria-hidden="true">{{ icon }}</span>{{ label }}</a>
+    {% endfor %}
+  </nav>
+  <div class="sidebar-note"><span class="local-dot"></span> 本机工作空间<p>规划结果需工程复核</p><small>v{{ product.version }} · {{ product.edition }}</small></div>
+</aside>
+<header class="app-topbar"><div><span class="breadcrumb">工作空间</span><span class="breadcrumb-divider">/</span><strong>{{ page }}</strong></div><a href="/system" id="shell-service" class="connection-state"><i></i><span>正在连接</span></a></header>
+<script src="/static/workspace.js?v={{ static_version }}"></script>
+{%- endmacro %}

@@ -1,349 +1,304 @@
 <p align="center">
-  <img src=".github/assets/readme-hero.svg" width="100%" alt="Shaft Machining Planner — geometry in, verified process route out" />
+  <img src=".github/assets/readme-hero.svg" width="100%" alt="shaftmachiningplanner: shaft geometry, process planning, resource selection, and engineering review" />
 </p>
 
-<h1 align="center">Shaft Machining Planner</h1>
+<h1 align="center">shaftmachiningplanner</h1>
+<p align="center"><strong>Machining process planning and resource verification for shaft components</strong></p>
+<p align="center">A local workbench for structured part input, reviewable process routes, and traceable workflow execution.</p>
 
 <p align="center">
-  <strong>Turn motor-shaft geometry into a resource-checked machining route and an exportable process card.</strong>
-</p>
-
-<p align="center">
-  <a href="https://github.com/Taxueovo/Shaft-Machining-Planner/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Taxueovo/Shaft-Machining-Planner/ci.yml?branch=main&amp;style=flat-square&amp;label=tests" alt="Test status" /></a>
-  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python_3.10-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Python 3.10" /></a>
+  <a href="https://github.com/Taxueovo/Shaft-Machining-Planner/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Taxueovo/Shaft-Machining-Planner/ci.yml?branch=main&amp;style=flat-square&amp;label=main%20CI" alt="Main branch CI" /></a>
+  <img src="https://img.shields.io/badge/version-1.4.0-2456D1?style=flat-square" alt="Version 1.4.0" />
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Tested with Python 3.10" /></a>
   <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&amp;logo=fastapi&amp;logoColor=white" alt="FastAPI" /></a>
-  <img src="https://img.shields.io/badge/planning-RAG_grounded-2456D1?style=flat-square" alt="RAG grounded planning" />
+  <img src="https://img.shields.io/badge/workflow-LangGraph-4051B5?style=flat-square" alt="LangGraph" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-2F855A?style=flat-square" alt="MIT License" /></a>
 </p>
 
 <p align="center">
-  <a href="#3-installation">Install</a>
-  · <a href="#4-running">Run</a>
-  · <a href="#1-architecture">Architecture</a>
-  · <a href="#7-data-interpretation">Public data</a>
-  · <a href=".github/SECURITY.md">Security</a>
-  · <a href="CONTRIBUTING.md">Contributing</a>
+  <a href="#quick-start">Quick start</a> · <a href="#screenshots">Screenshots</a> · <a href="#architecture">Architecture</a> · <a href="#documentation">Documentation</a> · <a href="CHANGELOG.md">Changelog</a>
 </p>
 
----
+## Overview
 
-Describe the shaft — stepped segments, keyways, splines, gears, bores, tapers and
-more — and generate a complete process route covering operations, machine tools,
-cutting tools, heat treatment and finishing. Planning is grounded in RAG handbooks
-and a case base, then checked against local capability libraries before Excel export.
+shaftmachiningplanner converts material, blank geometry, shaft segments, tolerances, and feature locations into a machining process draft. A LangGraph workflow coordinates route generation, resource selection, specialist review, and deterministic verification. The local workbench provides task history, human input, route revisions, and Excel export.
 
-| Model the part | Plan the route | Verify the resources | Export the result |
-| :--- | :--- | :--- | :--- |
-| Structured geometry with an interactive 3D preview. | Rules + LangGraph with optional human-in-the-loop decisions. | Machine and cutting-tool coverage stays explicit instead of being guessed. | Produce a practical process-card workbook for engineering review. |
+| Part definition | Process planning | Resource verification | Engineering review |
+| --- | --- | --- | --- |
+| Solid or hollow blanks, shaft segments, tolerances, and located features | Rule-based baseline routes with optional model-assisted proposals | Machine and cutting-tool screening against public capability samples | Independent machining, quality, and heat-treatment reviews; editable drafts and exports |
 
-> **Engineering boundary:** this is a planning and screening tool. Final cutting
-> parameters, fixtures, tolerances, stock and shop availability still require a
-> qualified manufacturing engineer.
+Version 1.4.0 targets a loopback-only, single-process deployment. Process drafts require engineering review of drawings, workholding, machining parameters, inspection, and actual resource availability. ERP/MES integration, multi-user access control, and equipment execution are outside the current implementation.
 
-The project has two deliberately separated services:
+## Features
 
-- **Backend** (`backend/`) — validation, LangGraph workflow, capability libraries,
-  process rules, verification and RAG.
-- **Frontend** (`frontend/`) — Jinja2 web UI, dynamic form, status polling and RAG
-  management pages. It communicates with the backend only over HTTP/JSON.
+- **Local workbench:** recent tasks, status filters, search, pagination, saved browser drafts, historical-input reuse, and system status.
+- **Dependency-aware routing:** fixed core tasks, conditional workholding and alternative-resource analysis, parallel workers, and selective invalidation after repairs.
+- **Human continuation:** validated process choices and engineering answers, persisted with LangGraph checkpoints.
+- **Execution harness:** durable run identities, cumulative budgets, manifest validation, typed retries, queue admission, idempotent task creation, and cooperative cancellation.
+- **Optional knowledge services:** RAG retrieval and a read-only TencentDB Agent Memory adapter, with memory disabled by default.
+- **Evaluation tooling:** synthetic cases, failure reports, model-usage observations, and an opt-in GEPA prompt-candidate workflow.
+- **Engineering procedures:** versioned machining, quality, and heat-treatment skill packages, snapshotted for every run.
+- **Evidence context:** complete source records, bounded tool previews, and budgeted evidence paging for specialist reviews.
+- **Constraint diagnostics:** operation-bound process-state counterexamples, explicit drawing-limit checks, and dimensional coverage warnings.
+- **Reviewed experience:** local lesson proposals, recorded review decisions, applicability filters, and expiry-aware retrieval for new jobs.
 
-## Table of Contents
+## Screenshots
 
-- [Authors & Maintainers](#authors--maintainers)
-- [1. Architecture](#1-architecture)
-- [2. Features](#2-features)
-- [3. Installation](#3-installation)
-- [4. Running](#4-running)
-- [5. Environment variables](#5-environment-variables)
-- [6. Directory structure](#6-directory-structure)
-- [7. Data interpretation](#7-data-interpretation)
-- [8. Tests](#8-tests)
+Screenshots show the Simplified Chinese interface with isolated synthetic tasks in rules mode. [Asset provenance](docs/assets/README.md) records the version and capture conditions.
 
-## Authors & Maintainers
+### Workbench
 
-- **Taxueovo** — core maintainer and primary developer.
+Review recent tasks and pending questions, then start from a new form, a shaft preset, or saved input.
 
-## 1. Architecture
+![Local workbench with task summary and recent records](docs/assets/workbench.jpg)
 
-```
-User
- └─[manual form]──▶ frontend(8000) ──▶ backend(8001) ──▶ process route + resource verification
-```
+### Part input and task history
 
-- `backend/`: input validation, LangGraph workflow, machine tool / cutting tool
-  Excel libraries, process rules, verification, RAG.
-- `frontend/`: Jinja2 pages, dynamic form, status polling, HTTP proxy.
-- The frontend never imports backend business functions; the two processes
-  communicate only over HTTP/JSON.
+Define the blank, shaft segments, feature locations, and treatment requirements. Search previous tasks and reuse their original input for a new planning run.
 
-## 2. Features
+<table>
+  <tr><th>Structured part input</th><th>Task center</th></tr>
+  <tr>
+    <td><img src="docs/assets/part-input.jpg" alt="Material, blank, and stepped-shaft input" /></td>
+    <td><img src="docs/assets/task-center.jpg" alt="Task search, status filters, and input reuse" /></td>
+  </tr>
+</table>
 
-Implemented:
+### Process route and resource candidates
 
-- Structured entry of material, bar stock and stepped segments; segment-relative
-  or global-absolute positioning
-- Dynamic feature input: keyway, hole, flat, thread, knurl, bearing seat, spline,
-  taper, recess (relief groove), seal area, gear, flange, **bore** (stepped inner bore)
-- High-precision feature detection, LangGraph `interrupt` / `Command(resume=...)`
-  for human-in-the-loop timing decisions
-- Machine tool / cutting tool filtering, base process route generation,
-  conditional operation insertion, per-operation resource display,
-  rule-based Verification
-- RAG (process handbook + case base) injected into the planning workflow
+Inspect operation order, review findings, and machine/tool coverage. Edited routes undergo resource matching and verification before a new revision is published.
 
-Not implemented: full manufacturing cost calculation, Word/PDF export, ERP/MES integration and
-multi-user support. Local job state is restart-safe in SQLite.
+![Process draft with operations and public machine/tool candidates](docs/assets/process-route.jpg)
 
-## 3. Installation
+### Execution records
 
-Create the Conda environment and install the Python dependencies:
+Inspect cumulative node, model, tool, and active-time budgets across planning and route review. Run and invocation identifiers connect control events to the task record.
 
-```bash
-conda env create -f environment.yml
-conda activate shaftplanner
-```
+![Execution harness with cumulative budgets and failure records](docs/assets/runtime-harness.jpg)
 
-or manually:
+The illustrated run used zero planning-model requests in rules mode. Counters and timings describe that individual demonstration. See the [user guide](docs/software-guide.md) for status interpretation, cancellation, and backup procedures.
+
+### Engineering context and reviewed experience
+
+Inspect process-state coverage and execution diagnostics, then record a source-linked lesson for engineering review. Approved lessons can be retrieved by subsequent matching tasks. The screenshot uses an isolated synthetic QA record.
+
+![Engineering experience review with a synthetic lesson](docs/assets/engineering-experience.jpg)
+
+See [Engineering agent extensions](docs/engineering-agents.md) for procedures, context budgets, counterexamples, and experience lifecycle details.
+
+## Quick start
+
+The core lockfiles and CI use **Python 3.10**. Optional RAG and prompt-optimization dependencies have separate lockfiles.
+
+### Install
+
+Run from the repository root:
 
 ```bash
-conda create -n shaftplanner python=3.10
-conda activate shaftplanner
-pip install --require-hashes -r requirements.lock.txt
+python -m venv .venv
+# macOS / Linux
+source .venv/bin/activate
+python -m pip install --require-hashes -r requirements.lock.txt
+cp .env.example .env
 ```
 
-The core install excludes Chroma, Torch and sentence-transformers. Install RAG
-only when needed with `pip install --require-hashes -r requirements-rag.lock.txt`.
+For Windows PowerShell, use these activation and copy commands:
 
-## 4. Running
+```powershell
+.venv\Scripts\Activate.ps1
+Copy-Item .env.example .env
+```
 
-### One-click start (recommended)
+A Conda environment is also available: `conda env create -f environment.yml`, followed by `conda activate shaftplanner`.
+
+The example configuration selects rules mode:
+
+```dotenv
+LLM_PROVIDER=rules
+AGENT_MEMORY_ENABLED=false
+AUTO_SHUTDOWN_ON_IDLE=false
+```
+
+### Run
 
 ```bash
-python start_shaftplanner.py              # starts the backend + frontend, opens the browser
-python start_shaftplanner.py --no-browser # do not open the browser
+python start_shaftplanner.py
+# Start services without opening a browser:
+python start_shaftplanner.py --no-browser
 ```
 
-The launcher handles: `NO_PROXY` setup (so local requests are not blocked by a
-corporate proxy), readiness waiting, unified shutdown on Ctrl+C / process exit,
-and idempotent skipping of ports already running.
+| Service | Default address | Responsibility |
+| --- | --- | --- |
+| Workbench | <http://127.0.0.1:8000> | Pages, forms, polling, and authenticated local API proxy |
+| Backend | <http://127.0.0.1:8001> | Input validation, workflow execution, resources, tasks, and checkpoints |
 
-### Running subsystems individually (debugging)
+The launcher verifies service identity and readiness, and generates local API credentials. Services continue running after the browser closes. Stop them with Ctrl+C in the launch terminal or through System status. Separate frontend/backend startup requires a shared `LOCAL_API_TOKEN`; see the [user guide](docs/software-guide.md).
 
-- `python frontend/run_frontend.py` — frontend only (auto-starts the backend)
-- `cd backend && python run_backend.py` — backend only
+For a first run, open the workbench, create a plan, load the example, review its inputs, and submit. Inspect the result and execution record before exporting the Excel draft.
 
-### Default addresses
+## Architecture
 
-| Service          | URL                   |
-|------------------|-----------------------|
-| peagent frontend | http://127.0.0.1:8000 |
-| peagent backend  | http://127.0.0.1:8001 |
+![Local workbench, execution harness, workflow, and data responsibilities](docs/assets/system-architecture.svg)
 
-## 5. Environment variables
-
-Configuration is read from the project-root `.env` file (see `frontend/main.py`,
-`frontend/run_frontend.py` and `backend/run_backend.py`):
-
-| Variable              | Default                   | Description                                        |
-|-----------------------|---------------------------|----------------------------------------------------|
-| `BACKEND_URL`         | `http://127.0.0.1:8001`   | peagent backend base URL (frontend proxy target)   |
-| `FRONTEND_URL`        | `http://127.0.0.1:8000`   | peagent frontend URL (launcher / health checks)    |
-| `FRONTEND_HOST`       | `127.0.0.1`               | Frontend listen host                               |
-| `BACKEND_HOST`        | `127.0.0.1`               | Backend listen host                                |
-| `FRONTEND_PORT`       | `8000`                    | Frontend listen port                               |
-| `LOG_LEVEL`           | `info`                    | Uvicorn log level                                  |
-| `LOCAL_API_TOKEN`     | generated by launcher     | Private token between the local frontend and backend |
-| `LLM_PROVIDER`        | `remote`                  | `rules`, `remote`, or loopback-only `local`           |
-| `OPENAI_API_KEY`      | —                         | Main model-provider credential (optional; rule mode works without it) |
-| `OPENAI_BASE_URL`     | `https://api.openai.com/v1` | Approved OpenAI-compatible model endpoint          |
-| `OPENAI_MODEL`        | `gpt-5-nano`              | Main planning model                                 |
-| `LOCAL_MODEL_BASE_URL` | `http://127.0.0.1:11434/v1` | Loopback OpenAI-compatible local model endpoint  |
-| `LOCAL_MODEL_NAME`    | `qwen3:8b`                | Local model name                                     |
-| `JOB_DB_FILE`         | `data/jobs.sqlite3`       | Local SQLite job-state file (created with mode 0600) |
-| `EMBEDDING_API_KEY`   | —                         | Embedding provider API key (required for RAG)      |
-| `EMBEDDING_BASE_URL`  | falls back to main endpoint | Approved OpenAI-compatible embedding endpoint      |
-| `EMBEDDING_MODEL`     | —                         | Embedding model name (required for RAG)            |
-| `RAG_STORE_EXPORTS`   | `false`                   | Opt in to persisting exported process cards in RAG |
-| `NO_PROXY`            | set by the launcher       | Localhost proxy bypass (127.0.0.1, localhost)      |
-
-For fully offline planning, set `LLM_PROVIDER=rules`. For Ollama, expose its
-OpenAI-compatible endpoint on loopback, set `LLM_PROVIDER=local`, and choose
-`LOCAL_MODEL_NAME`; non-loopback local endpoints are rejected.
-
-RAG additionally requires the optional RAG lock file and embedding configuration above;
-the RAG management page (`/rag`) shows a notice when it is unavailable.
-Both launchers reject non-loopback listen addresses. The application is not a
-multi-user web service and must not be exposed through a public proxy.
-
-## 6. Directory structure
-
-```
-Shaft Machining Planner/
-├── backend/          # peagent backend (process planning workflow)
-│   ├── app.py / run_backend.py / service.py / repositories.py
-│   ├── models/ rules/ agents/ workflow/ providers/ workers/ planners/
-│   ├── database/ rag/ tests/
-├── frontend/         # peagent frontend (Web UI)
-│   ├── main.py / run_frontend.py
-│   ├── templates/ static/
-├── data/             # capability libraries (machines.xlsx / tools.xlsx) + case base
-├── output/           # process card Excel exports
-├── scripts/          # tooling scripts (e.g. documentation generation)
-├── docs/             # design documents
-├── .env              # unified environment configuration
-├── start_shaftplanner.py
-└── requirements.txt / requirements.lock.txt / environment.yml
-```
-
-## 7. Data interpretation
-
-### Machine tool Excel (`data/machines.xlsx`)
-
-Verifies length, diameter, production status and, where the official source
-publishes them, workpiece weight and gear module. Missing precision/type/options
-remain clearly labeled as screening-only instead of being silently assumed.
-
-The committed workbook is a small public sample sourced from official DMG MORI,
-KAPP NILES and Gleason product pages, including
-[NLX 2500 turning](https://us.dmgmori.com/products/machines/turning/universal-turning/nlx/nlx-2500),
-[cylindrical grinding](https://en.dmgmori.com/products/machines/grinding/vertical-grinding/nvg/nvg-7lh),
-[gear grinding](https://www.kapp-niles.com/en/machines/profile-grinding-machines/kng-ready)
-and [gear hobbing](https://www.gleason.com/en/products/machines/cylindrical/hobbing-up-to-300-mm/100h-series-high-speed-hobbing-with-integrated-chamfering-deburring)
-capabilities. Each row retains its source URL and verification date. It contains
-no customer machines, serial numbers, pricing, contact details, availability or
-private configuration data.
-
-### Cutting tool Excel (`data/tools.xlsx`)
-
-Verifies material → ISO category, process step, cutting tool grade, First Choice,
-coating and applicable materials; it does not cover specific sizes / stock /
-tolerance capability, so some operations end up `not_covered` and the overall
-result is usually `conditional_pass`, requiring engineer confirmation.
-
-The sample grade mappings come from ISCAR's public
-[grade/application table](https://www.iscar.com/eCatalog/gradesTable/gradesTable.html)
-and [technical FAQ](https://www.iscar.com/faq.aspx/countryid/49). They support
-coarse grade screening only; insert geometry, size, cutting parameters, stock,
-holder, coolant and workholding must be confirmed by an engineer.
-
-### Private-data boundary
-
-- `data/cases.json`, process-card `output/`, RAG source cases/specifications,
-  Chroma indexes and exported-card RAG records are ignored by Git.
-- Exported cards are not added to RAG unless `RAG_STORE_EXPORTS=true` is set.
-- Excel text is escaped before writing so user/model content cannot become a formula.
-- Capability workbooks contain only manufacturer-published product facts and
-  explicit source attribution. Do not replace them with internal asset lists in a
-  public fork.
-- `python scripts/verify_public_sources.py` checks approved official hosts and
-  review freshness without scraping or changing engineering values. The scheduled
-  audit checks reachability; a human must compare source pages before any workbook edit.
-- When model or embedding credentials are configured, part geometry, requirements
-  and selected RAG text are transmitted to those configured providers. Use only an
-  endpoint and retention policy approved for the data classification involved; leave
-  the keys unset for rule-only/offline operation.
-
-## 8. Tests
-
-```bash
-python -m pytest backend/tests -q
-python scripts/verify_public_sources.py
-python scripts/release_audit.py
-```
-
-## Planner–worker execution and engineering review
-
-After geometry, treatment planning and any processing-timing decision, a Planner
-proposes a validated task DAG. It selects from seven registered roles: route
-proposal, resource matching, machining review, quality review, heat review,
-workholding analysis and alternative-resource analysis. The first five are mandatory.
-Hollow/slender/precision parts add workholding analysis; resource gaps trigger
-additional capacity analysis. The configured model can adjust pending task objectives,
-dependencies, tool permissions and whether missing information should pause planning.
-Invalid plans fall back to an explicit deterministic plan; the UI exposes that mode.
+The frontend calls the backend over HTTP/JSON. SQLite stores task records and workflow checkpoints. The diagram summarizes component responsibilities; the [architecture reference](docs/langgraph-harness.md) documents routing, recovery, and publication contracts.
 
 ```mermaid
-flowchart TD
-    Input[Validated inputs and processing choices] --> Planner[Planner: propose or update task DAG]
-    Planner --> Scheduler[Validate dependencies, permissions and budgets]
-    Scheduler --> Workers[Dispatch ready workers in parallel]
-    Workers --> Ledger[Structured results and isolated artifacts]
-    Ledger --> Planner
-    Scheduler -->|Missing blocking input| Human[Engineering answers or explicit deferral]
-    Human --> Planner
-    Scheduler -->|Required tasks finished| Review[Coordinate reviews and verify]
-    Review -->|Repairable errors| Repair[Bounded route repair]
-    Repair --> Planner
-    Review --> Draft[Draft for engineering review]
+flowchart LR
+  A[Structured input] --> B[Geometry and heat-treatment decisions]
+  B --> C[Precision-feature choices]
+  C --> D[Deterministic scheduler]
+  D -->|Dependencies ready| E[Parallel Send workers]
+  E --> F[Single result writer]
+  F --> D
+  D -->|Required tasks complete| G[Review coordination and verification]
+  G -->|Pass or conditional pass| H[Engineering draft]
+  G -->|Repairable| R[Repair and downstream invalidation]
+  R --> D
 ```
 
-The scheduler is deterministic: at most four workers run per wave, with sixteen
-waves per job, four Planner model requests and one retry after a task execution
-failure. Contracts cannot grant tools outside a worker's registered capabilities.
-Workers return structured status, artifacts, missing information and a tool log;
-a single collector publishes only output fields owned by the relevant role.
-Completed contracts cannot be rewritten by the Planner. Input, route, dependency
-results and configured resource-workbook fingerprints invalidate stale results.
-After repair, the repaired route is preserved and affected downstream tasks rerun.
-Acceptance criteria guide model work; deterministic route/resource checks and
-mandatory review coverage remain the actual completion gates.
+### Scheduling and replanning
 
-SQLite LangGraph checkpoints persist in `JOB_DB_FILE` alongside jobs (0600 local
-file permissions). Pending precision choices and engineering questions can resume
-after a process restart. `:memory:` is intentionally ephemeral. This release does
-not automatically recover jobs interrupted mid-execution, migrate checkpoints from
-the former static graph, or provide a distributed queue/multi-server lease system.
-The worker tools are read-only or produce local proposals; resuming execution must
-not be extended to irreversible tools without an idempotency mechanism.
+The core task set covers the process route, resources, machining review, quality review, and heat-treatment review. Workholding and alternative-resource analysis are added when part conditions or resource gaps require them.
 
-`GET /api/v1/jobs/{job_id}` includes `task_execution` and `pending_engineering`.
-`POST /api/v1/jobs/{job_id}/engineering` accepts either
-`{"answers":[{"task_id":"workholding","answer":"Fixture information..."}]}` or
-`{"defer":true}`. The server validates the pending IDs before resuming. Workholding
-and capacity answers remain explicitly unverified statements; receiving an answer
-never marks an asset/supplier qualified or releases a route for production.
-The task board shows objectives, dependencies, outcomes and reused results.
-Manual route edits invalidate the old task board and trigger independent re-review.
+| Trigger | Routing behavior |
+| --- | --- |
+| Worker completion or dependency advancement | Reuse the plan; the deterministic scheduler selects the next eligible batch |
+| Initial planning, new resource infeasibility, repair-count changes, or new engineering answers | Request an optional Planner proposal; validate its contract and fall back to rules on failure |
+| Route repair | Preserve the repaired proposal and invalidate affected resource/review outputs |
+| Missing blocking information | Persist an interrupt; validate answers and checkpoint compatibility before resuming |
+| Unknown actions, missing required outputs, or invalid verification verdicts | Record failure and reject successful completion |
 
-Each specialist has an independent context, a structured output contract, at most
-three model turns and four read-only tool requests. Available tools inspect the
-current route, query turning-machine capabilities, query grades for a process
-already in the route, or retrieve reference knowledge. Part dimensions and material
-for resource queries come from validated input, not model-invented query arguments.
-Model findings must cite supplied/retrieved evidence IDs and existing operation
-numbers. These references establish traceability, not proof that a model's
-engineering interpretation is correct. Model timeout/schema/tool-budget failures
-retain deterministic findings and are explicitly reported as degraded reviews.
-The 20-second timeout applies per specialist model request, not to the whole job;
-reference retrieval and provider format fallback can add time.
+### Runtime controls
 
-`LLM_PROVIDER=rules` runs deterministic specialist checks without model calls.
-Configured `remote` or loopback `local` providers enable model reviews through the
-existing model configuration. Review roles use the configured model with separate
-contexts; this does not automatically switch the backend model to the model used
-by your coding assistant. Install the updated locked dependencies, including
-`langgraph-checkpoint-sqlite`; rule mode requires no model credentials. Whole-job caching is off by default (`JOB_CACHE_ENABLED=false`); enabling it
-is a demo convenience and may reuse results against changed knowledge/resources.
+Planning, human continuation, edited-route review, and offline evaluation use the same harness entry point.
 
-Manufacturing input validation preserves explicit `heat_treatment=none`, checks
-finite dimensions, tolerance ordering, full feature extents, stock envelopes, and
-bore/wall consistency. Stock ID is never treated as a finished-bore target. Hollow
-shafts require confirmation of workholding rather than automatic center drilling.
-Explicit operation diameter transitions are validated for material-removal direction
-and continuity; intermediate sizes and complete fixture/inspection plans are still
-engineering inputs, not inferred validated production data.
+| Control | Default or behavior |
+| --- | --- |
+| Nodes / model requests / tool calls | 128 / 32 / 256, cumulative across invocations |
+| Active time / model request timeout | 300 seconds / 30 seconds; human waiting is excluded from active time |
+| Model output / parallel workers | 4096 tokens per request / 4 workers |
+| Pending-job limit | 32; human-waiting jobs are excluded |
+| Continuation and deduplication | Atomic resume; matching input and Idempotency-Key return the existing job |
+| Context and compatibility | prompt/memory snapshots and input, resource, configuration, and runtime identities |
+| Engineering context | Saved procedure contents; 48,000-character evidence maps and 6,000-character tool previews |
+| Stop and retry | Cooperative cancellation; bounded retries for classified transient failures |
+| Observability | run_id, invocation_id, node traces, usage observations, and the latest 200 control events |
 
-Manual route edits are re-matched and re-reviewed in a detached candidate state.
-Invalid edits leave the live result untouched. Accepted edits increment the route
-revision and archive the preceding result; resetting also archives the edited
-result. The result API and Excel export use the reviewed edited snapshot. Export
-filenames include the route revision, and cards are visibly marked **DRAFT — not
-approved for production**. The UI shows specialist findings, evidence references,
-review mode, and execution traces. There is no production-approval/signature
-workflow yet; completed planning is not a manufacturing release.
+Budgets govern execution attempts and active time. Billing depends on provider usage, embeddings, and any separate optimization runs. In-flight calls finish or time out before cooperative cancellation completes. Runtime synchronization uses local locks and persistent active flags.
 
-Regression tests cover invalid geometry, absence of invented heat treatment/bore
-operations, independent parallel review, bounded tool use, invalid model evidence,
-stale reports, rejected/accepted edits, and preservation of repaired routes.
-Model behavior in tests is simulated; real-provider review quality and actual shop
-capability require separate commissioning against approved drawings and routes.
+## Optional integrations
+
+| Integration | Configuration | Responsibility |
+| --- | --- | --- |
+| Rules mode | `LLM_PROVIDER=rules` | Standalone core planning with deterministic proposals |
+| Local model | `LLM_PROVIDER=local` and `LOCAL_MODEL_*` | Loopback OpenAI-compatible endpoint, such as local Ollama |
+| Remote model | `LLM_PROVIDER=remote` and `OPENAI_*` | Send required input and context to the configured provider |
+| RAG | `requirements-rag.lock.txt`, embedding configuration, and an index | Retrieve specification and case references |
+| Tencent memory | Independently deployed service and `AGENT_MEMORY_*` | Read-only retrieval of unverified historical advice; disabled by default |
+| prompt optimization | Separate optimization environment and explicit `--live` | Generate candidates for frozen-test evaluation and engineering review |
+
+The [TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory) adapter provides a historical-context service. SQLite continues to own task state, human interrupts, and checkpoints. A TencentDB PostgreSQL/MySQL migration would require a separate storage and concurrency design.
+
+The first invocation saves prompt, procedure, and memory snapshots; continuation and edited-route review reuse them. Approved, unexpired local lessons can join the initial historical context without enabling Tencent retrieval. Current input and server rules take precedence over historical suggestions. Adapter contracts have been tested with simulated HTTP responses; live-service connectivity and retrieval quality remain pending. See [Engineering agent extensions](docs/engineering-agents.md) for context limits, process-state diagnostics, and the experience review workflow.
+
+```mermaid
+flowchart LR
+  A[Current drawing and structured input] --> P[Planning and review]
+  R[Authoritative resource data] --> P
+  K[Optional RAG references] -.Context.-> P
+  M[Optional historical memory] -.Unverified advice.-> P
+  P --> V[Rule checks and engineering review]
+  P --> S[SQLite tasks and checkpoints]
+```
+
+See the [memory integration assessment](research/tencentdb-agent-memory-integration.md), [evaluation protocol](evaluation/README.md), and [industrial-agent roadmap](research/shaftmachiningplanner-industrial-agent-roadmap-2026-10-06.md).
+
+## Configuration and data
+
+Copy [.env.example](.env.example) to a local `.env` and restart after configuration changes. Keep credentials and business data outside Git.
+
+| Group | Common settings |
+| --- | --- |
+| Services | `BACKEND_URL`, `FRONTEND_URL`, corresponding `*_PORT`, `LOCAL_API_TOKEN` |
+| Task storage | `JOB_DB_FILE`; default `data/jobs.sqlite3` |
+| Execution policy | `HARNESS_*`; existing runs retain their saved policy |
+| Models | `LLM_PROVIDER`, `OPENAI_*`, `LOCAL_MODEL_*` |
+| Retrieval and prompts | `EMBEDDING_*`, `AGENT_MEMORY_*`, `AGENT_PROMPT_PROFILE` |
+| Shutdown | `AUTO_SHUTDOWN_ON_IDLE=false`, `HEARTBEAT_TIMEOUT=300` seconds |
+| Export ingestion | `RAG_STORE_EXPORTS=false` |
+
+Local tasks, case records, RAG documents/indexes, and `output/` are ignored by Git. Task history is capacity-limited; stop services before backing up the database and required exports. Retention and restore procedures are documented in the user guide.
+
+### Public resource samples
+
+- `data/machines.xlsx` records public manufacturer sources and review dates for preliminary size and capability screening. Samples include DMG MORI, KAPP NILES, and Gleason. Site inventory and availability require separate evidence.
+- `data/tools.xlsx` records public ISCAR grade/material application data. Insert geometry, dimensions, tolerances, stock, cutting parameters, and holders require further confirmation.
+- Missing coverage remains `not_covered` or an explicit review item. Source checks preserve engineering values; official references are recorded in the workbooks and `scripts/verify_public_sources.py`.
+
+Model and embedding configurations determine where input and retrieved text are sent. Both application services bind to loopback; multi-user hosting requires additional authorization and deployment controls.
+
+## Development and validation
+
+Install the development dependencies, then run:
+
+```bash
+python -m pip install --require-hashes -r requirements-dev.lock.txt
+python -m pytest backend/tests -q
+python scripts/evaluate_agents.py --output output/evaluation/rules.json
+ruff check backend frontend scripts start_shaftplanner.py
+python scripts/release_audit.py
+python scripts/scan_secrets.py
+python scripts/verify_public_sources.py
+```
+
+Local validation recorded on **2026-10-08** for v1.4.0:
+
+| Check | Result | Coverage |
+| --- | --- | --- |
+| Backend regression | 260 passed, 1 skipped | Procedure snapshots, evidence paging, constraint counterexamples, experience review/recall, trace grading, and existing runtime contracts; one existing deprecation warning |
+| Synthetic rules evaluation | 11/11 passed | Expected behavior on synthetic inputs |
+| Static and publication checks | Passed | Ruff, changed JavaScript syntax, release audit, credential scan, and public-source checks |
+| Browser checks | Passed | Synthetic lesson proposal, review, cross-task recall, and responsive evidence panels |
+| Live memory service, model-quality gains, factory feasibility | Pending | Requires service acceptance and engineering data |
+
+The CI badge tracks `main`; branch validation is available on the corresponding pull request. Model-backed evaluation requires explicit `--live` and uses the configured provider. Engineering acceptance remains a separate review of the drawing, process, inspection, and site resources.
+
+## Documentation
+
+| Reference | Contents |
+| --- | --- |
+| [User guide](docs/software-guide.md) | Workbench operation, statuses, troubleshooting, backups, and upgrades |
+| [Architecture and harness](docs/langgraph-harness.md) | Routing, contracts, budgets, checkpoints, and publication |
+| [Engineering agent extensions](docs/engineering-agents.md) | Procedure packages, bounded evidence, constraint counterexamples, experience review, and trace grading |
+| [API reference](docs/api.md) | Local endpoints, request examples, and error handling |
+| [Memory integration](research/tencentdb-agent-memory-integration.md) | Tencent adapter, deployment prerequisites, and acceptance sequence |
+| [Evaluation](evaluation/README.md) | Synthetic cases, failure reports, and prompt candidates |
+| [Industrial-agent roadmap](research/shaftmachiningplanner-industrial-agent-roadmap-2026-10-06.md) | Research evidence and staged integration priorities |
+| [Changelog](CHANGELOG.md) · [Contributing](CONTRIBUTING.md) | Release history and development conventions |
+| [Publication](PUBLICATION.md) · [Security](.github/SECURITY.md) | Public-release and security guidance |
+| [Documentation assets](docs/assets/README.md) | Screenshot provenance and capture procedure |
+
+## Repository layout
+
+```text
+shaftmachiningplanner/
+├── backend/                 # APIs, rules, resources, and model clients
+│   ├── agents/              # Planner, role contracts, and specialists
+│   ├── workflow/            # Graph, scheduler, harness, and JobStore
+│   ├── evaluation/          # Offline evaluation entry point
+│   ├── models/ rules/ rag/  # Input contracts, rules, and optional retrieval
+│   └── tests/               # Regression and fault-injection coverage
+├── frontend/                # Jinja2 pages, JavaScript, and local HTTP proxy
+├── data/                    # Public samples; private records are ignored
+├── docs/                    # Guides, architecture, and screenshots
+├── research/ evaluation/    # Assessments, synthetic cases, and profiles
+├── scripts/                 # Evaluation, optimization, and release checks
+├── output/                  # Ignored exports and evaluation reports
+├── product.json             # Product name and version
+├── .env.example             # Configuration template
+└── start_shaftplanner.py    # Local launcher
+```
+
+## License
+
+Maintained by **Taxueovo**. Licensed under the [MIT License](LICENSE).

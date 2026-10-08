@@ -1,84 +1,24 @@
 <!doctype html>
-<html lang="en">
-{# 平台首页/导航门户：顶部显示后端连接状态，中部卡片引导进入手动规划、预设库或案例库。 #}
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Shaft Machining Planner - PE Agent - Shaft Process Planning</title>
-  <link rel="stylesheet" href="{{ url_for('static', path='/styles.css') }}?v={{ static_version }}">
-{# 当前页面的局部样式：补充公共样式中的布局、状态和窄屏显示规则。 #}
-  <style>
-    .hero { text-align: center; padding: 40px 20px; margin-bottom: 30px; }
-    .hero h1 { font-size: 32px; margin-bottom: 12px; }
-    .hero p { color: var(--muted); font-size: 18px; max-width: 600px; margin: 0 auto; }
-    .module-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin: 26px 0 40px; }
-    .module-card { display: flex; flex-direction: column; gap: 10px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 26px 24px; cursor: pointer; text-decoration: none; color: var(--ink); box-shadow: var(--shadow-sm); transition: border-color .15s, box-shadow .15s, transform .15s; }
-    .module-card:hover { border-color: var(--primary); box-shadow: var(--shadow-md); transform: translateY(-2px); }
-    .module-card .icon { font-size: 40px; line-height: 1; }
-    .module-card h3 { margin: 0; font-size: 18px; }
-    .module-card p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.6; flex: 1; }
-    .module-card .go { font-size: 13px; font-weight: 700; color: var(--primary); }
-  </style>
-</head>
-<body>
-<header class="topbar">
-  <div><div class="brand">Shaft Machining Planner - PE Agent</div><div class="brand-row"><div class="subtitle">PS/PCB-AP</div><div class="service {{ 'ok' if backend_ok else 'bad' }}"><i></i>{{ 'Backend Connected' if backend_ok else 'Backend Disconnected' }}</div></div></div>
-  <div style="display:flex;align-items:center;gap:12px">
-    <a href="/rag" class="button ghost light" title="RAG Management">RAG</a>
-    <button type="button" id="shutdown-btn" class="button ghost danger" title="Shutdown System">Stop System</button>
-  </div>
-</header>
-<main class="shell">
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>工作台 · {{ product.name }}</title><link rel="stylesheet" href="/static/styles.css?v={{ static_version }}"></head>
+<body class="app-frame">
+{% from '_chrome.html' import chrome with context %}{{ chrome('工作台') }}
+<main id="main-content" class="shell workspace" tabindex="-1">
+  <section class="workspace-welcome"><div><span class="eyebrow">PROCESS ENGINEERING</span><h1>从零件输入，走向可复核的工艺方案。</h1><p>规划路线、匹配本地资源，集中处理待确认事项。</p></div><a href="/custom" class="button primary">＋ 新建工艺规划</a></section>
   {% if backend_detail %}<div class="alert {{ 'warning' if backend_ok else 'danger' }}">{{ backend_detail }}</div>{% endif %}
-
-  <div class="hero">
-    <h1>Shaft Process Planning Platform</h1>
-    <p>Choose how to start: enter parameters manually, pick a preset, or browse the case library.</p>
+  <div id="workspace-feedback" role="status" aria-live="polite"></div>
+  <section class="overview-grid" aria-label="任务概览">
+    <a class="overview-card" href="/jobs"><span>全部任务</span><strong id="count-total">—</strong><small>本机保存的规划记录</small></a>
+    <a class="overview-card" href="/jobs?status=active"><span>正在执行</span><strong id="count-running">—</strong><small>包含排队中的任务</small></a>
+    <a class="overview-card attention" href="/jobs?status=waiting"><span>需要确认</span><strong id="count-waiting">—</strong><small>等待工艺选择或工程信息</small></a>
+    <a class="overview-card" href="/jobs?status=completed"><span>已生成方案</span><strong id="count-completed">—</strong><small>工艺草案仍需工程复核</small></a>
+  </section>
+  <div class="workspace-columns">
+    <section class="panel recent-panel"><div class="section-heading"><div><h2>最近任务</h2><p class="muted">继续处理或查看已有方案</p></div><a href="/jobs" class="text-link">查看全部 →</a></div><div id="recent-jobs" class="list-placeholder">正在读取任务…</div></section>
+    <aside class="stack"><section class="panel"><div class="section-heading"><h2>快速开始</h2></div><a class="quick-link" href="/taxonomy"><span class="quick-icon">◇</span><span><strong>从轴件预设开始</strong><small>选取类型后核对尺寸与要求</small></span><span>→</span></a><a class="quick-link" href="/cases"><span class="quick-icon">▤</span><span><strong>参考已有案例</strong><small>复用输入，重新验证工艺与资源</small></span><span>→</span></a><a class="quick-link" href="/custom"><span class="quick-icon">＋</span><span><strong>手动录入零件</strong><small>按图纸输入材料、轴段与特征</small></span><span>→</span></a></section>
+    <section class="panel runtime-card"><div class="section-heading"><h2>运行状态</h2><a href="/system" class="text-link">详情</a></div><div id="runtime-summary" class="muted">正在检查本机配置…</div></section></aside>
   </div>
-
-  {# 入口卡片区：手动录入、预设库、案例库三条进入工艺规划的路径 #}
-  <div class="module-grid">
-    <a class="module-card" href="/custom">
-      <div class="icon">⌨️</div>
-      <h3>Enter Parameters</h3>
-      <p>Manually specify material, stepped segments, features and heat treatment to plan the process route from scratch.</p>
-      <span class="go">Custom Process Planning →</span>
-    </a>
-    <a class="module-card" href="/taxonomy">
-      <div class="icon">🗂️</div>
-      <h3>Select Preset</h3>
-      <p>Pick a preset by shaft type (motor, gear, pump, spline shaft, etc.) to quickly prefill segments and features.</p>
-      <span class="go">Browse Shaft Presets →</span>
-    </a>
-    <a class="module-card" href="/cases">
-      <div class="icon">📚</div>
-      <h3>Case Library</h3>
-      <p>Browse existing process cases and load their parameters with one click.</p>
-      <span class="go">Browse Case Library →</span>
-    </a>
-  </div>
+  <div class="workspace-footnote">工程提示：设备样例匹配和规则通过不等于现场可制造性确认。装夹、加工参数、检验及外协能力需要工程师核实。</div>
 </main>
-
-{# 页面脚本使用响应生成的 nonce；动态数据由模板安全编码后注入。 #}
-<script nonce="{{ request.state.csp_nonce }}">
-(function() {
-  // Shutdown button
-  const shutdownBtn = document.getElementById("shutdown-btn");
-  if (shutdownBtn) {
-    shutdownBtn.addEventListener("click", async () => {
-      if (!confirm("Confirm shutdown of Shaft Machining Planner - PE Agent system?")) return;
-      shutdownBtn.disabled = true;
-      shutdownBtn.textContent = "Shutting down...";
-      try {
-        await fetch("/api/shutdown", { method: "POST" });
-      } catch {}
-      setTimeout(() => {
-        document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:system-ui;color:#475467"><div style="text-align:center"><h1 style="margin:0 0 12px">System Shutdown</h1><p>This page can be closed.</p></div></div>';
-      }, 800);
-    });
-  }
-})();
-</script>
-<script src="/static/heartbeat.js?v={{ static_version }}"></script>
-</body>
-</html>
+<script src="/static/dashboard.js?v={{ static_version }}" defer></script><script src="/static/heartbeat.js?v={{ static_version }}"></script>
+</body></html>

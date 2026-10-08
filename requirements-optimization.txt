@@ -1,0 +1,3 @@
+# Optional prompt optimizer; reflection uses the existing model client.
+-r requirements.txt
+gepa==0.1.4

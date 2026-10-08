@@ -21,10 +21,12 @@ import webbrowser
 from pathlib import Path
 
 import uvicorn
+from dotenv import load_dotenv
 
 
 FRONTEND_DIR = Path(__file__).resolve().parent
 PROJECT_DIR = FRONTEND_DIR.parent
+load_dotenv(PROJECT_DIR / ".env")
 BACKEND_RUNNER = PROJECT_DIR / "backend" / "run_backend.py"
 BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8001")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://127.0.0.1:8000")
@@ -63,8 +65,8 @@ def main() -> None:
     """编排后端与前端两个本地服务的启动与收尾流程。"""
     # 环境里未显式提供 LOCAL_API_TOKEN 时临时生成一个，前后端须共用同一 token 才能互相鉴权
     token_was_supplied = bool(os.environ.get("LOCAL_API_TOKEN"))
-    os.environ.setdefault("LOCAL_API_TOKEN", secrets.token_urlsafe(32))
-    parser = argparse.ArgumentParser(description="Start the Shaft Machining Planner frontend.")
+    os.environ["LOCAL_API_TOKEN"] = os.getenv("LOCAL_API_TOKEN") or secrets.token_urlsafe(32)
+    parser = argparse.ArgumentParser(description="Start the shaftmachiningplanner frontend.")
     parser.add_argument(
         "--frontend-only",
         action="store_true",
@@ -88,13 +90,13 @@ def main() -> None:
                     "Backend is not running. Run python backend/run_backend.py first."
                 )
             print(
-                "[Shaft Machining Planner] Backend not running, starting a separate backend process..."
+                "[shaftmachiningplanner] Backend not running, starting a separate backend process..."
             )
             backend_process = start_backend()
             wait_backend()
 
-        print(f"[Shaft Machining Planner] Backend: {BACKEND_URL}")
-        print(f"[Shaft Machining Planner] Frontend: {FRONTEND_URL}")
+        print(f"[shaftmachiningplanner] Backend: {BACKEND_URL}")
+        print(f"[shaftmachiningplanner] Frontend: {FRONTEND_URL}")
 
         if not args.no_browser:
             threading.Timer(1.2, lambda: webbrowser.open(FRONTEND_URL)).start()
@@ -121,9 +123,7 @@ def main() -> None:
         )
     finally:
         if backend_process is not None and backend_process.poll() is None:
-            print(
-                "[Shaft Machining Planner] Closing the backend process started by the frontend..."
-            )
+            print("[shaftmachiningplanner] Closing the backend process started by the frontend...")
             backend_process.terminate()
             try:
                 backend_process.wait(timeout=8)

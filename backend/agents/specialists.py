@@ -16,6 +16,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from .base import AgentCapability, AgentResult, BaseAgent
 from llm_client import chat_json, llm_available
 from rag.workflow_integration import build_rag_context
+from prompt_profiles import augment_instructions
+from agent_memory import memory_evidence
+from engineering_skills import skill_for
+from evidence_context import EvidenceLedger, encoded
 
 
 # 对路线内容计算稳定摘要，审查结果只可用于对应的路线版本。
@@ -39,9 +43,17 @@ class Finding(BaseModel):
 class ToolRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: Literal[
-        "inspect_route", "query_turning_machines", "query_cutting_tools", "retrieve_references"
+        "inspect_route",
+        "query_turning_machines",
+        "query_cutting_tools",
+        "retrieve_references",
+        "read_evidence",
     ]
     process: str | None = Field(default=None, max_length=120)
+    evidence_id: str | None = Field(default=None, max_length=220)
+    path: list[str] = Field(default_factory=list, max_length=6)
+    offset: int = Field(default=0, ge=0, le=100000)
+    limit: int = Field(default=5, ge=1, le=5)
 
 
 # 约束专家单轮模型响应的工具请求、发现项数量和总结格式。
@@ -84,6 +96,7 @@ class SpecialistAgent(BaseAgent):
             "input": request,
             "route": route,
             "heat_decision": state.get("heat_treatment_decision", {}),
+            **memory_evidence(),
         }
         contract = state.get("_worker_contract", {})
         evidence["task_contract"] = contract
@@ -92,6 +105,9 @@ class SpecialistAgent(BaseAgent):
             for key in contract.get("depends_on", [])
         }
         findings = self._rules(state)
+        skill = skill_for(self.name)
+        evidence[skill["evidence_id"]] = skill
+        ledger = EvidenceLedger(evidence)
         calls = []
         mode, error, summary = (
             "rules_only",
@@ -116,16 +132,29 @@ class SpecialistAgent(BaseAgent):
                         "Return JSON matching this schema: "
                         + json.dumps(ReviewTurn.model_json_schema())
                         + "\nTool arguments use the current part automatically; only query_cutting_tools needs process. "
-                        "Evidence IDs: input, route, heat_decision, and returned tool IDs. "
+                        "Evidence IDs: input, route, heat_decision, supplied memory evidence_id values and returned tool IDs. "
+                        "Historical memory or skill procedures alone require engineer_confirmation, never route_repair. "
                         "Use route_repair only for a concrete correction possible without inventing missing drawing data. "
                         "Missing requirements require engineer_confirmation. Do not approve production."
+                        "\nread_evidence reads acquired evidence only: evidence_id, dictionary-key path, offset, limit. "
+                        "For lists offset/limit count items; for text offset counts characters and limit selects 600-character blocks. "
+                        "Large tool outputs have previews and omission markers. Read omitted pages before citing their contents. "
+                        "\nActive engineering procedure:\n" + skill["instructions"]
                     ),
                 },
-                {"role": "user", "content": json.dumps(evidence, ensure_ascii=False, default=str)},
             ]
+            messages[0]["content"] = augment_instructions(self.name, messages[0]["content"])
             try:
                 for turn in range(3):
-                    response = ReviewTurn.model_validate(chat_json(messages, timeout_seconds=20))
+                    response = ReviewTurn.model_validate(
+                        chat_json(
+                            [
+                                messages[0],
+                                {"role": "user", "content": encoded(ledger.model_view())},
+                            ],
+                            timeout_seconds=20,
+                        )
+                    )
                     if response.tools:
                         if turn == 2 or len(calls) + len(response.tools) > min(
                             4, contract.get("max_tool_calls", 4)
@@ -133,32 +162,32 @@ class SpecialistAgent(BaseAgent):
                             raise ValueError(
                                 "Specialist tool budget exhausted without final review."
                             )
-                        outputs = {}
                         for tool in response.tools:
                             if contract and tool.name not in contract["allowed_tools"]:
                                 raise ValueError("Tool not authorized by task contract")
                             eid = f"tool_{len(calls) + 1}"
-                            output = self._tool(tool, state)
-                            evidence[eid] = output
-                            outputs[eid] = output
+                            if tool.name == "read_evidence":
+                                if hasattr(self.workflow, "task_tool_budget"):
+                                    self.workflow.task_tool_budget.record(tool.name, {})
+                                output = ledger.read(
+                                    tool.evidence_id, tool.path, tool.offset, tool.limit
+                                )
+                            else:
+                                output = self._tool(tool, state)
+                            ledger.add(eid, output)
                             calls.append(
                                 {"tool": tool.name, "evidence_id": eid, "process": tool.process}
                             )
-                        messages.extend(
-                            [
-                                {"role": "assistant", "content": response.model_dump_json()},
-                                {
-                                    "role": "user",
-                                    "content": json.dumps(outputs, default=str)[:24000],
-                                },
-                            ]
-                        )
                         continue
                     # 模型发现必须引用真实取得的证据和当前工序；引用合法只代表可追溯，不证明结论正确。
                     known = {op["operation_no"] for op in route}
                     for finding in response.findings:
-                        if not set(finding.evidence_ids).issubset(evidence):
+                        if not set(finding.evidence_ids).issubset(ledger.records):
                             raise ValueError("Review cites evidence that was not retrieved.")
+                        if finding.disposition == "route_repair" and all(
+                            ledger.reference_only(eid) for eid in finding.evidence_ids
+                        ):
+                            raise ValueError("Reference advice alone cannot mandate route repair.")
                         if not set(finding.operation_nos).issubset(known):
                             raise ValueError("Review cites a nonexistent operation.")
                         if finding.disposition == "route_repair" and not finding.operation_nos:
@@ -179,7 +208,10 @@ class SpecialistAgent(BaseAgent):
             "summary": summary,
             "error": error,
             "tool_calls": calls,
-            "evidence": evidence,
+            "evidence": ledger.records,
+            "evidence_manifest": ledger.manifest(),
+            "context_policy": {"max_evidence_characters": 48000, "max_tool_view_characters": 6000},
+            "skill": {k: skill[k] for k in ("name", "version", "digest", "evidence_id")},
             "model_calls_budget": 3,
         }
         return AgentResult(success=True, state_updates={self.name: report}, tool_calls=calls)
@@ -188,11 +220,17 @@ class SpecialistAgent(BaseAgent):
     def _tool(self, tool, state):
         req, geometry = state["request"], state["geometry"]
         if tool.name == "inspect_route":
+            if hasattr(self.workflow, "task_tool_budget"):
+                self.workflow.task_tool_budget.record(tool.name, {})
             from agents.guardrails import Guardrails
+            from rules.process_state import verify_process_states
 
             return {
                 "route": state["process_route"],
                 "structure_errors": Guardrails.validate_route(state["process_route"]),
+                "process_state": verify_process_states(
+                    req, state["process_route"], state.get("heat_treatment_decision", {})
+                ),
             }
         if tool.name == "query_turning_machines":
             return self.workflow.tool_registry.call(
@@ -208,6 +246,8 @@ class SpecialistAgent(BaseAgent):
             return self.workflow.tool_registry.call(
                 tool.name, material=req["material"], process=tool.process, top_n=3
             )
+        if hasattr(self.workflow, "task_tool_budget"):
+            self.workflow.task_tool_budget.record("retrieve_references", {})
         text = build_rag_context(
             req, geometry, state.get("user_choices", {}), state.get("heat_treatment_decision", {})
         )

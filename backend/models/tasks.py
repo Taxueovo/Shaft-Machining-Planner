@@ -24,13 +24,14 @@ WORKER_TOOLS = {
         "query_cutting_tools",
     },
     "machining_review": {
+        "read_evidence",
         "inspect_route",
         "query_turning_machines",
         "query_cutting_tools",
         "retrieve_references",
     },
-    "quality_review": {"inspect_route", "retrieve_references"},
-    "heat_review": {"inspect_route", "retrieve_references"},
+    "quality_review": {"inspect_route", "retrieve_references", "read_evidence"},
+    "heat_review": {"inspect_route", "retrieve_references", "read_evidence"},
     "workholding": {"inspect_route", "query_turning_machines", "retrieve_references"},
     "alternative_resources": {"query_process_machines"},
 }
@@ -122,6 +123,8 @@ class TaskResult(BaseModel):
     context_version: str
     attempt: int = Field(ge=1, le=2)
     summary: str
+    error_category: str | None = None
+    retryable: bool = True
     artifact: dict[str, Any] = Field(default_factory=dict)
     state_updates: dict[str, Any] = Field(default_factory=dict)
     missing_information: list[str] = Field(default_factory=list)

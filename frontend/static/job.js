@@ -12,7 +12,7 @@
   const shutdownBtn = document.getElementById("shutdown-btn");
   if (shutdownBtn) {
     shutdownBtn.addEventListener("click", async () => {
-      if (!confirm("Confirm shutdown of Shaft Machining Planner system? Both frontend and backend will stop.")) return;
+      if (!confirm("Confirm shutdown of shaftmachiningplanner system? Both frontend and backend will stop.")) return;
       shutdownBtn.disabled = true;
       shutdownBtn.textContent = "Shutting down...";
       try {
@@ -38,10 +38,11 @@
   // 按 job.status 映射为徽标文案与 CSS 样式类；未识别状态兜底显示原文并标记为 neutral。
   function setBadge(status) {
     const map = {
-      queued:["Queued","neutral"], running:["Running","neutral"],
-      waiting_engineering_input:["Engineering input","warning"],
-      waiting_user_choice:["Waiting","warning"], completed:["Completed","success"],
-      resource_mismatch:["Mismatch","danger"], failed:["Failed","danger"]
+      queued:["排队中","neutral"], running:["执行中","neutral"],
+      waiting_engineering_input:["待工程信息","warning"],
+      waiting_user_choice:["待工艺选择","warning"], completed:["已生成草案","success"],
+      resource_mismatch:["资源不匹配","danger"], failed:["执行失败","danger"], interrupted:["重启中断","warning"],
+      cancelling:["正在取消","warning"], cancelled:["已取消","neutral"]
     };
     const [label, cls] = map[status] || [status,"neutral"];
     $("status-badge").textContent = label;
@@ -53,6 +54,27 @@
     $("error-message").textContent = message;
     $("error-panel").classList.remove("hidden");
   }
+
+  async function loadHarness() {
+    try {
+      const d = await window.ShaftUI.api(`/api/jobs/${encodeURIComponent(jobId)}/harness`);
+      const h = d.execution;
+      if (!h?.policy || !h?.usage) {$("harness-panel").textContent = "此记录没有运行控制信息（旧记录或演示缓存）。"; return;}
+      const u = h.usage, p = h.policy;
+      const row = (label,value) => `<div class="data-row"><span>${esc(label)}</span><strong>${esc(value)}</strong></div>`;
+      $("harness-panel").innerHTML = `<h2>运行控制</h2>${row("运行编号",h.run_id)}${row("调用批次",h.invocations)}${row("当前阶段",h.phase)}${row("节点预算",`${u.nodes} / ${p.max_nodes}`)}${row("模型请求预算",`${u.model_calls} / ${p.max_model_calls}`)}${row("工具调用预算",`${u.tool_calls} / ${p.max_tool_calls}`)}${row("已记录活动秒数",`${h.active_seconds} / ${p.max_active_seconds}`)}${row("并行任务上限",p.max_parallel_tasks)}${row("观测到的模型 Token",d.model_usage.total_tokens ?? "未完整观测")}${row("停止 / 故障原因",d.failure.reason || "无")}<p class="muted">预算累计跨人工恢复；等待人工的时间不计入活动预算。取消在节点、模型或工具边界生效，在途调用可能需等待超时。活动秒数在每个调用批次结束时记录。</p><details><summary>查看执行控制事件</summary><pre class="trace-json">${esc(JSON.stringify(h.events,null,2))}</pre></details><details><summary>查看任务故障</summary><pre class="trace-json">${esc(JSON.stringify(d.failure,null,2))}</pre></details><button id="harness-refresh" type="button" class="button ghost">刷新运行记录</button>`;
+      $("harness-refresh").addEventListener("click",loadHarness);
+    } catch (error) {$("harness-panel").textContent = `暂时无法读取运行记录：${error.message}`;}
+  }
+  $("harness-details").addEventListener("toggle", () => {if ($("harness-details").open) loadHarness();});
+  $("job-cancel").addEventListener("click", () => $("job-cancel-dialog").showModal());
+  $("job-cancel-back").addEventListener("click", () => $("job-cancel-dialog").close());
+  $("job-cancel-confirm").addEventListener("click", async () => {
+    $("job-cancel-dialog").close();
+    $("job-cancel").disabled = true;
+    try {await window.ShaftUI.api(`/api/jobs/${encodeURIComponent(jobId)}/cancel`, {method:"POST"}); schedule(0);}
+    catch (error) {showError(error.message); $("job-cancel").disabled = false;}
+  });
 
   // 渲染"等待用户选择"特征卡片：后端 pending_choices 中每项含 feature_id 与若干 options，
   // 默认选中 recommended 对应项；卡片集齐后统一由 choice-form 提交各特征的加工时机。
@@ -84,18 +106,15 @@
       feature_id: card.dataset.id,
       processing_timing: card.querySelector("input[type=radio]:checked").value
     }));
-    const response = await fetch(`/api/jobs/${jobId}/choices`, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({choices})
-    });
-    const data = await response.json();
-    if (!response.ok) {
-      showError(JSON.stringify(data.detail || data));
-      schedule(1800); // keep polling so the status panel does not freeze on an error
-      return;
-    }
-    $("choice-panel").classList.add("hidden");
-    schedule(300);
+    const button = event.currentTarget.querySelector("button[type=submit]");
+    button.disabled = true;
+    try {
+      await window.ShaftUI.api(`/api/jobs/${encodeURIComponent(jobId)}/choices`, {
+        method:"POST", headers:{"Content-Type":"application/json"},body:JSON.stringify({choices})
+      });
+      $("choice-panel").classList.add("hidden"); schedule(300);
+    } catch (error) {showError(error.message); schedule(1800);}
+    finally {button.disabled = false;}
   });
 
   const panel = (title, content, badge="") => `
@@ -171,16 +190,25 @@
 
     const html = [];
 
+    const memory = payload.memory_context;
+    if (memory && memory.status !== "disabled") {
+      const labels = {retrieved: "Historical references retrieved", empty: "No matching references", unavailable: "History unavailable — continuing current checks"};
+      html.push(panel("Historical References",
+        `<p class="muted">${esc(labels[memory.status] || memory.status)}. Historical advice requires verification against the current drawing and resources.</p>` +
+        (memory.items || []).map(item => `<details><summary>${esc(item.evidence_id)}</summary><p>${esc(item.content)}</p><p class="muted">${esc(item.source)}</p></details>`).join("")));
+    }
+
     const collaboration = payload.agent_collaboration || {};
-    const reviewNames = {machining_review: "Machining & Workholding", quality_review: "Quality & Inspection", heat_review: "Heat Treatment"};
-    const reviewModes = {rules_only: "Rules review", model_review: "Model review", degraded: "Model unavailable — rules review", not_applicable: "Not applicable"};
-    html.push(panel("Engineering Release",
-      `<div class="alert warning">Draft — engineering review required. Route revision: ${esc(payload.route_revision || 0)}.</div>`));
+    const reviewNames = {machining_review: "加工与装夹", quality_review: "质量与检验", heat_review: "Heat Treatment"};
+    const reviewModes = {rules_only: "规则审查", model_review: "模型审查", degraded: "模型降级 · 规则审查", not_applicable: "不适用"};
+    html.push(panel("工程复核",
+      `<div class="alert warning">工艺草案，须工程复核。路线修订： ${esc(payload.route_revision || 0)}.</div>`));
     if ((collaboration.reports || []).length) {
-      html.push(panel("Independent Specialist Reviews",
+      html.push(panel("独立专家审查",
         (collaboration.reports || []).map(report => `<details>
           <summary>${esc(reviewNames[report.agent] || report.agent)} · ${esc(reviewModes[report.mode] || report.mode)} · ${(report.findings || []).length} findings</summary>
           <p>${esc(report.summary)}</p>
+          ${report.skill ? `<p class="muted">Procedure: ${esc(report.skill.name)} · v${esc(report.skill.version)} · ${esc(report.skill.digest.slice(0,16))}</p>` : ""}
           ${(report.findings || []).map(f => `<div class="alert ${f.severity === "error" ? "danger" : "warning"}">
             <strong>${esc(f.code)}</strong>: ${esc(f.message)}<br>${esc(f.recommendation)}
             <br><small>${esc(f.source)} · Evidence: ${esc((f.evidence_ids || []).join(", "))}</small></div>`).join("")}
@@ -190,20 +218,41 @@
     }
 
     html.push(panel(
-      "Verification Result",
+      "校核结果",
       `<p>${esc(verify.message || "")}</p>
-       ${(verify.checks || []).map(x => `<div class="data-row"><span>${esc(x.name)}</span><strong>${x.passed ? "✓ Passed" : "✕ Failed"}</strong></div>`).join("")}
+       ${(verify.checks || []).map(x => `<div class="data-row"><span>${esc(x.name)}</span><strong>${x.passed ? "✓ 通过" : "✕ 未通过"}</strong></div>`).join("")}
        ${(verify.warnings || []).length ? `<div class="alert warning" style="margin-top:14px">${verify.warnings.map(esc).join("<br>")}</div>` : ""}`,
       `<span class="badge ${verifyClass}">${esc(verify.conclusion)}</span>`
     ));
 
+    const processState = verify.process_state;
+    if (processState) {
+      html.push(panel("Process State Evidence",
+        `<p>Declared surfaces: ${esc(processState.explicit_surface_count)} / ${esc(processState.drawing_surface_count)}. Policy: ${esc(processState.policy_version)}.</p>` +
+        `<p class="muted">Drawing limits are checked where explicitly supplied. Missing transitions and tolerance limits require engineering review.</p>` +
+        (processState.counterexamples || []).map(item => `<details><summary>${esc(item.constraint_id)} · Operation ${esc(item.operation_no)}</summary><p>${esc(item.message)}</p><pre class="trace-json">${esc(JSON.stringify(item,null,2))}</pre></details>`).join("")));
+    }
+    const grading = payload.trace_grading;
+    if (grading) {
+      html.push(panel("Execution Diagnostics", `<p>${esc(grading.failures.length)} flagged attempts / evidence contracts.</p><details><summary>Inspect step-level results</summary><pre class="trace-json">${esc(JSON.stringify(grading.grades,null,2))}</pre></details>`));
+    }
+    if (collaboration.route_fingerprint) {
+      html.push(panel("Engineering Experience",
+        `<p class="muted">Record a reusable lesson from this route revision. Only reviewed, unexpired lessons with matching material, stock type, heat treatment, and feature types enter future tasks. Approval here records a local operator decision and retains engineering review of every new plan.</p>
+        <form id="experience-proposal" class="stack">
+          <label>Title<input name="title" maxlength="120" required></label>
+          <label>Lesson and applicability limits<textarea name="lesson" minlength="10" maxlength="1600" rows="3" required></textarea></label>
+          <button type="submit" class="button ghost">Propose lesson</button>
+        </form><p id="experience-feedback" role="status"></p><div id="experience-cards"></div>`));
+    }
+
     html.push(panel(
-      "Shaft Geometry",
+      "零件几何",
       `<div class="result-grid">
         <div>
-          <div class="data-row"><span>Total Length</span><strong>${esc(geo.total_length_mm)} mm</strong></div>
-          <div class="data-row"><span>Blank Diameter</span><strong>φ${esc(geo.blank_diameter_mm)} mm</strong></div>
-          <div class="data-row"><span>Max Finished Dia</span><strong>φ${esc(geo.max_finished_diameter_mm)} mm</strong></div>
+          <div class="data-row"><span>总长</span><strong>${esc(geo.total_length_mm)} mm</strong></div>
+          <div class="data-row"><span>毛坯直径</span><strong>φ${esc(geo.blank_diameter_mm)} mm</strong></div>
+          <div class="data-row"><span>成品最大直径</span><strong>φ${esc(geo.max_finished_diameter_mm)} mm</strong></div>
           <div style="margin-top:8px">${(geo.segments || []).map(s =>
             `<div class="data-row"><span>${esc(s.segment_id)}</span><strong>φ${esc(s.diameter_mm)} × ${esc(s.length_mm)} mm</strong></div>`
           ).join("")}</div>
@@ -213,7 +262,7 @@
     ));
 
     html.push(panel(
-      "Conditional Features",
+      "零件特征",
       (geo.features || []).length ? `<div class="table-wrap"><table>
         <thead><tr><th>ID</th><th>Type</th><th>Segment</th><th>Position</th><th>Precision</th></tr></thead>
         <tbody>${geo.features.map(f => `<tr>
@@ -231,7 +280,7 @@
     routeResourceMap = resourceMap;
 
     html.push(panel(
-      "Process Route & Resources",
+      "工艺路线与资源",
       `<div id="route-panel-inner">${routePanelInnerHtml(route)}</div>
        <div id="process-card-container"></div>`
     ));
@@ -239,8 +288,8 @@
     // Execution trace panel
     const trace = payload.execution_trace || payload.result?.execution_trace || [];
     if (trace.length) {
-      html.push(panel(
-        "Agent Execution Trace",
+      html.push('<details class="technical-details"><summary>执行轨迹与模型调用（' + trace.length + ' 个步骤）</summary>' + panel(
+        "执行轨迹",
         `<div class="table-wrap"><table>
           <thead><tr><th>Node</th><th>Status</th><th>Duration</th><th>Input</th><th>Output</th><th>Tools</th></tr></thead>
           <tbody>${trace.map(t => `<tr>
@@ -257,7 +306,7 @@
             ).join("") || '-'}</td>
           </tr>`).join("")}</tbody></table></div>`,
         `<span class="badge neutral">${trace.length} steps</span>`
-      ));
+      ) + '</details>');
     }
 
     $("result-container").innerHTML = html.join("");
@@ -278,6 +327,59 @@
     doRender3D();
 
     bindRouteButtons();
+    if (collaboration.route_fingerprint) bindExperience(collaboration.route_fingerprint);
+  }
+
+  async function experienceRequest(url, body) {
+    const response = await fetch(url, body ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : {});
+    const data = await response.json();
+    if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || data));
+    return data;
+  }
+
+  function bindExperience(fingerprint) {
+    const feedback = $("experience-feedback");
+    async function refresh() {
+      const data = await experienceRequest(`/api/experiences?source_job_id=${encodeURIComponent(jobId)}`);
+      $("experience-cards").innerHTML = data.items.map(card => {
+        const reviewable = ["proposed","approved"].includes(card.status);
+        return `<details><summary>${esc(card.title)} · ${esc(card.status)} · v${esc(card.version)}</summary><p>${esc(card.lesson)}</p><p class="muted">Source route revision: ${esc(card.source.route_revision)}. ${esc(JSON.stringify(card.applicability))}</p>
+        <details><summary>Source evidence and decision history</summary><pre class="trace-json">${esc(JSON.stringify({source:card.source,decisions:card.decisions},null,2))}</pre></details>
+        ${reviewable ? `<form class="experience-review stack" data-id="${esc(card.experience_id)}" data-version="${esc(card.version)}">
+          <label>Decision<select name="decision">${card.status === "proposed" ? '<option value="approved">Approve for reference use</option><option value="rejected">Reject</option>' : '<option value="retired">Retire</option>'}</select></label>
+          <label>Reviewer<input name="reviewer" maxlength="100" required></label>
+          <label>Drawing, procedure, or verification reference<input name="source_reference" minlength="5" maxlength="300" required></label>
+          <label>Review rationale<textarea name="rationale" minlength="5" maxlength="1200" required></textarea></label>
+          ${card.status === "proposed" ? '<label>Valid until (required for approval)<input name="valid_until" type="datetime-local"></label>' : ''}
+          <button class="button ghost" type="submit">Record decision</button></form>` : ''}</details>`;
+      }).join("") || '<p class="muted">No lessons proposed from this task.</p>';
+      $("experience-cards").querySelectorAll(".experience-review").forEach(form => {
+        form.addEventListener("submit", async event => {
+          event.preventDefault();
+          const button = form.querySelector("button"); button.disabled = true;
+          try {
+            const values = Object.fromEntries(new FormData(form));
+            values.expected_version = Number(form.dataset.version);
+            values.valid_until = values.valid_until ? new Date(values.valid_until).toISOString() : null;
+            await experienceRequest(`/api/experiences/${encodeURIComponent(form.dataset.id)}/review`, values);
+            feedback.textContent = "Decision recorded. Existing tasks retain their original memory snapshot.";
+            await refresh();
+          } catch(error) {feedback.textContent = error.message;}
+          finally {button.disabled = false;}
+        });
+      });
+    }
+    $("experience-proposal").addEventListener("submit", async event => {
+      event.preventDefault();
+      const form = event.currentTarget, button = form.querySelector("button"); button.disabled = true;
+      try {
+        const values = Object.fromEntries(new FormData(form));
+        await experienceRequest(`/api/jobs/${encodeURIComponent(jobId)}/experiences`, {...values,route_fingerprint:fingerprint});
+        form.reset(); feedback.textContent = "Lesson proposed; engineering review is pending."; await refresh();
+      } catch(error) {feedback.textContent = error.message;}
+      finally {button.disabled = false;}
+    });
+    refresh().catch(error => {feedback.textContent = error.message;});
   }
 
   // 触发后端导出 Excel 工序卡(process-card/export)，成功后在本页给出下载链接；
@@ -286,18 +388,18 @@
     const container = document.getElementById("process-card-container");
     if (!container) return;
     btn.disabled = true;
-    btn.textContent = "Generating...";
-    container.innerHTML = '<div class="muted" style="padding:12px">Generating process card, please wait...</div>';
+    btn.textContent = "正在导出…";
+    container.innerHTML = '<div class="muted" style="padding:12px">正在生成 Excel 工艺草案，请稍候…</div>';
     try {
       const resp = await fetch(`/api/jobs/${jobId}/process-card/export`, { method: "POST" });
       const data = await resp.json();
       if (!resp.ok) throw new Error(JSON.stringify(data.detail || data));
-      container.innerHTML = `<div class="alert success">Process card generated. <a class="btn" href="/api/jobs/${encodeURIComponent(jobId)}/process-card/download">Download Excel</a></div>`;
+      container.innerHTML = `<div class="alert success">工艺草案已生成。 <a class="btn" href="/api/jobs/${encodeURIComponent(jobId)}/process-card/download">下载 Excel</a></div>`;
     } catch (err) {
-      container.innerHTML = `<div class="alert danger">Export failed: ${esc(err.message)}</div>`;
+      container.innerHTML = `<div class="alert danger">导出失败：${esc(err.message)}</div>`;
     } finally {
       btn.disabled = false;
-      btn.textContent = "Generate Process Card";
+      btn.textContent = "导出工艺草案";
     }
   }
 
@@ -344,8 +446,8 @@
     return `<div id="route-op-list">${ops.map(opHtml).join("")}</div>
       <div class="alert warning" style="margin-top:16px">${esc(routeScopeNote)}</div>
       <div style="margin-top:16px;display:flex;gap:10px;flex-wrap:wrap">
-        <button id="customize-route-btn" class="button secondary">Customize Route</button>
-        <button id="gen-process-card-btn" class="button primary">Generate Process Card</button>
+        <button id="customize-route-btn" class="button secondary">编辑工艺路线</button>
+        <button id="gen-process-card-btn" class="button primary">导出工艺草案</button>
       </div>`;
   }
 
@@ -403,7 +505,7 @@
     </div>
     <div class="route-edit-actions">
       <button type="button" id="route-save" class="button primary">Save Custom Route</button>
-      <button type="button" id="route-reset" class="button ghost danger">Reset to Original</button>
+      <button type="button" id="route-reset" class="button ghost danger">恢复原始路线</button>
       <button type="button" id="route-cancel" class="button ghost">Cancel</button>
     </div>`;
   }
@@ -628,10 +730,19 @@
   // 轮询任务状态，按人工等待或终态分派界面，其余情况继续安排下一次请求。
   async function poll() {
     try {
-      const response = await fetch(`/api/jobs/${jobId}`);
+      const response = await fetch(`/api/jobs/${jobId}`, {signal: AbortSignal.timeout(12000)});
+      if (response.status === 404) {
+        $("status-badge").textContent = "任务不存在";
+        $("status-message").textContent = "请返回任务中心查看当前保存的记录。";
+        showError("未找到此任务，可能已被历史记录清理。请返回任务中心。");
+        return;
+      }
       const data = await response.json();
       if (!response.ok) throw new Error(JSON.stringify(data.detail || data));
       setBadge(data.status);
+      $("job-cancel").classList.toggle("hidden", !["queued","running","waiting_user_choice","waiting_engineering_input","cancelling"].includes(data.status));
+      $("job-cancel").disabled = data.status === "cancelling";
+      $("job-title").textContent = data.title || "轴件工艺规划";
       $("progress-bar").style.width = `${data.progress}%`;
       $("progress-value").textContent = `${data.progress}%`;
       $("current-step").textContent = data.current_step;
@@ -643,6 +754,15 @@
       }
 
       renderTasks(data.task_execution);
+      if (data.status === "cancelled") {
+        $("choice-panel").classList.add("hidden"); $("engineering-panel").classList.add("hidden");
+        $("status-message").textContent = "本次执行已取消。原输入保留，可以从输入新建规划。";
+        return;
+      }
+      if (data.status === "interrupted") {
+        showError("服务重启后执行已中断。请使用上方“从输入新建规划”重新运行，原记录会保留。");
+        return;
+      }
       if (data.status === "waiting_engineering_input") return showEngineering(data.pending_engineering || []);
       if (data.status === "waiting_user_choice") return showChoices(data.pending_choices || []);
       if (["completed","resource_mismatch","failed"].includes(data.status) && data.result_ready) {
@@ -652,16 +772,17 @@
         try {
           return renderResult(output);
         } catch (renderErr) {
-          console.error("[Shaft Machining Planner] renderResult error:", renderErr);
+          console.error("[shaftmachiningplanner] renderResult error:", renderErr);
           showError(`Result rendering failed: ${renderErr.message}`);
         }
       }
-      // A terminal status whose result is not ready yet is transient; poll more
-      // slowly instead of hammering the backend every 800 ms.
-      const backoffMs = ["completed","resource_mismatch","failed"].includes(data.status) ? 2000 : 800;
-      schedule(backoffMs);
+      if (["completed","resource_mismatch","failed"].includes(data.status)) {
+        showError(data.error || "任务已结束，未生成可显示的结果。请从保存的输入新建规划。");
+        return;
+      }
+      schedule(800);
     } catch (error) {
-      showError(`Status fetch failed: ${error.message}`);
+      showError(`暂时无法读取任务状态，将自动重试：${error.message}`);
       schedule(1800);
     }
   }

@@ -1,11 +1,35 @@
 # Changelog
 
-All notable changes to this project are documented in this file.
+## 1.4.0 — 2026-10-08
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+- Add versioned engineering skill packages for machining, quality, and heat-treatment review; preserve procedure contents across continuation and edited-route review.
+- Retain complete specialist evidence records with bounded JSON previews, evidence manifests, and permission-checked `read_evidence` paging.
+- Extend process-state checks with drawing surface identity, irreversible overcut, explicit final-diameter limits, coverage warnings, and structured counterexamples supplied to Repair.
+- Add a persistent local experience library with source-route binding, recorded reviews, optimistic versions, expiry, conservative applicability filters, and initial-run memory snapshots alongside optional Tencent retrieval.
+- Expose lesson proposals and review decisions in the result page; show procedure identity, process-state evidence, and execution diagnostics.
+- Add deterministic attempt-level trace grading to results and evaluation feedback, and include procedure identity in candidate comparisons.
+- Document integration decisions and runtime boundaries without adding external agent frameworks or equipment execution.
 
-## [Unreleased]
+## 1.3.0 — 2026-10-07
+
+- Trigger Planner intervention on changes to decision evidence; reuse plans during ordinary scheduling and narrow Send payloads to required input and dependency outputs.
+- Add a persistent execution harness with cumulative budgets, context snapshots, run identities, compatibility checks, cooperative cancellation, and failure records.
+- Share the execution entry point across services, offline evaluation, and edited-route review.
+- Add classified bounded retries, atomic human continuation, queue rollback, idempotent job creation, and queue admission limits.
+- Add execution controls and an in-workbench cancellation dialog; record budget stops in evaluation failure reports.
+- Document harness contracts, default policies, verification coverage, and deployment boundaries.
+- Publish English project documentation with seven browser screenshots of synthetic tasks, editable architecture diagrams, recovery/review/evaluation flows, an API reference, and a validated sample request. Align snapshot, retention, and language conventions with the implementation.
+
+## 1.2.0 — 2026-10-07
+
+- Introduce the local workbench with sidebar navigation, task summaries, recent records, and system status.
+- Add persistent task history with name/material/ID search, status filters, pagination, and original-input reuse.
+- Add part name, weight, surface treatment, batch size, and manual browser draft save/restore; retain input errors and warn before leaving unsaved changes.
+- Mark interrupted execution on startup and preserve human-waiting jobs; disable idle shutdown by default.
+- Verify service identity and readiness in the launcher; clean up launcher-owned processes on startup failure.
+- Expose engineering drafts and review actions on result pages; stop polling missing jobs and terminal jobs without results.
+- Retain the optional read-only Tencent memory adapter, process-state checks, telemetry, and offline evaluation. Memory remains disabled by default; live-service and factory acceptance are pending.
+- Add the user guide and regression coverage for history, restart handling, status endpoints, and launcher behavior.
 
 ## [0.2.0] - 2026-08-16
 
@@ -26,7 +50,7 @@ Initial public release.
 
 ### Added
 
-- **peagent** — structured machining process planning for motor shafts:
+- **shaftmachiningplanner** — structured machining process planning for motor shafts:
   - Input validation and process-route planning via a LangGraph workflow
   - Machine tool / cutting tool capability libraries with resource verification
   - Process rules engine (sequence, dependencies, heat treatment)

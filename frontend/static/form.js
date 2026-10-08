@@ -18,7 +18,7 @@
   const shutdownBtn = document.getElementById("shutdown-btn");
   if (shutdownBtn) {
     shutdownBtn.addEventListener("click", async () => {
-      if (!confirm("Confirm shutdown of Shaft Machining Planner system? Both frontend and backend will stop.")) return;
+      if (!confirm("Confirm shutdown of shaftmachiningplanner system? Both frontend and backend will stop.")) return;
       shutdownBtn.disabled = true;
       shutdownBtn.textContent = "Shutting down...";
       try {
@@ -92,7 +92,6 @@
   }
 
   materialSelect.addEventListener("change", updateMaterialDesc);
-  loadMaterials();
 
   const segmentsBody = document.getElementById("segments-body");
   const featuresBox = document.getElementById("features-container");
@@ -111,7 +110,7 @@
     errorBox.textContent = msg;
     errorBox.classList.remove("hidden");
     errorBox.scrollIntoView({behavior:"smooth", block:"center"});
-    errorTimer = setTimeout(() => errorBox.classList.add("hidden"), 4000);
+    // Keep actionable validation errors visible until the next explicit attempt.
   };
 
   // 汇总所有轴段长度行并刷新"总长"显示(保留三位小数)。
@@ -589,8 +588,8 @@
       case_depth_mm: numOrNull(document.getElementById("case-depth").value),
       blank_condition: document.getElementById("blank-condition").value,
       pre_heat_treatment: document.getElementById("pre-heat-treatment").value,
-      surface_treatment: "none",
-      batch_quantity: 1,
+      surface_treatment: document.getElementById("surface-treatment").value,
+      batch_quantity: Number(document.getElementById("batch-quantity").value),
     };
   }
 
@@ -605,7 +604,7 @@
       const collapsing = !previewPanel.classList.contains("hidden");
       previewPanel.classList.toggle("hidden", collapsing);
       previewToggle.classList.toggle("open", !collapsing);
-      previewToggle.textContent = collapsing ? "▸ Process Route Preview" : "▾ Hide Route Preview";
+      previewToggle.textContent = collapsing ? "▸ 工艺路线预览" : "▾ 收起路线预览";
       if (!collapsing) debouncePreview();
     });
   }
@@ -625,6 +624,7 @@
     document.getElementById("blank-diameter").value = "65";
   });
 
+  let pendingSubmission = null;
   form.addEventListener("submit", async event => {
     event.preventDefault(); errorBox.classList.add("hidden");
     if (!form.reportValidity()) return;
@@ -636,30 +636,25 @@
       showError(`Blank diameter (${blankDia} mm) must be ≥ max segment diameter (${maxSegDia} mm).`);
       return;
     }
-    const payload = {
-      material: materialSelect.value.trim(),
-      blank_type: document.getElementById("blank-type").value,
-      blank_diameter_mm: blankDia,
-      blank_inner_diameter_mm: numOrNull(document.getElementById("blank-inner-diameter").value),
-      segments: segments,
-      features: collectFeatures(),
-      global_requirements: collectGlobalRequirements(),
-    };
-    submit.disabled = true; submit.textContent = "Submitting...";
+    const payload = collectRequest();
+    const body = JSON.stringify(payload);
+    if (!pendingSubmission || pendingSubmission.body !== body) pendingSubmission = {body, key:crypto.randomUUID()};
+    submit.disabled = true; submit.textContent = "正在提交…";
     try {
-      const response = await fetch("/api/jobs", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+      const response = await fetch("/api/jobs", {method:"POST",headers:{"Content-Type":"application/json", "Idempotency-Key":pendingSubmission.key},body,signal:AbortSignal.timeout(15000)});
       const data = await response.json();
-      if (!response.ok) throw new Error(JSON.stringify(data.detail || data));
+      if (!response.ok) throw new Error(window.ShaftUI.errorText(data, "提交未成功，请检查输入。"));
 
+      dirty = false;
       location.href = `/jobs/${data.job_id}`;
     } catch (error) {
       let msg = error.message;
       // TypeError 多为 fetch 网络层失败(如后端未启动)，此时给出可操作的中文指引而非报错原文。
       if (error.name === "TypeError") {
-        msg = "Unable to connect to server. Please confirm Shaft Machining Planner is running (execute python start_shaftplanner.py in terminal).";
+        msg = "无法连接服务，请确认启动器仍在运行，然后重试。";
       }
-      showError(`Submission failed: ${msg}`);
-      submit.disabled = false; submit.textContent = "Start Process Planning";
+      showError(`提交未成功：${msg}`);
+      submit.disabled = false; submit.textContent = "提交工艺规划";
     }
   });
 
@@ -1176,9 +1171,104 @@
     }
   });
 
-  // Initialize
-  loadMaterials().then(() => {
-    loadCaseFromUrl();
+  // Explicit local drafts: never save a drawing into browser storage automatically.
+  let retainedInput = {}, dirty = false;
+  const draftKey = "shaftmachiningplanner.form-draft.v1";
+  const controls = () => [...form.querySelectorAll("input,select,textarea")];
+  const signature = el => [el.id, el.type, el.className].join("|");
+  function collectRequest() {
+    const merge = (items, original, key) => items.map(item => ({...(original || []).find(x => x[key] === item[key]), ...item}));
+    return {...retainedInput,
+      part_name: document.getElementById("part-name").value.trim() || null,
+      material: materialSelect.value.trim(), blank_type: document.getElementById("blank-type").value,
+      blank_diameter_mm: Number(document.getElementById("blank-diameter").value),
+      blank_inner_diameter_mm: numOrNull(document.getElementById("blank-inner-diameter").value),
+      estimated_workpiece_weight_kg: numOrNull(document.getElementById("estimated-weight").value),
+      segments: merge(collectSegments(), retainedInput.segments, "segment_id"),
+      features: merge(collectFeatures(), retainedInput.features, "feature_id"),
+      global_requirements: {...retainedInput.global_requirements, ...collectGlobalRequirements()}};
+  }
+  function applyInput(payload) {
+    if (!payload || !Array.isArray(payload.segments) || !Array.isArray(payload.features) ||
+        payload.segments.length > 50 || payload.features.length > 100) throw new Error("输入结构无法恢复，请核对原始数据。");
+    retainedInput = structuredClone(payload);
+    segmentsBody.innerHTML = ""; featuresBox.innerHTML = ""; segmentNo = 0; featureNo = 0;
+    const globals = payload.global_requirements || {};
+    const values = {"part-name":payload.part_name, "material":payload.material, "blank-type":payload.blank_type || "solid",
+      "blank-diameter":payload.blank_diameter_mm, "blank-inner-diameter":payload.blank_inner_diameter_mm,
+      "estimated-weight":payload.estimated_workpiece_weight_kg,
+      "heat-treatment":globals.heat_treatment || "none", "heat-treatment-note":globals.heat_treatment_note,
+      "target-hardness":globals.target_hardness_hrc, "case-depth":globals.case_depth_mm,
+      "blank-condition":globals.blank_condition || "unknown", "pre-heat-treatment":globals.pre_heat_treatment || "auto",
+      "surface-treatment":globals.surface_treatment || "none", "batch-quantity":globals.batch_quantity ?? 1};
+    if (payload.material && ![...materialSelect.options].some(o => o.value === payload.material)) {
+      const option = new Option(payload.material, payload.material); materialSelect.add(option);
+    }
+    Object.entries(values).forEach(([id, value]) => {document.getElementById(id).value = value ?? "";});
+    payload.segments.forEach(addSegment); payload.features.forEach(addFeature);
+    updateMaterialDesc(); updateTotal(); refreshSegmentOptions();
+    empty.classList.toggle("hidden", featuresBox.children.length > 0);
+    debouncePreview();
+  }
+  function draftState(message) {
+    document.getElementById("draft-status").textContent = message;
+  }
+  function setupDrafts() {
+    const save = document.getElementById("draft-save"), restore = document.getElementById("draft-restore"), clear = document.getElementById("draft-clear");
+    function inspect() {
+      try {
+        const raw = localStorage.getItem(draftKey);
+        restore.disabled = clear.disabled = !raw;
+        if (raw) draftState("此浏览器有一份已保存草稿，可以恢复或清除。");
+      } catch {draftState("浏览器存储不可用，草稿无法保存。任务仍可正常提交。"); save.disabled = true;}
+    }
+    save.disabled = false; inspect();
+    save.addEventListener("click", () => {
+      try {
+        const draft = {schema_version:1, saved_at:new Date().toISOString(), request:collectRequest(),
+          controls:controls().map(el => ({key:signature(el), value:el.value, checked:el.checked}))};
+        localStorage.setItem(draftKey, JSON.stringify(draft));
+        dirty = false; restore.disabled = clear.disabled = false; draftState(`草稿已保存在此浏览器 · ${window.ShaftUI.date(draft.saved_at)}`);
+      } catch {draftState("保存失败，浏览器空间或权限不足。当前输入仍在页面中，请勿关闭。");}
+    });
+    restore.addEventListener("click", () => {
+      if (dirty && !confirm("恢复草稿将替换当前未保存的输入，确认继续？")) return;
+      try {
+        const raw = localStorage.getItem(draftKey);
+        if (!raw || raw.length > 1000000) throw new Error("草稿无法读取。");
+        const draft = JSON.parse(raw);
+        if (draft.schema_version !== 1 || !Array.isArray(draft.controls)) throw new Error("草稿版本不兼容。");
+        applyInput(draft.request);
+        const fields = controls();
+        if (fields.length === draft.controls.length && fields.every((el, i) => signature(el) === draft.controls[i].key)) {
+          fields.forEach((el, i) => {el.value = draft.controls[i].value; if (el.type === "checkbox") el.checked = draft.controls[i].checked;});
+        } else {throw new Error("表单结构已变化，已恢复可识别参数，请逐项核对；原草稿仍保留。");}
+        updateTotal(); refreshSegmentOptions(); debouncePreview(); dirty = false;
+        draftState(`已恢复草稿 · ${window.ShaftUI.date(draft.saved_at)}，提交前请核对。`);
+      } catch (error) {showError(error.message || "草稿恢复失败，原草稿仍保留。");}
+    });
+    clear.addEventListener("click", () => {
+      if (!confirm("只清除当前浏览器保存的草稿？页面输入与服务器任务记录都会保留。")) return;
+      try {localStorage.removeItem(draftKey); restore.disabled = clear.disabled = true; draftState("已清除浏览器草稿，当前输入保留。");}
+      catch {draftState("清除失败，请检查浏览器存储权限。");}
+    });
+  }
+  form.addEventListener("input", () => {dirty = true;});
+  form.addEventListener("change", () => {dirty = true;});
+  form.addEventListener("click", event => {if (event.target.closest("#add-segment,#add-feature,#load-example,.button.danger")) dirty = true;});
+  window.addEventListener("beforeunload", event => {if (dirty) {event.preventDefault(); event.returnValue = "";}});
+  loadMaterials().then(async () => {
+    const sourceJob = new URLSearchParams(location.search).get("from_job");
+    try {
+      if (sourceJob) {
+        const data = await window.ShaftUI.api(`/api/jobs/${encodeURIComponent(sourceJob)}/input`);
+        applyInput(data.request);
+        const note = document.getElementById("input-source");
+        note.textContent = "已载入历史任务输入。原任务保持不变；提交后将创建独立任务并重新校验。";
+        note.classList.remove("hidden");
+      } else {await loadCaseFromUrl();}
+    } catch (error) {showError(`历史输入无法载入：${error.message}`); addSegment();}
+    dirty = false; setupDrafts();
   });
 
   // ============ Real-time Process Route Preview ============
@@ -1221,18 +1311,8 @@
 
   // 组装路线预览请求载荷(结构同作业提交体)；没有任何轴段时返回 null 供调用方提示。
   function collectPreviewPayload() {
-    const segments = collectSegments();
-    const features = collectFeatures();
-    if (!segments.length) return null;
-    return {
-      material: materialSelect.value.trim(),
-      blank_type: document.getElementById("blank-type").value,
-      blank_diameter_mm: Number(document.getElementById("blank-diameter").value) || 50,
-      blank_inner_diameter_mm: numOrNull(document.getElementById("blank-inner-diameter").value),
-      segments: segments,
-      features: features,
-      global_requirements: collectGlobalRequirements(),
-    };
+    if (!collectSegments().length) return null;
+    return collectRequest();
   }
 
   // 路线预览核心请求：负责用 AbortController 中止上一次尚未返回的请求(避免结果串台)、

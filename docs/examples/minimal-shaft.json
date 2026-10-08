@@ -1,0 +1,10 @@
+{
+  "part_name": "API sample shaft",
+  "material": "45",
+  "blank_diameter_mm": 50,
+  "segments": [
+    {"segment_id": "S1", "diameter_mm": 30, "length_mm": 100}
+  ],
+  "features": [],
+  "global_requirements": {"heat_treatment": "none"}
+}
