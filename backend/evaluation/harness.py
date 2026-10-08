@@ -17,6 +17,7 @@ from prompt_profiles import PromptProfile, profile_metadata, use_profile
 from llm_client import runtime_identity
 from workflow import JobStore, Workflow
 from workflow.harness import HarnessStopped
+from evaluation.trace_grading import grade_traces
 
 
 class Expectation(BaseModel):
@@ -25,6 +26,7 @@ class Expectation(BaseModel):
     required_workers: list[str] = Field(default_factory=list)
     forbidden_operations: list[str] = Field(default_factory=list)
     required_operations: list[str] = Field(default_factory=list)
+    required_constraint_codes: list[str] = Field(default_factory=list)
 
 
 class EvalCase(BaseModel):
@@ -69,6 +71,11 @@ def digest(value) -> str:
 def grade_state(case: EvalCase, state: dict, traces: list[dict]) -> list[str]:
     """Backend state and independent per-attempt failures, not an agent's success prose."""
     failures = []
+    actual_codes = {
+        issue["error_code"] for issue in state.get("verification", {}).get("validation_issues", [])
+    }
+    if not set(case.expected.required_constraint_codes) <= actual_codes:
+        failures.append("Expected constraint counterexample was not reported")
     waiting = bool(state.get("__interrupt__"))
     if case.expected.outcome == "waiting_input":
         if not waiting:
@@ -120,6 +127,10 @@ def grade_state(case: EvalCase, state: dict, traces: list[dict]) -> list[str]:
     for trace in traces:
         if trace.get("status") == "error":
             failures.append(f"Node attempt failed: {trace.get('node')}")
+    for grade in grade_traces(state, traces)["failures"]:
+        failures.append(
+            f"Trace contract failed: {grade.get('node')}: {', '.join(grade['reasons'])}"
+        )
     return sorted(set(failures))
 
 
@@ -186,8 +197,12 @@ def run_case(case: EvalCase) -> dict:
         "repair_count": state.get("repair_count", 0),
         "model_usage": summarize_model_calls(traces),
         "runtime_harness": runtime_harness,
+        "trace_grading": grade_traces(state, traces),
         "feedback": {
             "validation_issues": state.get("verification", {}).get("validation_issues", []),
+            "constraint_counterexamples": state.get("verification", {})
+            .get("process_state", {})
+            .get("counterexamples", []),
             "verification_message": state.get("verification", {}).get("message"),
             "worker_failures": [
                 {"worker": r.get("worker"), "status": r.get("status")}
@@ -235,7 +250,14 @@ def compare_runs(baseline: dict, candidate: dict) -> dict:
     for key in ("schema_version", "dataset_digest", "splits", "repeats"):
         if baseline.get(key) != candidate.get(key):
             raise ValueError(f"Cannot compare runs with different {key}")
-    for key in ("provider", "model", "endpoint_digest", "pipeline_version", "memory"):
+    for key in (
+        "provider",
+        "model",
+        "endpoint_digest",
+        "pipeline_version",
+        "memory",
+        "engineering_skills",
+    ):
         if baseline["execution_identity"].get(key) != candidate["execution_identity"].get(key):
             raise ValueError(f"Cannot compare runs with different {key}")
     old = {(r["case_id"], r["repeat"]): r for r in baseline["results"]}

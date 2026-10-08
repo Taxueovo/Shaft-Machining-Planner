@@ -12,6 +12,7 @@ import app as backend_app
 from frontend.main import app as frontend_app, LOCAL_API_TOKEN as frontend_token
 from service import PlanningService, HEARTBEAT_TIMEOUT
 from workflow import JobStore
+from experience_library import ExperienceLibrary
 from tests.test_production_reviews import request
 
 
@@ -90,7 +91,13 @@ def test_api_history_input_validation_and_system_is_private(monkeypatch):
     payload = request(part_name="车间主轴").model_dump()
     store.create("saved", payload)
     monkeypatch.setattr(
-        backend_app, "service", SimpleNamespace(store=store, auto_shutdown_on_idle=False)
+        backend_app,
+        "service",
+        SimpleNamespace(
+            store=store,
+            auto_shutdown_on_idle=False,
+            experience_library=ExperienceLibrary(store),
+        ),
     )
     monkeypatch.setenv("AGENT_MEMORY_API_KEY", "credential-marker")
     try:

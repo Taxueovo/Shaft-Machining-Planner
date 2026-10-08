@@ -181,6 +181,7 @@ def warn_if_llm_misconfigured() -> None:
 def runtime_identity() -> dict:
     """Non-secret configuration used to invalidate results after model/policy changes."""
     from agent_memory import memory_identity
+    from engineering_skills import skill_identity
 
     return {
         "provider": LLM_PROVIDER,
@@ -189,7 +190,8 @@ def runtime_identity() -> dict:
             (LOCAL_MODEL_BASE_URL if LLM_PROVIDER == "local" else OPENAI_BASE_URL).encode()
         ).hexdigest(),
         "prompt_profile": profile_metadata(),
-        "pipeline_version": "event-router-harness-v1",
+        "pipeline_version": "evidence-skills-harness-v2",
+        "engineering_skills": skill_identity(),
         "memory": memory_identity(),
     }
 
@@ -247,6 +249,7 @@ def chat(
         "provider": LLM_PROVIDER,
         "prompt_profile": profile_metadata(),
         "memory": memory_identity(),
+        "engineering_skills": runtime_identity()["engineering_skills"],
         "instruction_digest": hashlib.sha256(
             json.dumps(
                 [m for m in messages if m.get("role") in {"system", "developer"}],

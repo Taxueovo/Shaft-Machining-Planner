@@ -45,7 +45,13 @@ input:focus,select:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(3
 /* 页面内容容器与垂直堆叠布局，限制桌面宽度并保留窄屏边距。 */
 .shell{width:min(1220px,calc(100% - 32px));margin:28px auto 60px}
 .stack{display:grid;gap:20px}
-.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);padding:24px;box-shadow:var(--shadow-sm)}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius-sm);padding:24px;box-shadow:var(--shadow-sm);min-width:0}
+.trace-json{max-width:100%;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere}
+#experience-proposal,.experience-review{grid-template-columns:minmax(0,1fr);margin:16px 0}
+#experience-proposal label,.experience-review label{display:grid;gap:6px;min-width:0}
+#experience-proposal textarea,.experience-review textarea{font:inherit;width:100%;max-width:100%;padding:10px 11px;border:1px solid var(--line-strong);border-radius:var(--radius-input)}
+#experience-cards{overflow-wrap:anywhere}
+#result-container summary{overflow-wrap:anywhere}
 .heading,.toolbar,.submit-row,.progress-meta{display:flex;align-items:center;justify-content:space-between;gap:16px}
 .heading>div{display:flex;align-items:center;gap:12px}
 .heading h2,.toolbar h3{margin:0;font-size:18px;letter-spacing:.2px}

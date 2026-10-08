@@ -142,6 +142,9 @@ class PlanningService:
     def __init__(self) -> None:
         self.store = JobStore()
         self.workflow = Workflow(self.store)
+        from experience_library import ExperienceLibrary
+
+        self.experience_library = ExperienceLibrary(self.store)
         self.store.interrupt_inflight()
         self.job_cache = JobCache()
         self.job_cache.enabled = self.job_cache.enabled and JOB_CACHE_ENABLED
@@ -207,7 +210,11 @@ class PlanningService:
         payload = request.model_dump(mode="json")
         from agent_memory import memory_enabled
 
-        cache_key = None if memory_enabled() else _request_cache_key(payload)
+        cache_key = (
+            None
+            if memory_enabled() or self.experience_library.active()
+            else _request_cache_key(payload)
+        )
 
         # A1 cache hit: skip the whole workflow and reuse the previous result (demo: same shaft returns in seconds)
         if self.job_cache.enabled and cache_key:
@@ -527,7 +534,9 @@ class PlanningService:
             memory = (
                 job["memory_context"]
                 if "memory_context" in job
-                else retrieve_memory(job["request"])
+                else self.experience_library.snapshot(
+                    job["request"], retrieve_memory(job["request"])
+                )
             )
             self.store.update(job_id, memory_context=memory, prompt_snapshot=profile.model_dump())
             with use_profile(profile), use_memory(memory):
@@ -1083,6 +1092,7 @@ class PlanningService:
             raise ValueError("Task result is being written, please retry later.")
         result = job.get("custom_result") or job["result"]
         from observability import summarize_model_calls
+        from evaluation.trace_grading import grade_traces
 
         traces = job.get("execution_trace") or result.get("execution_trace", [])
         return {
@@ -1103,6 +1113,14 @@ class PlanningService:
             "verification": result.get("verification"),
             "execution_trace": traces,
             "model_usage": summarize_model_calls(traces),
+            "trace_grading": grade_traces(result, traces),
             "memory_context": job.get("memory_context"),
+            "engineering_skills": {
+                "digest": job.get("skill_snapshot", {}).get("digest"),
+                "items": [
+                    {k: v[k] for k in ("name", "version", "digest", "evidence_id")}
+                    for v in job.get("skill_snapshot", {}).get("items", {}).values()
+                ],
+            },
             "result": result,
         }

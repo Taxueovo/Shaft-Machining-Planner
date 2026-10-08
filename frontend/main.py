@@ -298,6 +298,30 @@ async def get_result(request: Request, job_id: str) -> dict[str, Any]:
     return await forward(request, "GET", f"/api/v1/jobs/{job_id}/result")
 
 
+@app.get("/api/engineering-skills")
+async def engineering_skills(request: Request):
+    return await forward(request, "GET", "/api/v1/engineering-skills")
+
+
+@app.get("/api/experiences")
+async def experiences(request: Request):
+    return await forward(request, "GET", with_query(request, "/api/v1/experiences"))
+
+
+@app.post("/api/jobs/{job_id}/experiences")
+async def propose_experience(request: Request, job_id: str):
+    return await forward(
+        request, "POST", f"/api/v1/jobs/{job_id}/experiences", await request.json()
+    )
+
+
+@app.post("/api/experiences/{experience_id}/review")
+async def review_experience(request: Request, experience_id: str):
+    return await forward(
+        request, "POST", f"/api/v1/experiences/{experience_id}/review", await request.json()
+    )
+
+
 # 通过统一代理转发对应后端请求，鉴权令牌留在服务端，保留返回状态和数据。
 @app.post("/api/jobs/{job_id}/process-card/export")
 async def export_process_card(request: Request, job_id: str) -> dict[str, Any]:

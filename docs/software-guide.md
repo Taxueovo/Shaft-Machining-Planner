@@ -1,6 +1,6 @@
 # shaftmachiningplanner user guide
 
-Version 1.3.0. The local workbench supports shaft process planning, resource screening, and engineering review. Screenshots show the Simplified Chinese interface using synthetic inputs in rules mode.
+Version 1.4.0. The local workbench supports shaft process planning, resource screening, and engineering review. Screenshots show the Simplified Chinese interface using synthetic inputs in rules mode.
 
 ![Workbench overview](assets/workbench.jpg)
 
@@ -145,6 +145,14 @@ Before upgrading, stop services and back up data. Update code, install the versi
 
 See the [harness reference](langgraph-harness.md) for policies and fault classes, and the [evaluation protocol](../evaluation/README.md) for prompt candidates.
 
+## Engineering experience and diagnostics
+
+The result page displays **Process State Evidence** and **Execution Diagnostics**. Inspect operation-bound counterexamples and incomplete dimensional coverage before editing a route. Specialist disclosures identify the procedure package and checksum used for that run.
+
+Use **Engineering Experience** to record a reusable lesson from the current route revision. Review its source findings, then supply reviewer, document or verification reference, rationale, and a future validity deadline to approve it. Rejection and retirement preserve decision history. Only approved, unexpired lessons with matching material, stock type, treatment, and feature types enter new tasks. Existing tasks retain their original context.
+
+Reviewed cards are stored in the task database and survive source-task retention cleanup. Include the database in backups. Operator names are locally supplied; multi-user identity and role separation require a future deployment design. See [Engineering agent extensions](engineering-agents.md) for full contracts.
+
 ## Deployment scope
 
-Version 1.3.0 supports local demonstrations and engineering-assistance validation. Multi-user authorization, centralized audit, packaged installation, and factory acceptance remain future work. Resource samples establish preliminary capability coverage; actual machines, tools, subcontracting, and production release require engineering confirmation.
+Version 1.4.0 supports local demonstrations and engineering-assistance validation. Multi-user authorization, centralized audit, packaged installation, and factory acceptance remain future work. Resource samples establish preliminary capability coverage; actual machines, tools, subcontracting, and production release require engineering confirmation.

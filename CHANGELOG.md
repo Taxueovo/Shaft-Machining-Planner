@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.4.0 — 2026-10-08
+
+- Add versioned engineering skill packages for machining, quality, and heat-treatment review; preserve procedure contents across continuation and edited-route review.
+- Retain complete specialist evidence records with bounded JSON previews, evidence manifests, and permission-checked `read_evidence` paging.
+- Extend process-state checks with drawing surface identity, irreversible overcut, explicit final-diameter limits, coverage warnings, and structured counterexamples supplied to Repair.
+- Add a persistent local experience library with source-route binding, recorded reviews, optimistic versions, expiry, conservative applicability filters, and initial-run memory snapshots alongside optional Tencent retrieval.
+- Expose lesson proposals and review decisions in the result page; show procedure identity, process-state evidence, and execution diagnostics.
+- Add deterministic attempt-level trace grading to results and evaluation feedback, and include procedure identity in candidate comparisons.
+- Document integration decisions and runtime boundaries without adding external agent frameworks or equipment execution.
+
 ## 1.3.0 — 2026-10-07
 
 - Trigger Planner intervention on changes to decision evidence; reuse plans during ordinary scheduling and narrow Send payloads to required input and dependency outputs.

@@ -6,6 +6,8 @@ The assessment uses [TencentCloud/TencentDB-Agent-Memory](https://github.com/Ten
 
 ## Responsibilities
 
+Implementation update, 2026-10-08: version 1.4.0 adds a local, reviewed experience library. Applicable, approved, unexpired cards can join the initial reference snapshot while Tencent remains disabled or unavailable. Source-route binding, review decisions, and validity are managed locally; the adapter continues to make read-only Tencent requests. See [Engineering agent extensions](../docs/engineering-agents.md). The upstream review pinned above remains a 2026-10-07 source snapshot.
+
 ```mermaid
 flowchart LR
   I[Current input and resource rules] --> P[Planning and independent review]

@@ -1,6 +1,6 @@
 # shaftmachiningplanner API reference
 
-Version 1.3.0. The backend serves the local API at `http://127.0.0.1:8001`. The frontend uses an HTTP proxy to the same service layer. Deployment is loopback-only and single-process.
+Version 1.4.0. The backend serves the local API at `http://127.0.0.1:8001`. The frontend uses an HTTP proxy to the same service layer. Deployment is loopback-only and single-process.
 
 ## Authentication
 
@@ -25,6 +25,10 @@ For the examples below, set the shell variable `LOCAL_API_TOKEN` to the token us
 | POST | `/api/v1/jobs/{job_id}/process-card/export` | Generate an Excel process draft |
 | GET | `/api/v1/jobs/{job_id}/process-card/download` | Download the generated draft |
 | GET | `/api/v1/system` | Local configuration and task overview |
+| GET | `/api/v1/engineering-skills` | Shipped procedure catalog, versions, contents, and digest |
+| GET | `/api/v1/experiences` | Local lesson cards; optional `source_job_id` filter |
+| POST | `/api/v1/jobs/{job_id}/experiences` | Propose a lesson bound to the displayed route fingerprint |
+| POST | `/api/v1/experiences/{experience_id}/review` | Record an approval, rejection, or retirement using an expected version |
 
 Request fields and validation are defined in `backend/models/` and `backend/app.py`. Frontend proxy paths use `/api/jobs/...`; backend paths use `/api/v1/jobs/...`.
 
@@ -65,6 +69,16 @@ curl -X POST http://127.0.0.1:8001/api/v1/jobs/JOB_ID/cancel \
 After `cancelling`, poll until `cancelled`. In-flight functions or model requests return or time out before the cooperative stop completes. Input and evidence are retained; replanning uses a new job.
 
 ## Errors and observability
+
+Results include `engineering_skills`, `trace_grading`, and `verification.process_state.counterexamples`. Specialist reports contain complete evidence, source manifests, and the selected procedure checksum. These records can contain business data.
+
+### Experience proposals and decisions
+
+Proposal fields are `title` (1–120 characters), `lesson` (10–1,600 characters), and the current 64-character `route_fingerprint`. Use `agent_collaboration.route_fingerprint` from the result response. Proposals require a completed or failed task with a route and no active execution.
+
+Review fields are `expected_version`, `decision` (`approved`, `rejected`, or `retired`), `reviewer`, `source_reference`, `rationale`, and `valid_until`. Approval requires a future timezone-aware ISO timestamp. The transition graph permits proposed → approved/rejected and approved → retired. Changed versions or source routes return HTTP 409.
+
+Reviewer names are supplied by the authenticated local operator. A recorded approval permits scoped reference retrieval in future tasks; it retains the engineering release requirement. The frontend offers the same workflow under **Engineering Experience**. See [Engineering agent extensions](engineering-agents.md) for matching, retention, and snapshot behavior.
 
 | HTTP status | Typical cause | Action |
 | --- | --- | --- |

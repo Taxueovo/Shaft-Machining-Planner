@@ -26,6 +26,10 @@ python scripts/evaluate_agents.py --live --split test --profile output/evaluatio
 
 ## Optional GEPA optimization
 
+Version 1.4.0 reports include deterministic `trace_grading` for node attempts and specialist evidence contracts, plus `feedback.constraint_counterexamples`. Failed attempts, model-call errors, degraded review, stale route references, and unacquired citations remain visible after recovery. Procedure-catalog identity participates in run comparison; compare candidates against the same instruction and runtime baseline.
+
+Cases may declare `expected.required_constraint_codes` to require specific final verification issues. Engineer-reviewed cases should distinguish initial proposal failures, successful repair, and final engineering disposition. Procedure/context tests use substitute model clients; they establish boundary behavior rather than real-model quality gains.
+
 The optimization lockfile pins GEPA core to 0.1.4. Use a separate environment to preserve application dependencies:
 
 ```sh

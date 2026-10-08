@@ -12,7 +12,7 @@
   </style>
   <rect width="1200" height="740" rx="20" fill="#f3f6fb"/>
   <text x="40" y="52" class="title">shaftmachiningplanner · Local execution architecture</text>
-  <text x="40" y="82" class="label">Component responsibilities / v1.3.0 / Server rules govern workflow and optional model proposals</text>
+  <text x="40" y="82" class="label">Component responsibilities / v1.4.0 / Server rules govern workflow and optional model proposals</text>
   <rect x="40" y="112" width="1120" height="90" rx="14" fill="#1e304b"/>
   <text x="65" y="148" class="heading" style="fill:#ffffff">Local workbench · Frontend</text>
   <text x="65" y="178" class="label" style="fill:#cfddf1">Part input / Browser drafts / Task center / Process drafts / Execution records / System status</text>
@@ -20,7 +20,7 @@
   <path d="M600 202V230" class="line"/>
   <rect x="40" y="234" width="1120" height="288" rx="16" fill="#e8efff" stroke="#c1d1f2"/>
   <text x="64" y="270" class="heading">Backend API + Execution harness</text>
-  <text x="64" y="300" class="label">Authentication / Input contracts / Atomic resume / Idempotency / Budgets / Cancellation / Traces</text>
+  <text x="64" y="300" class="label">Authentication / Input contracts / Procedure snapshots / Budgets / Cancellation / Traces</text>
   <text x="996" y="270" class="small">127.0.0.1:8001</text>
   <rect x="65" y="331" width="282" height="110" rx="12" fill="#fff"/>
   <text x="86" y="365" class="heading">Deterministic scheduler</text>
@@ -29,10 +29,10 @@
   <rect x="424" y="331" width="352" height="110" rx="12" fill="#fff"/>
   <text x="446" y="365" class="heading">Parallel Send workers</text>
   <text x="446" y="393" class="label">Route / Resources / Specialist reviews</text>
-  <text x="446" y="418" class="small">Read-only contracts / Single result writer</text>
+  <text x="446" y="418" class="small">Read-only tools / Evidence paging / Role procedures</text>
   <rect x="853" y="331" width="282" height="110" rx="12" fill="#fff"/>
   <text x="874" y="365" class="heading">Review and verification</text>
-  <text x="874" y="393" class="label">Verdicts / Required outputs</text>
+  <text x="874" y="393" class="label">Constraints / Trace grading</text>
   <text x="874" y="418" class="small">Engineering draft / Excel export</text>
   <path d="M348 383H422" class="line"/><path d="M778 383H851" class="line"/>
   <path d="M984 443V485H206V443" class="line"/>
@@ -41,7 +41,7 @@
   <path d="M600 523V551" class="line"/>
   <rect x="40" y="556" width="348" height="126" rx="14" fill="#fff" stroke="#d7e0ee"/>
   <text x="62" y="591" class="heading">Local SQLite</text>
-  <text x="62" y="620" class="label">Jobs / Inputs / Results / Checkpoints</text>
+  <text x="62" y="620" class="label">Jobs / Checkpoints / Reviewed lessons</text>
   <text x="62" y="650" class="small">Persisted evidence and cumulative budgets</text>
   <rect x="426" y="556" width="348" height="126" rx="14" fill="#fff" stroke="#d7e0ee"/>
   <text x="448" y="591" class="heading">Resource samples and rules</text>
@@ -49,7 +49,7 @@
   <text x="448" y="650" class="small">Site availability requires confirmation</text>
   <rect x="812" y="556" width="348" height="126" rx="14" fill="#fff" stroke="#d7e0ee"/>
   <text x="834" y="591" class="heading">Optional knowledge and memory</text>
-  <text x="834" y="620" class="label">RAG references / Tencent memory</text>
+  <text x="834" y="620" class="label">RAG / Tencent / Scoped lesson retrieval</text>
   <text x="834" y="650" class="small">Context constrained by current input and rules</text>
   <text x="40" y="717" class="small">Deployment: loopback, single process. Engineering release and site resource confirmation remain external.</text>
 </svg>

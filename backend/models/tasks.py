@@ -24,13 +24,14 @@ WORKER_TOOLS = {
         "query_cutting_tools",
     },
     "machining_review": {
+        "read_evidence",
         "inspect_route",
         "query_turning_machines",
         "query_cutting_tools",
         "retrieve_references",
     },
-    "quality_review": {"inspect_route", "retrieve_references"},
-    "heat_review": {"inspect_route", "retrieve_references"},
+    "quality_review": {"inspect_route", "retrieve_references", "read_evidence"},
+    "heat_review": {"inspect_route", "retrieve_references", "read_evidence"},
     "workholding": {"inspect_route", "query_turning_machines", "retrieve_references"},
     "alternative_resources": {"query_process_machines"},
 }

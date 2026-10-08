@@ -84,3 +84,93 @@ def test_verification_gate_and_rule_repair_use_the_state_checker():
         changed["process_route"], state["geometry"], state["request"], {}, result["verification"]
     )
     assert verify_process_states(state["request"], repaired)["passed"]
+
+
+def test_drawing_overcut_has_operation_bound_counterexample():
+    req = request(
+        segments=[
+            dict(
+                segment_id="S1",
+                diameter_mm=30,
+                length_mm=100,
+                diameter_upper_deviation_mm=0.02,
+                diameter_lower_deviation_mm=-0.01,
+            )
+        ]
+    ).model_dump()
+    route = [
+        operation(
+            1,
+            "Turn",
+            "rough",
+            [dict(object_id="S1", surface="external", before_mm=50, after_mm=29.98)],
+        )
+    ]
+    result = verify_process_states(req, route)
+    counterexample = next(
+        c for c in result["counterexamples"] if c["constraint_id"] == "DRAWING_MATERIAL_OVERCUT"
+    )
+    assert counterexample["expected"]["lower_mm"] == 29.99
+    assert counterexample["actual"]["after_mm"] == 29.98
+    assert counterexample["operation_no"] == 1
+
+
+def test_final_inspection_rejects_explicit_unfinished_diameter():
+    req = request(
+        segments=[
+            dict(
+                segment_id="S1",
+                diameter_mm=30,
+                length_mm=100,
+                diameter_upper_deviation_mm=0.02,
+                diameter_lower_deviation_mm=-0.01,
+            )
+        ]
+    ).model_dump()
+    route = [
+        operation(
+            1, "Finish Turning", "finish", [dict(object_id="S1", surface="external", after_mm=31)]
+        ),
+        operation(2, "Final Inspection", "inspection"),
+    ]
+    assert "FINAL_DIAMETER_OUTSIDE_DRAWING" in codes(verify_process_states(req, route))
+    route[0]["dimensions"][0]["after_mm"] = 30.01
+    assert verify_process_states(req, route)["passed"]
+
+
+def test_unknown_drawing_limits_remain_unknown():
+    route = [
+        operation(1, "Turn", "finish", [dict(object_id="S1", surface="external", after_mm=29.9)]),
+        operation(2, "Final Inspection", "inspection"),
+    ]
+    result = verify_process_states(request().model_dump(), route)
+    assert result["passed"]
+    assert any("limits incomplete" in warning for warning in result["warnings"])
+
+
+def test_final_inspection_checks_dimensions_declared_in_its_own_record():
+    req = request(
+        segments=[
+            dict(
+                segment_id="S1",
+                diameter_mm=30,
+                length_mm=100,
+                diameter_upper_deviation_mm=0.02,
+                diameter_lower_deviation_mm=-0.01,
+            )
+        ]
+    ).model_dump()
+    route = [
+        operation(
+            1,
+            "Final Inspection",
+            "inspection",
+            [dict(object_id="S1", surface="external", after_mm=31)],
+        )
+    ]
+    assert "FINAL_DIAMETER_OUTSIDE_DRAWING" in codes(verify_process_states(req, route))
+
+
+def test_input_segment_cannot_be_used_as_an_internal_surface():
+    route = [operation(1, "Turn", "rough", [dict(object_id="S1", surface="internal", after_mm=20)])]
+    assert "DRAWING_SURFACE_MISMATCH" in codes(verify_process_states(request().model_dump(), route))

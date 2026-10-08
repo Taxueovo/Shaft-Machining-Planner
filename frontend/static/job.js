@@ -208,6 +208,7 @@
         (collaboration.reports || []).map(report => `<details>
           <summary>${esc(reviewNames[report.agent] || report.agent)} · ${esc(reviewModes[report.mode] || report.mode)} · ${(report.findings || []).length} findings</summary>
           <p>${esc(report.summary)}</p>
+          ${report.skill ? `<p class="muted">Procedure: ${esc(report.skill.name)} · v${esc(report.skill.version)} · ${esc(report.skill.digest.slice(0,16))}</p>` : ""}
           ${(report.findings || []).map(f => `<div class="alert ${f.severity === "error" ? "danger" : "warning"}">
             <strong>${esc(f.code)}</strong>: ${esc(f.message)}<br>${esc(f.recommendation)}
             <br><small>${esc(f.source)} · Evidence: ${esc((f.evidence_ids || []).join(", "))}</small></div>`).join("")}
@@ -223,6 +224,27 @@
        ${(verify.warnings || []).length ? `<div class="alert warning" style="margin-top:14px">${verify.warnings.map(esc).join("<br>")}</div>` : ""}`,
       `<span class="badge ${verifyClass}">${esc(verify.conclusion)}</span>`
     ));
+
+    const processState = verify.process_state;
+    if (processState) {
+      html.push(panel("Process State Evidence",
+        `<p>Declared surfaces: ${esc(processState.explicit_surface_count)} / ${esc(processState.drawing_surface_count)}. Policy: ${esc(processState.policy_version)}.</p>` +
+        `<p class="muted">Drawing limits are checked where explicitly supplied. Missing transitions and tolerance limits require engineering review.</p>` +
+        (processState.counterexamples || []).map(item => `<details><summary>${esc(item.constraint_id)} · Operation ${esc(item.operation_no)}</summary><p>${esc(item.message)}</p><pre class="trace-json">${esc(JSON.stringify(item,null,2))}</pre></details>`).join("")));
+    }
+    const grading = payload.trace_grading;
+    if (grading) {
+      html.push(panel("Execution Diagnostics", `<p>${esc(grading.failures.length)} flagged attempts / evidence contracts.</p><details><summary>Inspect step-level results</summary><pre class="trace-json">${esc(JSON.stringify(grading.grades,null,2))}</pre></details>`));
+    }
+    if (collaboration.route_fingerprint) {
+      html.push(panel("Engineering Experience",
+        `<p class="muted">Record a reusable lesson from this route revision. Only reviewed, unexpired lessons with matching material, stock type, heat treatment, and feature types enter future tasks. Approval here records a local operator decision and retains engineering review of every new plan.</p>
+        <form id="experience-proposal" class="stack">
+          <label>Title<input name="title" maxlength="120" required></label>
+          <label>Lesson and applicability limits<textarea name="lesson" minlength="10" maxlength="1600" rows="3" required></textarea></label>
+          <button type="submit" class="button ghost">Propose lesson</button>
+        </form><p id="experience-feedback" role="status"></p><div id="experience-cards"></div>`));
+    }
 
     html.push(panel(
       "零件几何",
@@ -305,6 +327,59 @@
     doRender3D();
 
     bindRouteButtons();
+    if (collaboration.route_fingerprint) bindExperience(collaboration.route_fingerprint);
+  }
+
+  async function experienceRequest(url, body) {
+    const response = await fetch(url, body ? {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)} : {});
+    const data = await response.json();
+    if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : JSON.stringify(data.detail || data));
+    return data;
+  }
+
+  function bindExperience(fingerprint) {
+    const feedback = $("experience-feedback");
+    async function refresh() {
+      const data = await experienceRequest(`/api/experiences?source_job_id=${encodeURIComponent(jobId)}`);
+      $("experience-cards").innerHTML = data.items.map(card => {
+        const reviewable = ["proposed","approved"].includes(card.status);
+        return `<details><summary>${esc(card.title)} · ${esc(card.status)} · v${esc(card.version)}</summary><p>${esc(card.lesson)}</p><p class="muted">Source route revision: ${esc(card.source.route_revision)}. ${esc(JSON.stringify(card.applicability))}</p>
+        <details><summary>Source evidence and decision history</summary><pre class="trace-json">${esc(JSON.stringify({source:card.source,decisions:card.decisions},null,2))}</pre></details>
+        ${reviewable ? `<form class="experience-review stack" data-id="${esc(card.experience_id)}" data-version="${esc(card.version)}">
+          <label>Decision<select name="decision">${card.status === "proposed" ? '<option value="approved">Approve for reference use</option><option value="rejected">Reject</option>' : '<option value="retired">Retire</option>'}</select></label>
+          <label>Reviewer<input name="reviewer" maxlength="100" required></label>
+          <label>Drawing, procedure, or verification reference<input name="source_reference" minlength="5" maxlength="300" required></label>
+          <label>Review rationale<textarea name="rationale" minlength="5" maxlength="1200" required></textarea></label>
+          ${card.status === "proposed" ? '<label>Valid until (required for approval)<input name="valid_until" type="datetime-local"></label>' : ''}
+          <button class="button ghost" type="submit">Record decision</button></form>` : ''}</details>`;
+      }).join("") || '<p class="muted">No lessons proposed from this task.</p>';
+      $("experience-cards").querySelectorAll(".experience-review").forEach(form => {
+        form.addEventListener("submit", async event => {
+          event.preventDefault();
+          const button = form.querySelector("button"); button.disabled = true;
+          try {
+            const values = Object.fromEntries(new FormData(form));
+            values.expected_version = Number(form.dataset.version);
+            values.valid_until = values.valid_until ? new Date(values.valid_until).toISOString() : null;
+            await experienceRequest(`/api/experiences/${encodeURIComponent(form.dataset.id)}/review`, values);
+            feedback.textContent = "Decision recorded. Existing tasks retain their original memory snapshot.";
+            await refresh();
+          } catch(error) {feedback.textContent = error.message;}
+          finally {button.disabled = false;}
+        });
+      });
+    }
+    $("experience-proposal").addEventListener("submit", async event => {
+      event.preventDefault();
+      const form = event.currentTarget, button = form.querySelector("button"); button.disabled = true;
+      try {
+        const values = Object.fromEntries(new FormData(form));
+        await experienceRequest(`/api/jobs/${encodeURIComponent(jobId)}/experiences`, {...values,route_fingerprint:fingerprint});
+        form.reset(); feedback.textContent = "Lesson proposed; engineering review is pending."; await refresh();
+      } catch(error) {feedback.textContent = error.message;}
+      finally {button.disabled = false;}
+    });
+    refresh().catch(error => {feedback.textContent = error.message;});
   }
 
   // 触发后端导出 Excel 工序卡(process-card/export)，成功后在本页给出下载链接；

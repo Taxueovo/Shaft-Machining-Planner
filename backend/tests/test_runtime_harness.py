@@ -36,6 +36,9 @@ def runtime():
     service = PlanningService.__new__(PlanningService)
     service.store, service.workflow = store, flow
     service.job_cache = JobCache(max_entries=0)
+    from experience_library import ExperienceLibrary
+
+    service.experience_library = ExperienceLibrary(store)
     yield flow, store, service, payload
     flow.checkpoint_connection.close()
     store.connection.close()

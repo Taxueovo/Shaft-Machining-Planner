@@ -8,7 +8,7 @@
 
 <p align="center">
   <a href="https://github.com/Taxueovo/Shaft-Machining-Planner/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/Taxueovo/Shaft-Machining-Planner/ci.yml?branch=main&amp;style=flat-square&amp;label=main%20CI" alt="Main branch CI" /></a>
-  <img src="https://img.shields.io/badge/version-1.3.0-2456D1?style=flat-square" alt="Version 1.3.0" />
+  <img src="https://img.shields.io/badge/version-1.4.0-2456D1?style=flat-square" alt="Version 1.4.0" />
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10-3776AB?style=flat-square&amp;logo=python&amp;logoColor=white" alt="Tested with Python 3.10" /></a>
   <a href="https://fastapi.tiangolo.com/"><img src="https://img.shields.io/badge/FastAPI-009688?style=flat-square&amp;logo=fastapi&amp;logoColor=white" alt="FastAPI" /></a>
   <img src="https://img.shields.io/badge/workflow-LangGraph-4051B5?style=flat-square" alt="LangGraph" />
@@ -27,7 +27,7 @@ shaftmachiningplanner converts material, blank geometry, shaft segments, toleran
 | --- | --- | --- | --- |
 | Solid or hollow blanks, shaft segments, tolerances, and located features | Rule-based baseline routes with optional model-assisted proposals | Machine and cutting-tool screening against public capability samples | Independent machining, quality, and heat-treatment reviews; editable drafts and exports |
 
-Version 1.3.0 targets a loopback-only, single-process deployment. Process drafts require engineering review of drawings, workholding, machining parameters, inspection, and actual resource availability. ERP/MES integration, multi-user access control, and equipment execution are outside the current implementation.
+Version 1.4.0 targets a loopback-only, single-process deployment. Process drafts require engineering review of drawings, workholding, machining parameters, inspection, and actual resource availability. ERP/MES integration, multi-user access control, and equipment execution are outside the current implementation.
 
 ## Features
 
@@ -37,6 +37,10 @@ Version 1.3.0 targets a loopback-only, single-process deployment. Process drafts
 - **Execution harness:** durable run identities, cumulative budgets, manifest validation, typed retries, queue admission, idempotent task creation, and cooperative cancellation.
 - **Optional knowledge services:** RAG retrieval and a read-only TencentDB Agent Memory adapter, with memory disabled by default.
 - **Evaluation tooling:** synthetic cases, failure reports, model-usage observations, and an opt-in GEPA prompt-candidate workflow.
+- **Engineering procedures:** versioned machining, quality, and heat-treatment skill packages, snapshotted for every run.
+- **Evidence context:** complete source records, bounded tool previews, and budgeted evidence paging for specialist reviews.
+- **Constraint diagnostics:** operation-bound process-state counterexamples, explicit drawing-limit checks, and dimensional coverage warnings.
+- **Reviewed experience:** local lesson proposals, recorded review decisions, applicability filters, and expiry-aware retrieval for new jobs.
 
 ## Screenshots
 
@@ -73,6 +77,14 @@ Inspect cumulative node, model, tool, and active-time budgets across planning an
 ![Execution harness with cumulative budgets and failure records](docs/assets/runtime-harness.jpg)
 
 The illustrated run used zero planning-model requests in rules mode. Counters and timings describe that individual demonstration. See the [user guide](docs/software-guide.md) for status interpretation, cancellation, and backup procedures.
+
+### Engineering context and reviewed experience
+
+Inspect process-state coverage and execution diagnostics, then record a source-linked lesson for engineering review. Approved lessons can be retrieved by subsequent matching tasks. The screenshot uses an isolated synthetic QA record.
+
+![Engineering experience review with a synthetic lesson](docs/assets/engineering-experience.jpg)
+
+See [Engineering agent extensions](docs/engineering-agents.md) for procedures, context budgets, counterexamples, and experience lifecycle details.
 
 ## Quick start
 
@@ -168,6 +180,7 @@ Planning, human continuation, edited-route review, and offline evaluation use th
 | Pending-job limit | 32; human-waiting jobs are excluded |
 | Continuation and deduplication | Atomic resume; matching input and Idempotency-Key return the existing job |
 | Context and compatibility | prompt/memory snapshots and input, resource, configuration, and runtime identities |
+| Engineering context | Saved procedure contents; 48,000-character evidence maps and 6,000-character tool previews |
 | Stop and retry | Cooperative cancellation; bounded retries for classified transient failures |
 | Observability | run_id, invocation_id, node traces, usage observations, and the latest 200 control events |
 
@@ -186,7 +199,7 @@ Budgets govern execution attempts and active time. Billing depends on provider u
 
 The [TencentDB-Agent-Memory](https://github.com/TencentCloud/TencentDB-Agent-Memory) adapter provides a historical-context service. SQLite continues to own task state, human interrupts, and checkpoints. A TencentDB PostgreSQL/MySQL migration would require a separate storage and concurrency design.
 
-The first invocation saves prompt and memory snapshots; continuation and edited-route review reuse them. Current input and server rules take precedence over historical suggestions. Adapter contracts have been tested with simulated HTTP responses; live-service connectivity and retrieval quality remain pending.
+The first invocation saves prompt, procedure, and memory snapshots; continuation and edited-route review reuse them. Approved, unexpired local lessons can join the initial historical context without enabling Tencent retrieval. Current input and server rules take precedence over historical suggestions. Adapter contracts have been tested with simulated HTTP responses; live-service connectivity and retrieval quality remain pending. See [Engineering agent extensions](docs/engineering-agents.md) for context limits, process-state diagnostics, and the experience review workflow.
 
 ```mermaid
 flowchart LR
@@ -238,14 +251,14 @@ python scripts/scan_secrets.py
 python scripts/verify_public_sources.py
 ```
 
-Local validation recorded on **2026-10-07** for v1.3.0:
+Local validation recorded on **2026-10-08** for v1.4.0:
 
 | Check | Result | Coverage |
 | --- | --- | --- |
-| Backend regression | 242 passed, 1 skipped | Execution budgets, continuation, cancellation, route review, and contracts; one existing deprecation warning |
+| Backend regression | 260 passed, 1 skipped | Procedure snapshots, evidence paging, constraint counterexamples, experience review/recall, trace grading, and existing runtime contracts; one existing deprecation warning |
 | Synthetic rules evaluation | 11/11 passed | Expected behavior on synthetic inputs |
 | Static and publication checks | Passed | Ruff, changed JavaScript syntax, release audit, credential scan, and public-source checks |
-| Browser checks | Passed | New/legacy tasks, route revision, cumulative budgets, and cancellation |
+| Browser checks | Passed | Synthetic lesson proposal, review, cross-task recall, and responsive evidence panels |
 | Live memory service, model-quality gains, factory feasibility | Pending | Requires service acceptance and engineering data |
 
 The CI badge tracks `main`; branch validation is available on the corresponding pull request. Model-backed evaluation requires explicit `--live` and uses the configured provider. Engineering acceptance remains a separate review of the drawing, process, inspection, and site resources.
@@ -256,6 +269,7 @@ The CI badge tracks `main`; branch validation is available on the corresponding 
 | --- | --- |
 | [User guide](docs/software-guide.md) | Workbench operation, statuses, troubleshooting, backups, and upgrades |
 | [Architecture and harness](docs/langgraph-harness.md) | Routing, contracts, budgets, checkpoints, and publication |
+| [Engineering agent extensions](docs/engineering-agents.md) | Procedure packages, bounded evidence, constraint counterexamples, experience review, and trace grading |
 | [API reference](docs/api.md) | Local endpoints, request examples, and error handling |
 | [Memory integration](research/tencentdb-agent-memory-integration.md) | Tencent adapter, deployment prerequisites, and acceptance sequence |
 | [Evaluation](evaluation/README.md) | Synthetic cases, failure reports, and prompt candidates |

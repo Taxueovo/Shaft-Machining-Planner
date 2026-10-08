@@ -224,6 +224,13 @@ def invoke(workflow, graph_input, config=None):
     job_id = config.get("configurable", {}).get("thread_id")
     if not job_id:
         raise ValueError("A persistent job thread_id is required")
+    from engineering_skills import job_skills
+
+    with job_skills(workflow.store, job_id):
+        return _invoke(workflow, graph_input, config, job_id)
+
+
+def _invoke(workflow, graph_input, config, job_id):
     control = RunControl(workflow.store, job_id, resources=workflow.resource_manifest)
     control.start()
     config["recursion_limit"] = control.policy.max_nodes + 1
@@ -275,6 +282,13 @@ def classify_failure(exc):
 
 def execute_action(workflow, job_id, action, publish=None):
     """Atomic route review uses the same budgets but preserves the published result on failure."""
+    from engineering_skills import job_skills
+
+    with job_skills(workflow.store, job_id):
+        return _execute_action(workflow, job_id, action, publish)
+
+
+def _execute_action(workflow, job_id, action, publish=None):
     control = RunControl(workflow.store, job_id, resources=workflow.resource_manifest)
     try:
         control.start()

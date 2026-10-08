@@ -247,6 +247,7 @@ class VerificationNodesMixin:
             bool(council.get("findings") or council.get("degraded"))
             or state["resource_selection"]["partial_verification_count"] > 0
             or bool(state["capability"]["notes"])
+            or bool(process_state["warnings"])
         )
 
         # 用路线内容哈希识别“与上一轮完全相同”的无效修复，避免陷入无进展的修复循环。
@@ -309,6 +310,7 @@ class VerificationNodesMixin:
             state["geometry"]["warnings"]
             + state["capability"]["notes"]
             + heat_decision.get("trace", {}).get("warnings", [])
+            + process_state["warnings"]
         )
 
         llm_analysis = None
@@ -591,6 +593,9 @@ class VerificationNodesMixin:
             "DIMENSION_OUTSIDE_STOCK",
             "BORE_SMALLER_THAN_STOCK",
             "STATE_OPERATION_INVALID",
+            "DRAWING_MATERIAL_OVERCUT",
+            "FINAL_DIAMETER_OUTSIDE_DRAWING",
+            "DRAWING_SURFACE_MISMATCH",
         }
         if any(
             issue.get("error_code") in state_errors | {"FEATURE_NOT_COVERED"} for issue in issues
@@ -744,6 +749,9 @@ class VerificationNodesMixin:
                 for iss in verification.get("validation_issues", [])
             )
             or "  None"
+        )
+        issues_desc += "\nStructured constraint counterexamples:\n" + json.dumps(
+            verification.get("process_state", {}).get("counterexamples", []), ensure_ascii=False
         )
         checks_desc = "\n".join(
             f"  - {c['name']}: {'Pass' if c['passed'] else 'Fail'} {c['message']}"

@@ -36,6 +36,7 @@ from models.workflow import PlanningRequest
 from models.input import ChoicesRequest
 from models.case import CaseSearchRequest
 from models.process import RouteCustomizeRequest
+from experience_library import ExperienceProposal, ExperienceDecision
 from repositories import MACHINE_FILE, TOOL_FILE
 from llm_client import llm_available, warn_if_llm_misconfigured
 from service import PlanningService
@@ -125,6 +126,7 @@ def system_status() -> dict:
     """Safe operational overview: no keys, origins, paths or external probes."""
     from llm_client import LLM_PROVIDER, OPENAI_MODEL, LOCAL_MODEL_NAME
     from agent_memory import memory_enabled
+    from engineering_skills import skill_identity
 
     ready = llm_available()
     memory_configured = all(
@@ -149,6 +151,11 @@ def system_status() -> dict:
             "connectivity": "not_checked",
         },
         "rag": {"installed": _RAG_AVAILABLE},
+        "engineering_skills": skill_identity(),
+        "experience_library": {
+            "records": len(service.experience_library.list()),
+            "active_reviewed": len(service.experience_library.active()),
+        },
         "jobs": service.store.stats(),
         "auto_shutdown_on_idle": service.auto_shutdown_on_idle,
         "deployment": "single_process_loopback",
@@ -176,6 +183,39 @@ async def shutdown() -> dict[str, str]:
 # ============================================================
 # Job API
 # ============================================================
+
+
+@app.get("/api/v1/engineering-skills")
+def engineering_skill_catalog() -> dict:
+    from engineering_skills import load_skills
+
+    snapshot = load_skills()
+    return {"digest": snapshot["digest"], "items": list(snapshot["items"].values())}
+
+
+@app.get("/api/v1/experiences")
+def list_experiences(source_job_id: str | None = None) -> dict:
+    return {"items": service.experience_library.list(source_job_id)}
+
+
+@app.post("/api/v1/jobs/{job_id}/experiences", status_code=201)
+def propose_experience(job_id: str, proposal: ExperienceProposal) -> dict:
+    try:
+        return service.experience_library.propose(job_id, proposal)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Job not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@app.post("/api/v1/experiences/{experience_id}/review")
+def review_experience(experience_id: str, decision: ExperienceDecision) -> dict:
+    try:
+        return service.experience_library.review(experience_id, decision)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Experience or source job not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 # 校验规划请求并提交后台任务，立即返回供轮询使用的任务标识。

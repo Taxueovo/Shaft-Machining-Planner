@@ -1,6 +1,6 @@
 # LangGraph architecture and execution harness
 
-Version 1.3.0. shaftmachiningplanner runs a local, single-process workflow. Server-side rules and task contracts govern process acceptance. Models operate within bounded planning and review roles.
+Version 1.4.0. shaftmachiningplanner runs a local, single-process workflow. Server-side rules and task contracts govern process acceptance. Models operate within bounded planning and review roles.
 
 ![Component responsibilities](assets/system-architecture.svg)
 
@@ -149,8 +149,16 @@ python scripts/evaluate_agents.py --output output/evaluation/harness-rules.json
 
 Regression coverage includes real-graph parallel reservations, bounded retries, cancellation races, continuation counters, queue rollback, input deduplication, configuration changes, failed route edits, and failure-report generation. Default evaluation uses rules mode with external memory disabled. Model-boundary tests use substitute clients.
 
-Local validation on 2026-10-07 recorded **242 tests passed, 1 skipped**, and **11/11 synthetic rules cases passed**. Ruff, changed JavaScript syntax, release audit, and credential scan passed. Browser checks covered new/legacy records, route publication, shared budgets, and cancellation during human waiting. One existing Starlette/httpx deprecation warning remains.
+Local validation on 2026-10-08 recorded **260 tests passed, 1 skipped**, and **11/11 synthetic rules cases passed**. Ruff, changed JavaScript syntax, release audit, and credential scan passed. Browser checks covered synthetic experience proposals, recorded review, cross-task recall, and evidence-panel layouts. One existing Starlette/httpx deprecation warning remains.
 
 ## Deployment boundaries
+
+### Version 1.4.0 engineering context
+
+The harness saves engineering procedure contents and checksums once per job. The runtime identity includes that catalog digest, so continuation uses the original procedures and new evaluations identify changed instructions. Model reviews retain complete evidence records with bounded previews and permission-checked paging. Oversized protected input degrades the model review while preserving deterministic findings.
+
+Process-state validation emits structured counterexamples and coverage warnings. Repair consumes the counterexamples and reruns affected resource and specialist tasks. Result/evaluation diagnostics preserve failed attempts and stale evidence even when a later attempt succeeds.
+
+The local experience library records source-bound proposals and explicit review decisions. New tasks snapshot applicable, approved, unexpired records alongside optional Tencent references. Existing tasks retain their saved reference context. See [Engineering agent extensions](engineering-agents.md) for the full contracts and source-to-implementation mapping.
 
 Current evidence covers local execution behavior. Live-model quality improvements and factory feasibility require separate evaluation. SQLite and local locks support the single-process deployment; distributed execution, process isolation, and factory approval services remain future work.

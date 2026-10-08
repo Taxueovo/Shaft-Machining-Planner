@@ -138,6 +138,9 @@ def test_bound_context_reaches_parallel_workflow_and_service_result(transport, m
     service = object.__new__(PlanningService)
     service.store, service.workflow = store, Workflow(store)
     service.job_cache = SimpleNamespace(enabled=False)
+    from experience_library import ExperienceLibrary
+
+    service.experience_library = ExperienceLibrary(store)
     monkeypatch.setattr(llm_client, "LLM_PROVIDER", "rules")
     try:
         service._initial("memory-test", payload)
